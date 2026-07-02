@@ -49,7 +49,7 @@
       git/worktree.ts: add/remove worktree, merge --no-ff (+on_conflict: merge --abort),
       require_clean_parent. Testado contra repo git temporário real. Depende de T-001.
 
-- [ ] T-008: Interpretadores dos steps shell e checks
+- [x] T-008: Interpretadores dos steps shell e checks
       steps/shell.ts (run/always/on_fail, interpolado) e steps/checks.ts (lista nomeada -> runner),
       ambos via Step.execute (AD-2). Depende de T-004,T-006.
 
