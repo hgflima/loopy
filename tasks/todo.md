@@ -83,7 +83,7 @@
       sobre o buffer de texto do turno do audit [OQ3] (não o readText cumulativo); ausência = FAIL.
       Puro. Paralelizável com T-011/T-012. Depende de T-001.
 
-- [ ] T-014: Interpretador do step agent (loop interno)
+- [x] T-014: Interpretador do step agent (loop interno)
       steps/agent.ts (Step.execute): clear_context/mode/prompt/retry_prompt, loop interno verify
       (prompt->checks->re-prompta com ${checks.report} até passar ou esgotar max_attempts->on_fail),
       gate expect + on_expect_fail (via T-013), non-end_turn = falha. Depende de T-004,T-006,T-012,T-013.

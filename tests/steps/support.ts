@@ -139,6 +139,8 @@ export interface StepContextOverrides {
   readonly attempt?: number;
   /** The human-gate port (approval step); defaults to auto-approving. */
   readonly ui?: UiPort;
+  /** The ACP session (agent step); defaults to an inert, always-`end_turn` stub. */
+  readonly session?: AgentSession;
 }
 
 /** Assemble a {@link StepContext} for a step interpreter under test. */
@@ -152,7 +154,7 @@ export function makeStepContext(overrides: StepContextOverrides): StepContext {
     worktreePath: overrides.worktreePath ?? "/tmp/loopy-worktree",
     step: overrides.step,
     resolve: overrides.resolve ?? ((template) => template),
-    session: inertSession,
+    session: overrides.session ?? inertSession,
     git: inertGit,
     checks: overrides.checks ?? inertChecks,
     ui: overrides.ui ?? inertUi,
