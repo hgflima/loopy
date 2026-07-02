@@ -1,2 +1,274 @@
-// Placeholder module — implementation lands in a later task (see tasks/plan.md).
-export {};
+/**
+ * Backlog parser for `todo.md` — the input the outer loop iterates over.
+ *
+ * The engine dogfoods its own format (AD-7): `- [ ] T-NNN: title` at column 0,
+ * with the task's `${task.body}` as the indented block beneath it (up to the
+ * next column-0 line). This module turns that text into ordered {@link Task}s
+ * and rewrites `- [ ]` → `- [x]` idempotently while preserving the rest of the
+ * file byte-for-byte (only the one marker changes), so `require_clean_parent`
+ * stays satisfied after a mark-done commit.
+ *
+ * The pure functions (`parseBacklog` / `markDone`) work on in-memory strings and
+ * carry all the logic; the `load*` / `*InFile` wrappers add disk I/O — mirroring
+ * the `parseConfig` / `loadConfig` split in `config/load.ts`.
+ *
+ * Invariant (AD-1): this is mechanics only. Markers, the id pattern, and body
+ * mode come from `inputs.backlog` in `loopy.yml` — never hardcoded policy.
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+import type { BacklogConfig, Task } from "../types";
+
+/** Raised when the backlog cannot be read or a requested task id is absent. */
+export class BacklogError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "BacklogError";
+  }
+}
+
+/** Identifies a task within a title. */
+export interface BranchParts {
+  readonly id: string;
+  readonly slug: string;
+  readonly title: string;
+}
+
+/** Knobs for parsing/marking a backlog; every field has a sensible default. */
+export interface BacklogOptions {
+  /** Column-0 prefix of a pending task line. Default `"- [ ]"`. */
+  readonly pendingMarker?: string;
+  /** Column-0 prefix of a completed task line. Default `"- [x]"`. */
+  readonly doneMarker?: string;
+  /** Regex source used to extract the task id. Default `"T-\\d+"`. */
+  readonly taskIdPattern?: string;
+  /** Build `${task.branch}` from a task. Default `"${id}-${slug}"`. */
+  readonly branchFor?: (parts: BranchParts) => string;
+}
+
+const DEFAULT_PENDING = "- [ ]";
+const DEFAULT_DONE = "- [x]";
+const DEFAULT_ID_PATTERN = "T-\\d+";
+
+/** Translate a validated {@link BacklogConfig} into {@link BacklogOptions}. */
+export function backlogOptionsFrom(config: BacklogConfig): BacklogOptions {
+  return {
+    pendingMarker: config.pending_marker,
+    doneMarker: config.done_marker,
+    taskIdPattern: config.task_id_pattern,
+  };
+}
+
+/** Resolved options with defaults applied and the id regex compiled once. */
+interface ResolvedOptions {
+  readonly pendingMarker: string;
+  readonly doneMarker: string;
+  readonly idRegex: RegExp;
+  readonly branchFor: (parts: BranchParts) => string;
+}
+
+function defaultBranch({ id, slug }: BranchParts): string {
+  return slug ? `${id}-${slug}` : id;
+}
+
+function resolveOptions(options: BacklogOptions): ResolvedOptions {
+  const pattern = options.taskIdPattern ?? DEFAULT_ID_PATTERN;
+  return {
+    pendingMarker: options.pendingMarker ?? DEFAULT_PENDING,
+    doneMarker: options.doneMarker ?? DEFAULT_DONE,
+    // Anchor at the start of the checkbox content so the id is the first token.
+    idRegex: new RegExp(`^(?:${pattern})`),
+    branchFor: options.branchFor ?? defaultBranch,
+  };
+}
+
+/**
+ * Derive a branch/URL-safe slug from a title: lowercase, strip diacritics, and
+ * collapse every run of non-alphanumeric characters into a single dash.
+ */
+function slugify(title: string): string {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** A parsed task plus the source-line index of its checkbox (for `markDone`). */
+interface RawTask extends Task {
+  readonly lineIndex: number;
+}
+
+/** Leading-whitespace length of a line (`0` for a column-0 line). */
+function indentWidth(line: string): number {
+  return line.length - line.replace(/^\s+/, "").length;
+}
+
+/** `true` for an empty or whitespace-only line. */
+function isBlank(line: string): boolean {
+  return line.trim() === "";
+}
+
+/**
+ * Extract the body: blank and indented lines beneath the checkbox, up to the
+ * next column-0 non-blank line. The result is dedented by the common indent and
+ * trimmed of surrounding blank lines (internal blanks are kept).
+ */
+function extractBody(lines: readonly string[], startIndex: number): string {
+  const collected: string[] = [];
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i]!;
+    // Stop at the next column-0 non-blank line (task / heading / quote).
+    if (!isBlank(line) && indentWidth(line) === 0) break;
+    collected.push(line);
+  }
+
+  // Drop surrounding blank lines.
+  while (collected.length > 0 && isBlank(collected[0]!)) collected.shift();
+  while (collected.length > 0 && isBlank(collected[collected.length - 1]!)) {
+    collected.pop();
+  }
+  if (collected.length === 0) return "";
+
+  const indent = Math.min(
+    ...collected.filter((line) => !isBlank(line)).map(indentWidth),
+  );
+  return collected.map((line) => line.slice(indent)).join("\n");
+}
+
+/** Parse one column-0 checkbox line into a task, or `null` if it isn't one. */
+function parseTaskLine(
+  line: string,
+  lineIndex: number,
+  lines: readonly string[],
+  opts: ResolvedOptions,
+): RawTask | null {
+  let done: boolean;
+  let content: string;
+  if (line.startsWith(opts.pendingMarker)) {
+    done = false;
+    content = line.slice(opts.pendingMarker.length);
+  } else if (line.startsWith(opts.doneMarker)) {
+    done = true;
+    content = line.slice(opts.doneMarker.length);
+  } else {
+    return null;
+  }
+
+  const trimmed = content.trim();
+  const idMatch = opts.idRegex.exec(trimmed);
+  if (!idMatch) return null; // checkbox without a task id — not a backlog task
+
+  const id = idMatch[0];
+  // Title is what follows the id, minus a leading separator (`:`, `-`, spaces).
+  const title = trimmed
+    .slice(id.length)
+    .replace(/^[\s:–—-]+/, "")
+    .trimEnd();
+  const slug = slugify(title);
+  const branch = opts.branchFor({ id, slug, title });
+  const body = extractBody(lines, lineIndex + 1);
+
+  return { id, slug, title, body, branch, done, lineIndex };
+}
+
+/**
+ * Parse every task, tagging each with its checkbox's source-line index (used by
+ * {@link markDone}). {@link parseBacklog} is the public, index-free view of this.
+ */
+function parseRaw(source: string, options: BacklogOptions): RawTask[] {
+  const opts = resolveOptions(options);
+  const lines = source.split("\n");
+  const tasks: RawTask[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const task = parseTaskLine(lines[i]!, i, lines, opts);
+    if (task) tasks.push(task);
+  }
+  return tasks;
+}
+
+/** Parse `todo.md` text into every task it declares, in file order. */
+export function parseBacklog(
+  source: string,
+  options: BacklogOptions = {},
+): Task[] {
+  return parseRaw(source, options).map((t) => ({
+    id: t.id,
+    slug: t.slug,
+    title: t.title,
+    body: t.body,
+    branch: t.branch,
+    done: t.done,
+  }));
+}
+
+/** Keep only the not-yet-done tasks, preserving file order. */
+export function pendingTasks(tasks: readonly Task[]): Task[] {
+  return tasks.filter((task) => !task.done);
+}
+
+/**
+ * Idempotently mark task `id` done: rewrite its `- [ ]` to `- [x]`, touching
+ * nothing else. Returns the source unchanged when the task is already done, and
+ * throws {@link BacklogError} when `id` is not in the backlog.
+ */
+export function markDone(
+  source: string,
+  id: string,
+  options: BacklogOptions = {},
+): string {
+  const opts = resolveOptions(options);
+  const tasks = parseRaw(source, options);
+  const target = tasks.find((task) => task.id === id);
+  if (!target) {
+    throw new BacklogError(
+      `Task "${id}" não encontrada no backlog (nenhum checkbox "${opts.pendingMarker}"/"${opts.doneMarker}" com esse id).`,
+    );
+  }
+  if (target.done) return source; // already done — no-op
+
+  const lines = source.split("\n");
+  const line = lines[target.lineIndex]!;
+  lines[target.lineIndex] = line.replace(opts.pendingMarker, opts.doneMarker);
+  return lines.join("\n");
+}
+
+/** Read and parse a `todo.md` from disk. */
+export function loadBacklog(
+  path: string,
+  options: BacklogOptions = {},
+): Task[] {
+  return parseBacklog(readFile(path), options);
+}
+
+/**
+ * Mark task `id` done on disk. Writes only when the content actually changes
+ * (idempotent runs leave the file — and its mtime — untouched). Returns whether
+ * the file was rewritten.
+ */
+export function markDoneInFile(
+  path: string,
+  id: string,
+  options: BacklogOptions = {},
+): boolean {
+  const before = readFile(path);
+  const after = markDone(before, id, options);
+  if (after === before) return false;
+  writeFileSync(path, after, "utf8");
+  return true;
+}
+
+/** Read a file as UTF-8, surfacing failures as {@link BacklogError}. */
+function readFile(path: string): string {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new BacklogError(
+      `Não foi possível ler o backlog "${path}": ${reason}`,
+      {
+        cause: err,
+      },
+    );
+  }
+}

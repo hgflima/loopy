@@ -22,7 +22,7 @@
       4 primitivas + verify/stop_conditions/policies/logging) e config/load.ts (parse YAML,
       valida, defaults, erro claro). Valida o loopy.yml de exemplo. Depende de T-001.
 
-- [ ] T-003: Parser de backlog (todo.md)
+- [x] T-003: Parser de backlog (todo.md)
       backlog/todo.ts: parse de checkboxes, id (T-\d+)/slug/title/body (bloco indentado),
       mark_done idempotente que preserva o arquivo. Fixtures. Depende de T-001.
 
