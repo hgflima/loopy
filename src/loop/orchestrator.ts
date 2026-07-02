@@ -26,7 +26,7 @@
  * (AD-4).
  */
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { markDoneInFile, type BacklogOptions } from "../backlog/todo";
 import {
   createResolver,
@@ -400,6 +400,48 @@ const notWiredGit: GitPort = {
   isParentClean: notWired("git.isParentClean"),
 };
 
+/**
+ * Opens (or reuses) the ACP session bound to a task's worktree (AD-3: cwd is
+ * immutable per session). Called with the worktree's absolute path the first
+ * time an agent step reaches for the session — i.e. *after* `create-worktree`
+ * has made the directory exist.
+ */
+export type SessionProvider = (worktreeCwd: string) => Promise<AgentSession>;
+
+/**
+ * Wrap a {@link SessionProvider} in an {@link AgentSession} that opens the real
+ * session lazily and at most once (AD-3: one session per task/worktree). The
+ * open is deferred to the first `setMode`/`clear`/`prompt`, so a task with no
+ * agent step never opens a session at all; `readText`/`sessionId` read from the
+ * resolved session (safe because the agent step always awaits a prompt turn
+ * before reading its text). This keeps the orchestrator agnostic to step type
+ * (AD-2): any step may reach for `ctx.session`, but the cost is only paid when
+ * one actually does.
+ */
+function createLazySession(open: () => Promise<AgentSession>): AgentSession {
+  let opened: AgentSession | undefined;
+  let opening: Promise<AgentSession> | undefined;
+  const ensure = (): Promise<AgentSession> => {
+    opening ??= open().then((session) => {
+      opened = session;
+      return session;
+    });
+    return opening;
+  };
+  return {
+    get sessionId(): string {
+      return opened?.sessionId ?? "lazy(unopened)";
+    },
+    setMode: async (modeId) => (await ensure()).setMode(modeId),
+    clear: async () => (await ensure()).clear(),
+    prompt: async (text) => (await ensure()).prompt(text),
+    readText: () => opened?.readText() ?? "",
+    cancel: async () => {
+      if (opened !== undefined) await opened.cancel();
+    },
+  };
+}
+
 /** Everything {@link runLoop} needs — the ports a {@link StepContext} is built from. */
 export interface OrchestratorDeps {
   /**
@@ -423,6 +465,13 @@ export interface OrchestratorDeps {
   readonly git?: GitPort;
   /** ACP session; unused by the non-agent spine (fail-loud default). */
   readonly session?: AgentSession;
+  /**
+   * Opens the ACP session bound to a task's worktree, keyed by its absolute path
+   * (T-015 — canonically `pool.session` from `acp/session.ts`). When present, the
+   * orchestrator wraps it lazily and hands agent steps a per-task session; when
+   * absent (the non-agent spine), the fail-loud {@link session} is used instead.
+   */
+  readonly sessionProvider?: SessionProvider;
 }
 
 /**
@@ -443,6 +492,7 @@ function buildTaskStepContext(
   step: StepConfig,
   runtime: ScopeRuntime,
   deps: OrchestratorDeps,
+  session: AgentSession,
 ): StepContext {
   const scope = createScope(buildScopeVars(config, task, runtime));
   return {
@@ -454,7 +504,7 @@ function buildTaskStepContext(
     worktreePath: deps.root,
     step,
     resolve: createResolver(scope, { stepId: step.id }),
-    session: deps.session ?? notWiredSession,
+    session,
     git: deps.git ?? notWiredGit,
     checks: deps.checks,
     ui: deps.ui,
@@ -494,6 +544,18 @@ async function runTaskPipeline(
   deps: OrchestratorDeps,
 ): Promise<PipelineOutcome> {
   const worktreePath = worktreePathFor(config, task);
+  // One ACP session per task (AD-3), bound to the worktree's absolute cwd and
+  // opened lazily on the first agent step's use (after `create-worktree`). The
+  // same instance is shared by every step of this task. On the non-agent spine
+  // (no provider) this is the fail-loud session — never touched by shell/checks/
+  // approval, so it stays a no-op there.
+  const { sessionProvider } = deps;
+  const session: AgentSession =
+    sessionProvider !== undefined
+      ? createLazySession(() =>
+          sessionProvider(resolve(deps.root, worktreePath)),
+        )
+      : (deps.session ?? notWiredSession);
   // The first failing step (undefined while the pipeline is still healthy).
   let firstFailure:
     { readonly stepId: string; readonly reason?: string } | undefined;
@@ -532,6 +594,7 @@ async function runTaskPipeline(
         checksReport,
       },
       deps,
+      session,
     );
 
     const result: StepResult = await interpreter.execute(ctx);

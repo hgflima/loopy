@@ -8,7 +8,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -22,6 +22,7 @@ import {
   createMarkDonePort,
   decideEscalation,
   runLoop,
+  worktreePathFor,
   type MarkDonePort,
   type OrchestratorDeps,
 } from "../../src/loop/orchestrator";
@@ -31,6 +32,7 @@ import {
 } from "../../src/steps/index";
 import type { RunShellCommand } from "../../src/steps/shell";
 import type {
+  AgentSession,
   ChecksReport,
   ChecksRunnerPort,
   EscalationPolicy,
@@ -480,6 +482,81 @@ describe("runLoop — registry gaps + report threading", () => {
 
     // The shell step saw the report the checks step produced.
     expect(ran).toEqual(["echo RELATORIO-DOS-CHECKS"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent session wiring (T-015) — the orchestrator hands agent steps a session
+// opened lazily via `sessionProvider`, keyed by the task's worktree cwd.
+// ---------------------------------------------------------------------------
+
+describe("runLoop — agent session wiring", () => {
+  it("supplies agent steps the sessionProvider session, opened once per task keyed by worktree cwd", async () => {
+    // Records which worktree cwd the provider was asked to open a session for.
+    const providerCalls: string[] = [];
+    const sessionProvider = async (cwd: string): Promise<AgentSession> => {
+      providerCalls.push(cwd);
+      return {
+        sessionId: `sess:${cwd}`,
+        setMode: async () => {},
+        clear: async () => {},
+        prompt: async () => "end_turn",
+        readText: () => "",
+        cancel: async () => {},
+      };
+    };
+
+    // A stand-in agent interpreter that reaches for the session (which lazily
+    // opens it) and records the sessionId it observed.
+    const seen: string[] = [];
+    const agentInterpreter: Step = {
+      type: "agent",
+      async execute(ctx: StepContext): Promise<StepResult> {
+        await ctx.session.setMode("acceptEdits"); // triggers the lazy open
+        seen.push(ctx.session.sessionId);
+        return { ok: true };
+      },
+    };
+
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([agent("implement"), agent("audit")]);
+    const root = "/abs/workspace";
+
+    const result = await runLoop(config, [makeTask("T-7")], {
+      ...makeDeps({
+        registry: createStepRegistry([agentInterpreter]),
+        markDone: port,
+        root,
+      }),
+      sessionProvider,
+    });
+
+    const expectedCwd = resolve(root, worktreePathFor(config, makeTask("T-7")));
+    // Both agent steps of the one task share a SINGLE session (opened once).
+    expect(providerCalls).toEqual([expectedCwd]);
+    expect(seen).toEqual([`sess:${expectedCwd}`, `sess:${expectedCwd}`]);
+    expect(marked).toEqual(["T-7"]);
+    expect(result.completed).toEqual(["T-7"]);
+  });
+
+  it("never opens a session for a task with no agent steps (lazy)", async () => {
+    const providerCalls: string[] = [];
+    const sessionProvider = async (cwd: string): Promise<AgentSession> => {
+      providerCalls.push(cwd);
+      throw new Error("must not be called for a non-agent pipeline");
+    };
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const config = makeConfig([shell("a"), checks("b")]);
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: scriptedRegistry(rec), markDone: port }),
+      sessionProvider,
+    });
+
+    // No agent step ran, so the lazy session was never opened.
+    expect(providerCalls).toEqual([]);
+    expect(rec.order).toEqual(["T-1:a", "T-1:b"]);
   });
 });
 

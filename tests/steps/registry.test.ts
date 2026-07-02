@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createFullRegistry,
   createNonAgentRegistry,
   createStepRegistry,
 } from "../../src/steps/index";
@@ -46,5 +47,19 @@ describe("createNonAgentRegistry", () => {
     expect(registry.get("approval")?.type).toBe("approval");
     // The heart of T-010: the agent step is not wired yet (lands in T-015).
     expect(registry.has("agent")).toBe(false);
+  });
+});
+
+describe("createFullRegistry", () => {
+  it("registers all four primitives, including agent (T-015)", () => {
+    const registry = createFullRegistry();
+
+    expect(registry.get("shell")?.type).toBe("shell");
+    expect(registry.get("checks")?.type).toBe("checks");
+    expect(registry.get("approval")?.type).toBe("approval");
+    // The T-015 change: the agent step is finally plugged into the registry so
+    // the orchestrator routes agent steps to it (closing the E2E pipeline).
+    expect(registry.get("agent")?.type).toBe("agent");
+    expect(registry.has("agent")).toBe(true);
   });
 });

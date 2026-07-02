@@ -88,7 +88,7 @@
       (prompt->checks->re-prompta com ${checks.report} até passar ou esgotar max_attempts->on_fail),
       gate expect + on_expect_fail (via T-013), non-end_turn = falha. Depende de T-004,T-006,T-012,T-013.
 
-- [ ] T-015: Registrar agent no orquestrador — pipeline completo E2E
+- [x] T-015: Registrar agent no orquestrador — pipeline completo E2E
       Plugar agent no registry e rodar o pipeline do exemplo (create-worktree->implement->simplify->
       audit->commit->merge->cleanup) para 1 task contra fake agent + repo temporário. Mark-done só
       com checks verdes + AUDIT: PASS + merge; falha preserva worktree e escala. Depende de T-010,T-014.

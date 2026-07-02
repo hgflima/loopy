@@ -16,6 +16,7 @@
  * steps there are all come from `loopy.yml`.
  */
 import type { Step, StepType } from "../types";
+import { createAgentStep } from "./agent";
 import { createApprovalStep } from "./approval";
 import { createChecksStep } from "./checks";
 import { createShellStep, type RunShellCommand } from "./shell";
@@ -62,5 +63,24 @@ export function createNonAgentRegistry(
     createShellStep(options),
     createChecksStep(),
     createApprovalStep(options),
+  ]);
+}
+
+/**
+ * The full engine registry (T-015): the non-agent trio **plus** the `agent`
+ * interpreter, so the orchestrator can route the whole example pipeline
+ * (create-worktree → implement → simplify → audit → commit → merge → cleanup).
+ * The `agent` step drives an ACP session, which the orchestrator supplies via
+ * its `sessionProvider` (see `loop/orchestrator.ts`); this registry only maps
+ * `type → interpreter` and hardcodes no loop behavior (AD-1).
+ */
+export function createFullRegistry(
+  options: NonAgentRegistryOptions = {},
+): StepRegistry {
+  return createStepRegistry([
+    createShellStep(options),
+    createChecksStep(),
+    createApprovalStep(options),
+    createAgentStep(),
   ]);
 }
