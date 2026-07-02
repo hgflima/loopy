@@ -97,7 +97,7 @@
 
 ## Fase 3 — TUI ao vivo + observabilidade
 
-- [ ] T-016: Store observável + logging
+- [x] T-016: Store observável + logging
       tui/store.ts (estado observável parallel-ready, sem singleton de "task atual") + logging/
       logger.ts (log por task em .loopy/logs/<id>.log + captura de tráfego ACP quando
       capture_acp_traffic). Depende de T-010,T-011.
