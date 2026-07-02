@@ -103,18 +103,29 @@ export interface CreateShellStepOptions {
 }
 
 /** Non-empty stdout+stderr of one command, for the aggregated step `output`. */
-function commandText(result: ShellCommandResult): string {
+export function commandText(result: ShellCommandResult): string {
   return [result.stdout, result.stderr]
     .map((s) => s.trimEnd())
     .filter((s) => s !== "")
     .join("\n");
 }
 
+/**
+ * Append a failed command's detail (stderr, falling back to stdout) to a reason
+ * headline, on its own line — or return the headline unchanged when empty.
+ */
+export function withCommandDetail(
+  head: string,
+  failure: ShellCommandResult,
+): string {
+  const detail = failure.stderr.trim() || failure.stdout.trim();
+  return detail === "" ? head : `${head}\n${detail}`;
+}
+
 /** Human failure reason: which command failed, its exit code, and its output. */
 function failureReason(stepId: string, failure: ShellCommandResult): string {
-  const detail = failure.stderr.trim() || failure.stdout.trim();
   const head = `[shell:${stepId}] comando falhou (exit ${failure.exitCode}): ${failure.command}`;
-  return detail === "" ? head : `${head}\n${detail}`;
+  return withCommandDetail(head, failure);
 }
 
 /**

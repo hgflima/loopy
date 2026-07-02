@@ -53,7 +53,7 @@
       steps/shell.ts (run/always/on_fail, interpolado) e steps/checks.ts (lista nomeada -> runner),
       ambos via Step.execute (AD-2). Depende de T-004,T-006.
 
-- [ ] T-009: Interpretador do step approval
+- [x] T-009: Interpretador do step approval
       steps/approval.ts: gate humano (prompt) + ação (run) + on_conflict; --yes auto-aprova;
       pause sem TTY escala. [OQ2] decisão lida via port ctx.ui.requestApproval() (TUI/readline/--yes),
       orquestrador agnóstico e mockável. Depende de T-004,T-007.

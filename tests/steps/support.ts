@@ -137,6 +137,8 @@ export interface StepContextOverrides {
   readonly flags?: Partial<RunFlags>;
   readonly iteration?: number;
   readonly attempt?: number;
+  /** The human-gate port (approval step); defaults to auto-approving. */
+  readonly ui?: UiPort;
 }
 
 /** Assemble a {@link StepContext} for a step interpreter under test. */
@@ -153,7 +155,7 @@ export function makeStepContext(overrides: StepContextOverrides): StepContext {
     session: inertSession,
     git: inertGit,
     checks: overrides.checks ?? inertChecks,
-    ui: inertUi,
+    ui: overrides.ui ?? inertUi,
     logger: overrides.logger ?? makeLogger(),
   };
 }
