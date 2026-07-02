@@ -1,0 +1,71 @@
+# Minimal example project consumed by the --dry-run integration test.
+version: "1"
+name: fixture-loop
+workspace:
+  root: "."
+  parent_branch: "main"
+  worktrees_dir: ".worktrees"
+acp:
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  request_timeout_seconds: 1800
+  permissions:
+    default_mode: acceptEdits
+    on_request: allow
+inputs:
+  spec: "SPEC.md"
+  plan: "tasks/plan.md"
+  todo: "tasks/todo.md"
+  backlog:
+    pending_marker: "- [ ]"
+    done_marker: "- [x]"
+    task_id_pattern: "T-\\d+"
+    body: indented
+    mark_done_on_success: true
+checks:
+  ci:
+    - { name: typecheck, run: "npm run typecheck" }
+    - { name: test, run: "npm test" }
+pipeline:
+  - id: create-worktree
+    type: shell
+    run:
+      - git worktree add -b "${task.branch}" "${worktree.path}" "${workspace.parent_branch}"
+  - id: implement
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      Implemente ${task.id} — ${task.title} conforme ${inputs.spec}.
+      ${task.body}
+    retry_prompt: |
+      Os checks falharam. Corrija.
+      ${checks.report}
+    verify: { run: ci, max_attempts: 3, on_fail: escalate }
+  - id: audit
+    type: agent
+    clear_context: true
+    mode: plan
+    prompt: |
+      Audite ${task.id} contra ${inputs.spec}. NAO edite.
+      Responda "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
+    expect: "AUDIT: PASS"
+    on_expect_fail: escalate
+  - id: merge
+    type: approval
+    prompt: "Aprovar merge da task ${task.id} em ${workspace.parent_branch}?"
+    run:
+      - 'git -C "${workspace.root}" merge --no-ff "${task.branch}"'
+    on_conflict: escalate
+  - id: cleanup
+    type: shell
+    always: true
+    run:
+      - git -C "${workspace.root}" worktree remove --force "${worktree.path}"
+stop_conditions:
+  max_iterations: 10
+  stop_signal_file: ".loopy.stop"
+concurrency: 1
+policies:
+  escalation: { action: pause, keep_worktree: true, notify: stderr }
+  git: { require_clean_parent: true }
+logging: { dir: ".loopy/logs", per_task: true, capture_acp_traffic: false }

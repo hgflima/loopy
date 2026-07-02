@@ -31,7 +31,7 @@
       checks.report/inputs/workspace). [OQ1] chave desconhecida ABORTA com erro claro (var+step);
       conhecida-porém-vazia renderiza vazio. retry_prompt vs prompt, resolvido 1x/tentativa. Depende de T-001.
 
-- [ ] T-005: CLI entrypoint + --dry-run (fatia vertical)
+- [x] T-005: CLI entrypoint + --dry-run (fatia vertical)
       index.ts (commander: [dir] + --config/--dry-run/--task/--max-iterations/--yes/--no-tui/
       --verbose). --dry-run carrega config+backlog, resolve interpolação e imprime o pipeline
       resolvido SEM escrita/commit/merge (Success Criterion #8). Depende de T-002,T-003,T-004.
