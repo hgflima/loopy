@@ -252,18 +252,26 @@ describe("runLoop — order + mark-done", () => {
 });
 
 describe("runLoop — always + failure", () => {
-  it("skips non-always steps after a failure but still runs always steps", async () => {
+  it("skips non-always steps after a failure but still runs always steps (keep_worktree off)", async () => {
     const rec: Recorder = { order: [] };
     const registry = scriptedRegistry(rec, {
       s2: { ok: false, reason: "boom" },
     });
     const { port, marked } = recordingMarkDone();
-    const config = makeConfig([
-      shell("s1"),
-      shell("s2"),
-      shell("s3"),
-      shell("cleanup", { always: true }),
-    ]);
+    // `keep_worktree: false` so the `always` teardown runs after a failure;
+    // with the default `keep_worktree: true` it would be suppressed (see
+    // `tests/policies/escalation.test.ts`).
+    const config = makeConfig(
+      [
+        shell("s1"),
+        shell("s2"),
+        shell("s3"),
+        shell("cleanup", { always: true }),
+      ],
+      {
+        escalation: { action: "pause", keep_worktree: false, notify: "stderr" },
+      },
+    );
 
     const result = await runLoop(
       config,

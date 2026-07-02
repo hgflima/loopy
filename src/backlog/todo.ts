@@ -207,6 +207,29 @@ export function pendingTasks(tasks: readonly Task[]): Task[] {
   return tasks.filter((task) => !task.done);
 }
 
+/** The outcome of a `--task T-NNN` selection (OQ6). */
+export interface TaskSelection {
+  /** The requested task, or `undefined` when it is not in the pending list. */
+  readonly task?: Task;
+  /** Pending tasks that precede the requested one (for the non-blocking warning). */
+  readonly priorPending: readonly Task[];
+}
+
+/**
+ * Select a single pending task by id (the `--task` escape hatch, OQ6). Returns
+ * the task plus the pending tasks that come before it in file order, so the CLI
+ * can warn — without blocking — that earlier work is still open. When `id` is not
+ * pending, `task` is `undefined` and there is nothing to warn about.
+ */
+export function selectTask(
+  pending: readonly Task[],
+  id: string,
+): TaskSelection {
+  const index = pending.findIndex((task) => task.id === id);
+  if (index < 0) return { priorPending: [] };
+  return { task: pending[index], priorPending: pending.slice(0, index) };
+}
+
 /**
  * Idempotently mark task `id` done: rewrite its `- [ ]` to `- [x]`, touching
  * nothing else. Returns the source unchanged when the task is already done, and

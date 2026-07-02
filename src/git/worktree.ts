@@ -30,6 +30,8 @@
  *    when, and how conflicts escalate is decided by `loopy.yml` + the
  *    orchestrator.
  */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { execa } from "execa";
 import type { GitPort, MergeResult } from "../types";
 
@@ -145,4 +147,87 @@ export function createGit(options: CreateGitOptions): Git {
       return out.trim() === "";
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// First-run setup (T-018) — init a workspace that is not yet a git repo.
+//
+// These are standalone (not part of {@link Git}, which assumes an existing
+// repo): the CLI calls them BEFORE building a `Git`, gated behind a human
+// approval (SPEC "Ask first: git init ... quando o diretório não é repo git").
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether `root` is inside a git working tree. Uses
+ * `git rev-parse --is-inside-work-tree` (non-throwing): exit 0 ⇒ a repo,
+ * non-zero (or an error) ⇒ not a repo.
+ */
+export async function isGitRepo(
+  root: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  const res = await execa("git", ["rev-parse", "--is-inside-work-tree"], {
+    cwd: root,
+    env,
+    reject: false,
+  });
+  return res.exitCode === 0 && res.stdout.trim() === "true";
+}
+
+/** Options for {@link initGitRepo}. */
+export interface InitGitRepoOptions {
+  /** Absolute path of the workspace to initialize. */
+  readonly root: string;
+  /** Branch the repo is initialized on (canonically `workspace.parent_branch`). */
+  readonly defaultBranch: string;
+  /** Lines to ensure present in `.gitignore` (created or appended, de-duped). */
+  readonly ignore: readonly string[];
+  /** Initial commit message (defaults to a `chore(loopy)` bookkeeping message). */
+  readonly commitMessage?: string;
+  /** Process env for git (defaults to `process.env` — uses the user's identity). */
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * Ensure `.gitignore` under `root` contains every line in `ignore`, preserving
+ * any existing content and never duplicating a line already present. Writes the
+ * updated file to disk.
+ */
+function ensureGitignore(root: string, ignore: readonly string[]): void {
+  const path = join(root, ".gitignore");
+  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const present = new Set(
+    existing
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== ""),
+  );
+  const missing = ignore.filter((line) => !present.has(line.trim()));
+  if (existing === "" && missing.length === 0) return;
+
+  // Keep existing bytes; append only the missing lines, with a clean newline seam.
+  const base =
+    existing === "" || existing.endsWith("\n") ? existing : `${existing}\n`;
+  const appended = missing.length > 0 ? `${missing.join("\n")}\n` : "";
+  writeFileSync(path, `${base}${appended}`, "utf8");
+}
+
+/**
+ * Initialize `root` as a git repo on `defaultBranch`, write the `.gitignore`,
+ * and create the initial commit capturing everything present (the committed
+ * harness — `.claude` — included, per SPEC). Mechanics only: what to ignore and
+ * which branch come from config (AD-1); the caller owns the approval gate.
+ */
+export async function initGitRepo(options: InitGitRepoOptions): Promise<void> {
+  const { root, defaultBranch, ignore } = options;
+  const env = options.env ?? process.env;
+  const message = options.commitMessage ?? "chore(loopy): initialize workspace";
+
+  const run = (args: readonly string[]): Promise<unknown> =>
+    execa("git", [...args], { cwd: root, env });
+
+  await run(["init", "-b", defaultBranch]);
+  ensureGitignore(root, ignore);
+  await run(["add", "-A"]);
+  await run(["commit", "-m", message]);
 }

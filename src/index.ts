@@ -1,33 +1,66 @@
 /**
  * `loopy` CLI entrypoint — `commander` parses `loopy [dir]` plus the run flags,
- * then dispatches to the engine. This phase (T-005) wires the `--dry-run`
- * capability end-to-end: load config → load backlog → resolve interpolation per
- * task → print the resolved pipeline, with **no** writes/commit/merge (Success
- * Criterion #8). The remaining flags are parsed and carried on {@link RunFlags}
- * for later phases even though the live loop is not yet wired here.
+ * then dispatches to the engine. Two capabilities are wired here:
  *
- * `run()` is exported and takes the user args + an IO sink so it is testable
- * without touching `process`. The bottom-of-file guard invokes it only when the
- * module is executed directly (never when imported by tests).
+ *  - **`--dry-run`** (T-005): load config → load backlog → resolve interpolation
+ *    per task → print the resolved pipeline, with **no** writes/commit/merge
+ *    (Success Criterion #8).
+ *  - **live run** (T-018): first-run git setup behind approval, `--task`
+ *    selection with the OQ6 non-blocking warning, flag threading
+ *    (`--config`/`--max-iterations`/`--verbose`/`--yes`), then the outer loop
+ *    (`runLoop`) over the selected tasks driving the ACP agent.
+ *
+ * `run()` is exported and takes the user args, an IO sink, and optional
+ * {@link RunHooks} so the live path is fully testable without spawning an agent
+ * (the ACP composition is the only untested glue — validated manually / by the
+ * `e2e-agent` test). The bottom-of-file guard invokes it only when the module is
+ * executed directly (never when imported by tests).
  *
  * Errors are values at this boundary: config / backlog / interpolation failures
- * are caught and reported as a clear message + non-zero exit, never a stack
- * trace. Invalid config aborts before any effect (it is loaded first).
+ * and live-run infra faults become a clear message + non-zero exit, never a
+ * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
 import { realpathSync } from "node:fs";
 import { relative, resolve as resolvePath } from "node:path";
+import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { openAgent } from "./acp/agent";
+import { createSessionPool } from "./acp/session";
 import {
   BacklogError,
   backlogOptionsFrom,
   loadBacklog,
   pendingTasks,
+  selectTask,
 } from "./backlog/todo";
+import { runChecks } from "./checks/runner";
 import { ConfigError, loadConfig } from "./config/load";
+import {
+  createGit,
+  initGitRepo,
+  isGitRepo,
+  type InitGitRepoOptions,
+} from "./git/worktree";
 import { InterpolationError } from "./interp/resolver";
-import { formatDryRunPlan, planDryRun } from "./loop/orchestrator";
-import type { LoopyConfig, RunFlags, Task } from "./types";
+import { createLogFactory } from "./logging/logger";
+import {
+  createMarkDonePort,
+  formatDryRunPlan,
+  planDryRun,
+  runLoop,
+  type OrchestratorDeps,
+  type RunLoopResult,
+} from "./loop/orchestrator";
+import { createFullRegistry } from "./steps/index";
+import { startUi } from "./tui/start";
+import type {
+  ChecksRunnerPort,
+  LoggerPort,
+  LoopyConfig,
+  RunFlags,
+  Task,
+} from "./types";
 
 const VERSION = "0.1.0";
 
@@ -41,6 +74,40 @@ const defaultIO: RunIO = {
   out: (text) => void process.stdout.write(text),
   err: (text) => void process.stderr.write(text),
 };
+
+/** Everything the live executor needs to run the outer loop over `tasks`. */
+export interface RunLiveArgs {
+  readonly config: LoopyConfig;
+  /** The already-selected tasks (pending list, or the single `--task`). */
+  readonly tasks: readonly Task[];
+  readonly flags: RunFlags;
+  /** Absolute workspace root. */
+  readonly root: string;
+  /** Absolute path of the loaded `loopy.yml`. */
+  readonly configPath: string;
+  /** Absolute path of the backlog (`todo.md`). */
+  readonly todoPath: string;
+  readonly io: RunIO;
+}
+
+/** Runs the outer loop for real (spawns the ACP agent, wires git/checks/UI). */
+export type RunLive = (args: RunLiveArgs) => Promise<RunLoopResult>;
+
+/**
+ * Injectable seams for the live path, so the CLI logic (git-init gate, `--task`
+ * selection + warning, flag threading, exit codes) is testable without an agent.
+ * Every hook defaults to its real implementation.
+ */
+export interface RunHooks {
+  /** Whether `root` is already a git repo (default: real `isGitRepo`). */
+  readonly isGitRepo?: (root: string) => Promise<boolean> | boolean;
+  /** Initialize a fresh repo (default: real `initGitRepo`). */
+  readonly initGitRepo?: (opts: InitGitRepoOptions) => Promise<void>;
+  /** Human approval for the git-init gate (default: a readline y/N prompt). */
+  readonly approve?: (prompt: string) => Promise<boolean>;
+  /** The live outer-loop executor (default: {@link defaultRunLive}). */
+  readonly runLive?: RunLive;
+}
 
 /** Parse a `--max-iterations` value as a positive integer (commander hook). */
 function parsePositiveInt(value: string): number {
@@ -129,8 +196,200 @@ function printDryRun(
   return 0;
 }
 
+/** `.gitignore` lines for a first-run init, derived from config (AD-1). */
+function gitignoreLinesFor(config: LoopyConfig): string[] {
+  const worktrees = `${config.workspace.worktrees_dir.replace(/[/\\]+$/, "")}/`;
+  // The logging dir's top segment (`.loopy/logs` → `.loopy/`).
+  const loopyDir = `${config.logging.dir.split(/[/\\]/)[0]}/`;
+  const stop = config.stop_conditions.stop_signal_file;
+  // De-duplicate while preserving order.
+  return [...new Set([worktrees, loopyDir, stop])];
+}
+
+/** A readline y/N approval prompt on stderr — the default git-init gate. */
+async function defaultApprove(prompt: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = (await rl.question(`${prompt} [y/N] `)).trim().toLowerCase();
+    return ["y", "yes", "s", "sim"].includes(answer);
+  } finally {
+    rl.close();
+  }
+}
+
+/** A logger that writes to the per-run log file AND echoes progress to the CLI. */
+function teeLogger(file: LoggerPort, io: RunIO, verbose: boolean): LoggerPort {
+  return {
+    info: (m) => {
+      file.info(m);
+      io.out(`${m}\n`);
+    },
+    debug: (m) => {
+      file.debug(m);
+      if (verbose) io.out(`${m}\n`);
+    },
+    error: (m) => {
+      file.error(m);
+      io.err(`${m}\n`);
+    },
+  };
+}
+
+/**
+ * The real live executor: spawn the single ACP agent for the run, wire git +
+ * checks + the full step registry + the UI/approval transport, run the outer
+ * loop over `tasks`, then tear everything down. This is thin composition over
+ * already-tested building blocks; it hardcodes no loop behavior (AD-1).
+ */
+async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
+  const { config, tasks, flags, root, todoPath, io } = args;
+  const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+
+  const logFactory = createLogFactory({
+    config: config.logging,
+    root,
+    verbose: flags.verbose,
+  });
+  const logger = teeLogger(logFactory.forTask("loopy"), io, flags.verbose);
+  const ui = startUi({ flags });
+
+  const agent = await openAgent({
+    command: config.acp.command,
+    cwd: root,
+    permissions: { on_request: config.acp.permissions.on_request },
+    logger,
+  });
+  const pool = createSessionPool({ ctx: agent.ctx, text: agent.text, logger });
+  const git = createGit({ root });
+  const checks: ChecksRunnerPort = {
+    run: (list, opts) => runChecks(list, { cwd: resolvePath(root, opts.cwd) }),
+  };
+
+  const deps: OrchestratorDeps = {
+    root,
+    flags,
+    registry: createFullRegistry(),
+    checks,
+    ui: ui.ui,
+    logger,
+    markDone: createMarkDonePort({
+      todoPath,
+      commit: git.commitPaths,
+      backlogOptions,
+    }),
+    git,
+    notify: (message) => io.err(`${message}\n`),
+    sessionProvider: (cwd) => pool.session(cwd),
+  };
+
+  try {
+    return await runLoop(config, tasks, deps);
+  } finally {
+    pool.closeAll();
+    await agent.shutdown();
+    ui.stop();
+  }
+}
+
+/**
+ * The live path (no `--dry-run`): first-run git setup behind approval, `--task`
+ * selection + OQ6 warning, then the outer loop. Returns the process exit code:
+ * `1` when a task escalated or the parent was dirty, `0` otherwise.
+ */
+async function runLiveFlow(
+  dir: string,
+  config: LoopyConfig,
+  paths: { readonly configPath: string; readonly todoPath: string },
+  pending: readonly Task[],
+  flags: RunFlags,
+  io: RunIO,
+  hooks: RunHooks,
+): Promise<number> {
+  const root = resolvePath(dir);
+  const repoPresent = hooks.isGitRepo ?? isGitRepo;
+  const doInit = hooks.initGitRepo ?? initGitRepo;
+  const approve = hooks.approve ?? defaultApprove;
+  const live = hooks.runLive ?? defaultRunLive;
+
+  // 1) First-run git setup — behind a human approval gate (auto under --yes).
+  if (!(await repoPresent(root))) {
+    const prompt = `O diretório "${root}" não é um repositório git. Inicializar (git init + .gitignore + commit inicial)?`;
+    const approved = flags.yes || (await approve(prompt));
+    if (!approved) {
+      io.err(
+        "loopy: inicialização recusada — loopy requer um repositório git. Abortando.\n",
+      );
+      return 1;
+    }
+    await doInit({
+      root,
+      defaultBranch: config.workspace.parent_branch,
+      ignore: gitignoreLinesFor(config),
+    });
+    io.out(`loopy: repositório git inicializado em "${root}".\n`);
+  }
+
+  // 2) Task selection — `--task` runs one task (OQ6: warn, don't block).
+  let tasks: readonly Task[] = pending;
+  if (flags.task !== undefined) {
+    const selection = selectTask(pending, flags.task);
+    if (selection.task === undefined) {
+      io.err(
+        `loopy: task "${flags.task}" não encontrada entre as pendentes.\n`,
+      );
+      return 1;
+    }
+    if (selection.priorPending.length > 0) {
+      const ids = selection.priorPending.map((t) => t.id).join(", ");
+      io.err(
+        `loopy: aviso — tasks pendentes anteriores a ${flags.task}: ${ids} ` +
+          `(rodando ${flags.task} isolada mesmo assim).\n`,
+      );
+    }
+    tasks = [selection.task];
+  }
+
+  if (tasks.length === 0) {
+    io.out("loopy: nenhuma task pendente no backlog — nada a fazer.\n");
+    return 0;
+  }
+
+  // 3) Run the live outer loop.
+  io.out(`loopy: iniciando ${tasks.length} task(s)…\n`);
+  let result: RunLoopResult;
+  try {
+    result = await live({
+      config,
+      tasks,
+      flags,
+      root,
+      configPath: paths.configPath,
+      todoPath: paths.todoPath,
+      io,
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    io.err(`loopy: falha na execução: ${reason}\n`);
+    return 1;
+  }
+
+  // 4) Summary + exit code.
+  io.out(
+    `loopy: fim — ${result.completed.length} concluída(s), ` +
+      `${result.escalated.length} escalada(s); parada: ${result.stoppedBy}.\n`,
+  );
+  const problem =
+    result.escalated.length > 0 || result.stoppedBy === "dirty_parent";
+  return problem ? 1 : 0;
+}
+
 /** Load config + backlog for `dir` and dispatch on the flags. */
-function execute(dir: string, flags: RunFlags, io: RunIO): number {
+async function execute(
+  dir: string,
+  flags: RunFlags,
+  io: RunIO,
+  hooks: RunHooks,
+): Promise<number> {
   const configPath = flags.config
     ? resolvePath(flags.config)
     : resolvePath(dir, "loopy.yml");
@@ -146,12 +405,15 @@ function execute(dir: string, flags: RunFlags, io: RunIO): number {
     return printDryRun(config, pending, { configPath, todoPath }, io);
   }
 
-  // The live loop (worktree → agent → merge → mark-done) lands in later phases
-  // (T-010/T-015). Flags are parsed and available; only --dry-run is wired now.
-  io.err(
-    "loopy: execucao interativa ainda não implementada nesta fase — use --dry-run.\n",
+  return runLiveFlow(
+    dir,
+    config,
+    { configPath, todoPath },
+    pending,
+    flags,
+    io,
+    hooks,
   );
-  return 1;
 }
 
 /**
@@ -162,6 +424,7 @@ function execute(dir: string, flags: RunFlags, io: RunIO): number {
 export async function run(
   argv: readonly string[],
   io: RunIO = defaultIO,
+  hooks: RunHooks = {},
 ): Promise<number> {
   const program = buildProgram(io);
 
@@ -179,9 +442,7 @@ export async function run(
   const dir = (program.args[0] as string | undefined) ?? ".";
 
   try {
-    // `execute` is synchronous; the async signature lets later phases await the
-    // live loop. A synchronous throw here is still caught below.
-    return execute(dir, flags, io);
+    return await execute(dir, flags, io, hooks);
   } catch (err) {
     if (
       err instanceof ConfigError ||

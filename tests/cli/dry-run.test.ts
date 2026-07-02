@@ -153,13 +153,6 @@ describe("run — error handling", () => {
 });
 
 describe("run — flag parsing", () => {
-  it("without --dry-run, reports the live loop is not yet wired (exit 1)", async () => {
-    const cap = capture();
-    const code = await run([PROJECT], cap.io);
-    expect(code).toBe(1);
-    expect(cap.stderr()).toMatch(/ainda não implementad/i);
-  });
-
   it("accepts every documented flag together in --dry-run", async () => {
     const cap = capture();
     const code = await run(

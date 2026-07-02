@@ -461,7 +461,18 @@ export interface OrchestratorDeps {
   readonly logger: LoggerPort;
   /** Marks a task done + commits the mark, once its pipeline succeeds. */
   readonly markDone: MarkDonePort;
-  /** Engine-level git handle; unused by the non-agent spine (fail-loud default). */
+  /**
+   * Operator notification sink for escalation / dirty-parent halts
+   * (`policies.escalation.notify`, canonically stderr). Optional: absent on the
+   * unit spine; wired to stderr by the CLI. The message is also logged.
+   */
+  readonly notify?: (message: string) => void;
+  /**
+   * Engine-level git handle. Used by the non-agent spine only for
+   * `require_clean_parent` (when the policy is on); a step's own `ctx.git` falls
+   * back to a fail-loud stub. When absent, `require_clean_parent` cannot run and
+   * is a no-op — the CLI always wires a real handle, so the check is live there.
+   */
   readonly git?: GitPort;
   /** ACP session; unused by the non-agent spine (fail-loud default). */
   readonly session?: AgentSession;
@@ -560,12 +571,26 @@ async function runTaskPipeline(
   let firstFailure:
     { readonly stepId: string; readonly reason?: string } | undefined;
   let checksReport = "";
+  // On a failed task, `keep_worktree` preserves the worktree for inspection —
+  // which means the teardown (`always`) steps that would remove it must be
+  // suppressed. Read once; it is config-driven, not engine policy (AD-1).
+  const keepWorktree = config.policies.escalation.keep_worktree;
 
   for (const step of config.pipeline) {
     const always = step.always ?? false;
-    if (firstFailure !== undefined && !always) {
+    const failed = firstFailure !== undefined;
+    // After a failure, skip non-`always` steps. An `always` teardown step still
+    // runs — unless `keep_worktree` is on, which suppresses it too so the failed
+    // worktree survives for inspection.
+    if (failed && !always) {
       deps.logger.debug(
         `[orchestrator] step "${step.id}" pulado (falha anterior; não é always)`,
+      );
+      continue;
+    }
+    if (failed && keepWorktree) {
+      deps.logger.debug(
+        `[orchestrator] step "${step.id}" (always) pulado: keep_worktree preserva o worktree após a falha`,
       );
       continue;
     }
@@ -642,6 +667,7 @@ export type LoopStopReason =
   | "backlog_empty"
   | "max_iterations"
   | "stop_signal"
+  | "dirty_parent"
   | "escalation_pause"
   | "escalation_abort";
 
@@ -675,11 +701,14 @@ export async function runLoop(
 ): Promise<RunLoopResult> {
   const completed: string[] = [];
   const escalated: string[] = [];
-  const maxIterations = config.stop_conditions.max_iterations;
+  // `--max-iterations N` overrides the yml ceiling when provided (T-018).
+  const maxIterations =
+    deps.flags.maxIterations ?? config.stop_conditions.max_iterations;
   const stopSignalPath = join(
     deps.root,
     config.stop_conditions.stop_signal_file,
   );
+  const requireCleanParent = config.policies.git.require_clean_parent;
   let iterations = 0;
   // Every exit returns the same accumulators; only the stop reason differs.
   const finish = (stoppedBy: LoopStopReason): RunLoopResult => ({
@@ -702,6 +731,21 @@ export async function runLoop(
       );
       return finish("max_iterations");
     }
+    // `require_clean_parent`: never proceed onto a dirty parent working tree.
+    // Checked before EACH task (a merge/mark-done could dirty it mid-run), and
+    // only when a git handle is wired — the CLI always wires one.
+    if (
+      requireCleanParent &&
+      deps.git !== undefined &&
+      !(await deps.git.isParentClean())
+    ) {
+      const message =
+        `[require_clean_parent] parent "${config.workspace.parent_branch}" está sujo — ` +
+        `interrompendo antes da task ${task.id} (commite ou limpe o working tree)`;
+      deps.logger.error(message);
+      deps.notify?.(message);
+      return finish("dirty_parent");
+    }
 
     iterations += 1;
     deps.logger.info(
@@ -722,10 +766,12 @@ export async function runLoop(
     escalated.push(task.id);
     const policy = config.policies.escalation;
     const keep = policy.keep_worktree ? " (keep_worktree)" : "";
-    deps.logger.error(
+    const message =
       `[escalonamento] task ${task.id} falhou no step "${outcome.failedStepId}": ` +
-        `${outcome.reason ?? "(sem motivo)"} → ação "${policy.action}"${keep}`,
-    );
+      `${outcome.reason ?? "(sem motivo)"} → ação "${policy.action}"${keep}`;
+    deps.logger.error(message);
+    // Surface to the operator per `policies.escalation.notify` (e.g. stderr).
+    if (policy.notify) deps.notify?.(message);
     if (decideEscalation(policy.action) === "stop") {
       return finish(
         policy.action === "abort_loop"

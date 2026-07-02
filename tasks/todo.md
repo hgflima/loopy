@@ -111,7 +111,7 @@
 
 ## Fase 4 — Hardening & aceitação total
 
-- [ ] T-018: Stop conditions, escalonamento, git-init e flags restantes
+- [x] T-018: Stop conditions, escalonamento, git-init e flags restantes
       Completa stop_conditions (max_iterations, stop_signal_file), escalation (pause/skip_task/
       abort_loop + keep_worktree/notify), require_clean_parent no início da task, setup git de 1º
       run (git init + commit inicial + .gitignore, atrás de aprovação) e flags --task/--max-iterations/
