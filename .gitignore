@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.worktrees/
+.loopy/
+.loopy.stop
+*.log
+.DS_Store

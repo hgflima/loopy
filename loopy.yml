@@ -1,0 +1,179 @@
+# ============================================================================
+# loopy.yml — configuração do loop agêntico interpretado pelo `loopy`
+# ----------------------------------------------------------------------------
+# O `loopy` é um MOTOR genérico: ele NÃO tem pipeline hardcoded. Tudo que
+# define o loop — steps, ordem, prompts, comandos shell, modo/autonomia do
+# agente, retries, escalonamento e gates — vive AQUI. O motor só implementa a
+# mecânica: plumbing ACP, ciclo de sessão, /clear, worktree, interpolação,
+# laço externo sobre o backlog, execução dos checks + agregação do report,
+# parse de veredito e a TUI.
+#
+# Dois níveis de loop:
+#   - EXTERNO  -> itera cada task pendente do backlog (todo.md), em ordem.
+#   - INTERNO  -> o bloco `verify:` de um step `agent`: prompt -> checks ->
+#                 em falha, re-prompta com ${checks.report} até passar ou
+#                 esgotar max_attempts.
+#
+# Interpolação (substituição simples ${...}, resolvida por task/tentativa):
+#   ${task.id} ${task.slug} ${task.title} ${task.body} ${task.branch}
+#   ${worktree.path} ${worktree.diff}
+#   ${iteration} ${attempt} ${checks.report}
+#   ${inputs.spec|plan|todo}
+#   ${workspace.root|parent_branch|worktrees_dir}
+# ============================================================================
+
+version: "1"
+name: agentic-loop
+
+# ----------------------------------------------------------------------------
+# Contexto de trabalho
+# ----------------------------------------------------------------------------
+workspace:
+  root: "."
+  parent_branch: "main" # destino do merge
+  worktrees_dir: ".worktrees"
+
+# ----------------------------------------------------------------------------
+# Mecânica do subprocesso ACP (NÃO é o loop; é como o motor fala com o agente)
+# O motor sobe 1 processo `claude-agent-acp` para a run inteira e abre 1 sessão
+# ACP por task (cwd = worktree; cwd é imutável por sessão). Cada sessão carrega
+# o `.claude` do seu worktree, então o harness precisa estar COMMITADO no
+# parent_branch.
+# ----------------------------------------------------------------------------
+acp:
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  request_timeout_seconds: 1800
+  permissions:
+    default_mode: acceptEdits # modo default da sessão; cada step `agent` pode sobrescrever com `mode:`
+    on_request: allow # handler request_permission: allow (por-padrão) | policy (futuro: deny-patterns)
+
+# ----------------------------------------------------------------------------
+# Entradas lidas no início da run
+# ----------------------------------------------------------------------------
+inputs:
+  spec: "SPEC.md"
+  plan: "tasks/plan.md"
+  todo: "tasks/todo.md"
+  backlog:
+    pending_marker: "- [ ]"
+    done_marker: "- [x]"
+    task_id_pattern: "T-\\d+" # id extraído de "- [ ] T-001: título"
+    body: indented # ${task.body} = bloco indentado sob o checkbox (até o próximo)
+    mark_done_on_success: true # reescreve "- [ ]" -> "- [x]" após o pipeline inteiro passar
+
+# ----------------------------------------------------------------------------
+# Listas de checks nomeadas e reutilizáveis (comandos shell do PROJETO-ALVO).
+# Rodadas pelo motor via execa, no cwd do worktree; report agregado + truncado.
+# ----------------------------------------------------------------------------
+checks:
+  ci:
+    - { name: typecheck, run: "npm run typecheck" }
+    - { name: lint, run: "npm run lint" }
+    - { name: test, run: "npm test" }
+
+# ----------------------------------------------------------------------------
+# O LOOP. Ordenado. Cada step tem um `type`: agent | shell | checks | approval.
+# O motor só interpreta estas primitivas — nada aqui é hardcoded no código.
+# ----------------------------------------------------------------------------
+pipeline:
+  # 1) Worktree isolado para a task.
+  - id: create-worktree
+    type: shell
+    run:
+      - git worktree add -b "${task.branch}" "${worktree.path}" "${workspace.parent_branch}"
+      # worktrees NÃO compartilham node_modules — instale as deps do projeto-alvo.
+      # Ajuste ao seu gerenciador (o comando abaixo é ilustrativo):
+      - npm ci --prefix "${worktree.path}"
+
+  # 2) Implementar + verificar (LOOP INTERNO via `verify:`).
+  - id: implement
+    type: agent
+    clear_context: true # /clear antes do prompt (contexto fresco)
+    mode: acceptEdits
+    prompt: |
+      Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
+      ${task.body}
+    retry_prompt: |
+      A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
+      ${checks.report}
+    verify: { run: ci, max_attempts: 4, on_fail: escalate }
+
+  # 3) Simplificar sem mudar comportamento; revalida os checks.
+  - id: simplify
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      Simplifique o que está no worktree sem alterar comportamento: remova
+      duplicação, clareie nomes, reduza complexidade. Não adicione dependências.
+      Diff atual:
+      ${worktree.diff}
+    verify: { run: ci, max_attempts: 2, on_fail: escalate }
+
+  # 4) Auditar (read-only): só julga, não edita. Veredito parseável.
+  - id: audit
+    type: agent
+    clear_context: true
+    mode: plan # read-only: o adaptador bloqueia execução de tools
+    prompt: |
+      Audite a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}:
+      correção, segurança, casos de borda e aderência ao harness. NÃO edite nada.
+      Diff sob revisão:
+      ${worktree.diff}
+      Responda na ÚLTIMA linha exatamente "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
+    expect: "AUDIT: PASS" # o motor barra o commit se não vier PASS
+    on_expect_fail: escalate
+
+  # 5) Commitar no worktree.
+  - id: commit
+    type: shell
+    run:
+      - git -C "${worktree.path}" add -A
+      - git -C "${worktree.path}" commit -m "feat(${task.id}): ${task.title}"
+
+  # 6) Merge no parent — atrás de gate de aprovação humana (salvo --yes).
+  - id: merge
+    type: approval
+    prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
+    run:
+      - git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"
+    on_conflict: escalate # abortar + escalar (preserva worktree)
+
+  # 7) Limpar worktree e branch da task (roda sempre).
+  - id: cleanup
+    type: shell
+    always: true
+    run:
+      - git -C "${workspace.root}" worktree remove --force "${worktree.path}"
+      - git -C "${workspace.root}" branch -D "${task.branch}"
+
+# ----------------------------------------------------------------------------
+# Condições de parada do loop externo (encerra quando QUALQUER uma ocorrer)
+# ----------------------------------------------------------------------------
+stop_conditions:
+  max_iterations: 25
+  stop_signal_file: ".loopy.stop" # crie este arquivo para encerrar após a task corrente
+
+# ----------------------------------------------------------------------------
+# Concorrência (v1: sequencial; data-model é parallel-ready)
+# ----------------------------------------------------------------------------
+concurrency: 1
+
+# ----------------------------------------------------------------------------
+# Políticas de erro / escalonamento
+# ----------------------------------------------------------------------------
+policies:
+  escalation:
+    action: pause # pause | skip_task | abort_loop
+    keep_worktree: true # preserva o worktree para inspeção
+    notify: stderr
+  git:
+    require_clean_parent: true # aborta se o parent_branch estiver sujo no início da task
+
+# ----------------------------------------------------------------------------
+# Observabilidade
+# ----------------------------------------------------------------------------
+logging:
+  dir: ".loopy/logs"
+  per_task: true # um log por task (${task.id}.log)
+  capture_acp_traffic: true # grava as mensagens JSON-RPC do ACP

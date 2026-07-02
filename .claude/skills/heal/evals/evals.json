@@ -1,0 +1,29 @@
+{
+  "skill_name": "heal",
+  "evals": [
+    {
+      "id": 1,
+      "name": "skill-bug-missing-section",
+      "prompt": "O prd-generator acabou de gerar um PRD mas ele pulou completamente a seção de 'Non-Functional Requirements' mesmo eu tendo mencionado requisitos de performance e segurança explicitamente no input. Tive que adicionar a seção manualmente. Faz um lessons learned disso.",
+      "expected_output": "Triage identifica o componente como skill:prd-generator, propõe severity medium (required partial rework). Root cause analysis aponta layer 'skill' com confidence high. Solution formula ações para atualizar o SKILL.md do prd-generator com validação obrigatória de seções. O fluxo completo de 9 fases executa sem erros.",
+      "context": "Simula uma conversa onde o usuário pediu um PRD e o skill gerou output incompleto. O componente afetado é uma skill existente no harness-lab.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "rule-violation-zero-deps",
+      "prompt": "Acabei de pedir pro Claude refatorar o src/core/installer.js e ele adicionou axios como dependência. A gente tem uma regra de zero dependencies no CLAUDE.md mas ele ignorou. O código já foi commitado. Analisa o que deu errado.",
+      "expected_output": "Triage identifica o componente como rule:claude-md, propõe severity high (delivered output was wrong). Root cause analysis aponta layer 'rule' — a regra existe mas não foi suficiente para prevenir a violação. Solution formula ações para reforçar a regra no CLAUDE.md e/ou criar uma regra mais específica em .claude/rules/. Fluxo completo executa.",
+      "context": "Simula uma violação de regra fundamental do projeto. Testa se o skill consegue identificar que o problema está na camada de regras, não no código.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "silent-failure-diagram-mismatch",
+      "prompt": "O customer-journey-to-be skill gerou um mapa de jornada mas acabei de perceber que o diagrama Mermaid não bate com a descrição textual — o diagrama mostra 4 fases mas o texto descreve 5 fases. O output parecia correto à primeira vista. Preciso entender por que isso aconteceu e prevenir.",
+      "expected_output": "Triage identifica o componente como skill:customer-journey-to-be, propõe severity critical (silent failure — output appeared correct but wasn't). Root cause analysis aponta layer 'skill' com confidence medium (pode ser limitação do skill ou do modelo). Solution formula ações para adicionar validação de consistência entre output textual e diagramas no SKILL.md. Fluxo completo executa.",
+      "context": "Simula uma falha silenciosa — o tipo mais perigoso. Testa se o skill consegue classificar corretamente como critical e propor validação cruzada.",
+      "files": []
+    }
+  ]
+}
