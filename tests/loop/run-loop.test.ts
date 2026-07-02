@@ -1,0 +1,640 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execa } from "execa";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  parseBacklog,
+  pendingTasks,
+  backlogOptionsFrom,
+} from "../../src/backlog/todo";
+import { parseConfig } from "../../src/config/load";
+import { createGit } from "../../src/git/worktree";
+import {
+  createMarkDonePort,
+  decideEscalation,
+  runLoop,
+  type MarkDonePort,
+  type OrchestratorDeps,
+} from "../../src/loop/orchestrator";
+import {
+  createNonAgentRegistry,
+  createStepRegistry,
+} from "../../src/steps/index";
+import type { RunShellCommand } from "../../src/steps/shell";
+import type {
+  ChecksReport,
+  ChecksRunnerPort,
+  EscalationPolicy,
+  LoopyConfig,
+  RunFlags,
+  Step,
+  StepConfig,
+  StepContext,
+  StepResult,
+  StepType,
+  StopConditions,
+  Task,
+  UiPort,
+} from "../../src/types";
+import { defaultConfig, makeLogger } from "../steps/support";
+
+// ---------------------------------------------------------------------------
+// Builders — keep every test a self-contained specification (DAMP).
+// ---------------------------------------------------------------------------
+
+const DEFAULT_FLAGS: RunFlags = {
+  dryRun: false,
+  yes: false,
+  tui: false,
+  verbose: false,
+};
+
+/** A pending task with the fields the loop reads. */
+function makeTask(id: string, over: Partial<Task> = {}): Task {
+  return {
+    id,
+    slug: id.toLowerCase(),
+    title: `Task ${id}`,
+    body: "",
+    branch: `loopy/${id}`,
+    done: false,
+    ...over,
+  };
+}
+
+/** A `LoopyConfig` with a custom pipeline + optional stop/escalation overrides. */
+function makeConfig(
+  pipeline: StepConfig[],
+  over: {
+    readonly checks?: LoopyConfig["checks"];
+    readonly stop?: StopConditions;
+    readonly escalation?: EscalationPolicy;
+  } = {},
+): LoopyConfig {
+  const base = defaultConfig(over.checks ?? {});
+  return {
+    ...base,
+    pipeline,
+    stop_conditions: over.stop ?? base.stop_conditions,
+    policies: {
+      ...base.policies,
+      escalation: over.escalation ?? base.policies.escalation,
+    },
+  };
+}
+
+/** A `MarkDonePort` that records ids and can fire a side effect on each mark. */
+function recordingMarkDone(onMark?: (id: string) => void): {
+  readonly port: MarkDonePort;
+  readonly marked: string[];
+} {
+  const marked: string[] = [];
+  return {
+    marked,
+    port: {
+      async markDone(id) {
+        marked.push(id);
+        onMark?.(id);
+      },
+    },
+  };
+}
+
+/** Records execution order as `${task.id}:${step.id}`, in the order steps ran. */
+interface Recorder {
+  readonly order: string[];
+}
+
+/**
+ * A registry of scripted interpreters for shell/checks/approval (agent absent).
+ * Each records that it ran, then returns the scripted result — a per-(task,step)
+ * entry wins over a per-step one, defaulting to success.
+ */
+function scriptedRegistry(
+  rec: Recorder,
+  script: Record<string, StepResult> = {},
+) {
+  const make = (type: StepType): Step => ({
+    type,
+    async execute(ctx: StepContext): Promise<StepResult> {
+      const key = `${ctx.task.id}:${ctx.step.id}`;
+      rec.order.push(key);
+      return script[key] ?? script[ctx.step.id] ?? { ok: true };
+    },
+  });
+  return createStepRegistry([make("shell"), make("checks"), make("approval")]);
+}
+
+const passingChecks: ChecksRunnerPort = {
+  run: async () => ({ ok: true, results: [], text: "" }),
+};
+
+const approvingUi: UiPort = { requestApproval: async () => true };
+
+/** Assemble `OrchestratorDeps`, defaulting every port a mechanics test ignores. */
+function makeDeps(parts: {
+  readonly registry: OrchestratorDeps["registry"];
+  readonly markDone: MarkDonePort;
+  readonly root?: string;
+  readonly flags?: Partial<RunFlags>;
+  readonly checks?: ChecksRunnerPort;
+  readonly ui?: UiPort;
+}): OrchestratorDeps {
+  return {
+    root: parts.root ?? join(tmpdir(), "loopy-fake-root-that-does-not-exist"),
+    flags: { ...DEFAULT_FLAGS, ...parts.flags },
+    registry: parts.registry,
+    checks: parts.checks ?? passingChecks,
+    ui: parts.ui ?? approvingUi,
+    logger: makeLogger(),
+    markDone: parts.markDone,
+  };
+}
+
+/** Handy step-config constructors. */
+const shell = (id: string, over: Partial<StepConfig> = {}): StepConfig =>
+  ({
+    id,
+    type: "shell",
+    run: [],
+    ...over,
+  }) as StepConfig;
+const checks = (id: string, run = "ci"): StepConfig => ({
+  id,
+  type: "checks",
+  run,
+});
+const approval = (id: string): StepConfig => ({
+  id,
+  type: "approval",
+  prompt: "ok?",
+});
+const agent = (id: string): StepConfig => ({
+  id,
+  type: "agent",
+  prompt: "do it",
+});
+
+// ---------------------------------------------------------------------------
+// decideEscalation (pure)
+// ---------------------------------------------------------------------------
+
+describe("decideEscalation", () => {
+  it("continues on skip_task and stops on pause/abort_loop", () => {
+    expect(decideEscalation("skip_task")).toBe("continue");
+    expect(decideEscalation("pause")).toBe("stop");
+    expect(decideEscalation("abort_loop")).toBe("stop");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Outer-loop mechanics (scripted interpreters — deterministic, no I/O)
+// ---------------------------------------------------------------------------
+
+describe("runLoop — order + mark-done", () => {
+  it("runs the pipeline in order for every task and marks each on success", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([shell("a"), checks("b"), approval("c")]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1"), makeTask("T-2")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    expect(rec.order).toEqual([
+      "T-1:a",
+      "T-1:b",
+      "T-1:c",
+      "T-2:a",
+      "T-2:b",
+      "T-2:c",
+    ]);
+    expect(marked).toEqual(["T-1", "T-2"]);
+    expect(result.completed).toEqual(["T-1", "T-2"]);
+    expect(result.escalated).toEqual([]);
+    expect(result.iterations).toBe(2);
+    expect(result.stoppedBy).toBe("backlog_empty");
+  });
+
+  it("marks a task done only after the WHOLE pipeline succeeds (not mid-way)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      mid: { ok: false, reason: "boom" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([shell("first"), shell("mid"), shell("last")]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // A failure part-way through means the task is never marked.
+    expect(marked).toEqual([]);
+    expect(result.completed).toEqual([]);
+    expect(result.escalated).toEqual(["T-1"]);
+  });
+});
+
+describe("runLoop — always + failure", () => {
+  it("skips non-always steps after a failure but still runs always steps", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      s2: { ok: false, reason: "boom" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([
+      shell("s1"),
+      shell("s2"),
+      shell("s3"),
+      shell("cleanup", { always: true }),
+    ]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // s3 is skipped (prior failure, not always); cleanup runs anyway.
+    expect(rec.order).toEqual(["T-1:s1", "T-1:s2", "T-1:cleanup"]);
+    // A failed pipeline is never marked done.
+    expect(marked).toEqual([]);
+    expect(result.escalated).toEqual(["T-1"]);
+    // Default escalation action is `pause` → the outer loop halts.
+    expect(result.stoppedBy).toBe("escalation_pause");
+  });
+
+  it("runs an always step even when EVERY prior step succeeded (happy path)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port } = recordingMarkDone();
+    const config = makeConfig([
+      shell("work"),
+      shell("cleanup", { always: true }),
+    ]);
+
+    await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    expect(rec.order).toEqual(["T-1:work", "T-1:cleanup"]);
+  });
+});
+
+describe("runLoop — escalation actions", () => {
+  const failing = { s: { ok: false, reason: "nope" } } as const;
+
+  it("skip_task: does not mark the failed task and continues to the next", async () => {
+    const rec: Recorder = { order: [] };
+    // Only T-1's step fails; T-2 succeeds.
+    const registry = scriptedRegistry(rec, {
+      "T-1:s": { ok: false, reason: "nope" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([shell("s")], {
+      escalation: {
+        action: "skip_task",
+        keep_worktree: true,
+        notify: "stderr",
+      },
+    });
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1"), makeTask("T-2")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // T-1 fails and is skipped (never marked); T-2 still runs and is marked.
+    expect(rec.order).toEqual(["T-1:s", "T-2:s"]);
+    expect(result.escalated).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-2"]);
+    expect(marked).toEqual(["T-2"]);
+    expect(result.iterations).toBe(2);
+    expect(result.stoppedBy).toBe("backlog_empty");
+  });
+
+  it("abort_loop: stops immediately after the failing task", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, failing);
+    const { port } = recordingMarkDone();
+    const config = makeConfig([shell("s")], {
+      escalation: {
+        action: "abort_loop",
+        keep_worktree: false,
+        notify: "stderr",
+      },
+    });
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1"), makeTask("T-2")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // T-2 never starts.
+    expect(rec.order).toEqual(["T-1:s"]);
+    expect(result.iterations).toBe(1);
+    expect(result.escalated).toEqual(["T-1"]);
+    expect(result.stoppedBy).toBe("escalation_abort");
+  });
+});
+
+describe("runLoop — stop conditions", () => {
+  it("empty backlog: no iterations, stopped by backlog_empty", async () => {
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const config = makeConfig([shell("s")]);
+
+    const result = await runLoop(
+      config,
+      [],
+      makeDeps({ registry: scriptedRegistry(rec), markDone: port }),
+    );
+
+    expect(result.iterations).toBe(0);
+    expect(result.completed).toEqual([]);
+    expect(result.stoppedBy).toBe("backlog_empty");
+    expect(rec.order).toEqual([]);
+  });
+
+  it("max_iterations: halts the outer loop at the ceiling", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([shell("s")], {
+      stop: { max_iterations: 2, stop_signal_file: ".loopy.stop" },
+    });
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1"), makeTask("T-2"), makeTask("T-3")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    expect(marked).toEqual(["T-1", "T-2"]);
+    expect(result.iterations).toBe(2);
+    expect(result.stoppedBy).toBe("max_iterations");
+    // T-3 never starts.
+    expect(rec.order).toEqual(["T-1:s", "T-2:s"]);
+  });
+
+  it("stop_signal_file created mid-run halts AFTER the current task", async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "loopy-stop-")));
+    try {
+      const rec: Recorder = { order: [] };
+      const registry = scriptedRegistry(rec);
+      // Drop the stop file the moment T-1 is marked done.
+      const { port, marked } = recordingMarkDone((id) => {
+        if (id === "T-1") writeFileSync(join(root, ".loopy.stop"), "");
+      });
+      const config = makeConfig([shell("s")]);
+
+      const result = await runLoop(
+        config,
+        [makeTask("T-1"), makeTask("T-2"), makeTask("T-3")],
+        makeDeps({ registry, markDone: port, root }),
+      );
+
+      // T-1 completes; the signal is seen before T-2 starts.
+      expect(marked).toEqual(["T-1"]);
+      expect(result.iterations).toBe(1);
+      expect(result.stoppedBy).toBe("stop_signal");
+      expect(rec.order).toEqual(["T-1:s"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("runLoop — registry gaps + report threading", () => {
+  it("skips a step whose type has no interpreter (agent stub) without failing", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec); // shell/checks/approval only, no agent
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([
+      shell("before"),
+      agent("think"),
+      shell("after"),
+    ]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // The agent step is a no-op skip; the pipeline still succeeds and marks done.
+    expect(rec.order).toEqual(["T-1:before", "T-1:after"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
+  });
+
+  it("threads the latest ${checks.report} into a later step (real interpreters)", async () => {
+    const ran: string[] = [];
+    const recordingRunner: RunShellCommand = async (command) => {
+      ran.push(command);
+      return { command, exitCode: 0, ok: true, stdout: "", stderr: "" };
+    };
+    const report: ChecksReport = {
+      ok: true,
+      results: [],
+      text: "RELATORIO-DOS-CHECKS",
+    };
+    const checksPort: ChecksRunnerPort = { run: async () => report };
+    const { port } = recordingMarkDone();
+
+    const config = makeConfig(
+      [
+        checks("verify", "ci"),
+        shell("log", { run: ["echo ${checks.report}"] }),
+      ],
+      { checks: { ci: [{ name: "x", run: "true" }] } },
+    );
+
+    await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({
+        registry: createNonAgentRegistry({ runCommand: recordingRunner }),
+        markDone: port,
+        checks: checksPort,
+      }),
+    );
+
+    // The shell step saw the report the checks step produced.
+    expect(ran).toEqual(["echo RELATORIO-DOS-CHECKS"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end over a real git repo — non-agent spine (AD-6: real git, not mocked)
+// ---------------------------------------------------------------------------
+
+const E2E_YML = `
+version: "1"
+name: e2e-nonagent
+workspace:
+  root: "."
+  parent_branch: "main"
+  worktrees_dir: ".worktrees"
+acp:
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  request_timeout_seconds: 1800
+  permissions: { default_mode: acceptEdits, on_request: allow }
+inputs:
+  spec: "SPEC.md"
+  plan: "tasks/plan.md"
+  todo: "tasks/todo.md"
+  backlog:
+    pending_marker: "- [ ]"
+    done_marker: "- [x]"
+    task_id_pattern: "T-\\\\d+"
+    body: indented
+    mark_done_on_success: true
+checks:
+  ci:
+    - { name: noop, run: "true" }
+pipeline:
+  - id: create-worktree
+    type: shell
+    run:
+      - git worktree add -b "\${task.branch}" "\${worktree.path}" "\${workspace.parent_branch}"
+  - id: implement
+    type: shell
+    run:
+      - 'echo "\${task.id}" > "\${worktree.path}/feature.txt"'
+      - git -C "\${worktree.path}" add -A
+      - 'git -C "\${worktree.path}" commit -m "feat: \${task.id}"'
+  - id: merge
+    type: approval
+    prompt: "Aprovar merge de \${task.id}?"
+    run:
+      - 'git -C "\${workspace.root}" merge --no-ff "\${task.branch}" -m "merge: \${task.id}"'
+    on_conflict: escalate
+  - id: cleanup
+    type: shell
+    always: true
+    run:
+      - git -C "\${workspace.root}" worktree remove --force "\${worktree.path}"
+      - git -C "\${workspace.root}" branch -D "\${task.branch}"
+stop_conditions:
+  max_iterations: 25
+  stop_signal_file: ".loopy.stop"
+concurrency: 1
+policies:
+  escalation: { action: pause, keep_worktree: true, notify: stderr }
+  git: { require_clean_parent: true }
+logging: { dir: ".loopy/logs", per_task: true, capture_acp_traffic: false }
+`;
+
+const TODO_MD = `# Backlog
+
+- [ ] T-100: Primeira task
+      Corpo da primeira task.
+`;
+
+describe("runLoop — e2e over a real repo (non-agent spine)", () => {
+  let root: string;
+
+  async function git(args: readonly string[]): Promise<void> {
+    await execa("git", args, {
+      cwd: root,
+      env: { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    });
+  }
+
+  beforeEach(async () => {
+    root = realpathSync(mkdtempSync(join(tmpdir(), "loopy-loop-")));
+    await git(["init", "-b", "main"]);
+    await git(["config", "user.email", "test@example.com"]);
+    await git(["config", "user.name", "Loopy Test"]);
+    await git(["config", "commit.gpgsign", "false"]);
+    writeFileSync(
+      join(root, ".gitignore"),
+      ".worktrees/\n.loopy/\n.loopy.stop\n",
+    );
+    mkdirSync(join(root, "tasks"), { recursive: true });
+    writeFileSync(join(root, "tasks", "todo.md"), TODO_MD);
+    await git(["add", "-A"]);
+    await git(["commit", "-m", "init"]);
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("worktree → commit → merge(--yes) → cleanup → mark-done + commit", async () => {
+    const config = parseConfig(E2E_YML);
+    const todoPath = join(root, "tasks", "todo.md");
+    const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+    const tasks = pendingTasks(
+      parseBacklog(readFileSync(todoPath, "utf8"), backlogOptions),
+    );
+    const g = createGit({ root });
+
+    const deps: OrchestratorDeps = {
+      root,
+      flags: { ...DEFAULT_FLAGS, yes: true },
+      registry: createNonAgentRegistry(),
+      checks: passingChecks,
+      ui: {
+        requestApproval: async () => {
+          throw new Error("under --yes the human gate must not be consulted");
+        },
+      },
+      logger: makeLogger(),
+      markDone: createMarkDonePort({
+        todoPath,
+        commit: g.commitPaths,
+        backlogOptions,
+      }),
+    };
+
+    const result = await runLoop(config, tasks, deps);
+
+    expect(result.completed).toEqual(["T-100"]);
+    expect(result.escalated).toEqual([]);
+    expect(result.stoppedBy).toBe("backlog_empty");
+
+    // The task branch's file was merged into the parent working tree.
+    expect(readFileSync(join(root, "feature.txt"), "utf8")).toBe("T-100\n");
+    // The worktree and its branch were cleaned up.
+    expect(existsSync(join(root, ".worktrees", "T-100"))).toBe(false);
+    const branches = await execa(
+      "git",
+      ["branch", "--list", tasks[0]!.branch],
+      {
+        cwd: root,
+        env: { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+      },
+    );
+    expect(branches.stdout.trim()).toBe("");
+    // The backlog was marked done...
+    expect(readFileSync(todoPath, "utf8")).toContain("- [x] T-100:");
+    // ...and that mark was committed on the parent (keeping it clean).
+    const log = await execa("git", ["log", "--oneline"], {
+      cwd: root,
+      env: { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    });
+    expect(log.stdout).toContain("conclui T-100");
+    // Parent working tree is clean after a successful run.
+    expect(await g.isParentClean()).toBe(true);
+  });
+});

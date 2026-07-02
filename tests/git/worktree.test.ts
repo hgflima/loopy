@@ -192,6 +192,33 @@ describe("createGit — merge", () => {
 });
 
 // ---------------------------------------------------------------------------
+// commitPaths — the engine's mark-done bookkeeping commit
+// ---------------------------------------------------------------------------
+
+describe("createGit — commitPaths", () => {
+  it("stages only the given paths and commits them with the message", async () => {
+    const g = createGit({ root });
+    await writeFile(join(root, "file.txt"), "changed\n"); // tracked change
+    await writeFile(join(root, "other.txt"), "unrelated\n"); // must NOT be swept in
+
+    await g.commitPaths([join(root, "file.txt")], "chore: mark done");
+
+    // The message landed as the newest commit...
+    const subject = await git(root, ["log", "-1", "--pretty=%s"]);
+    expect(subject).toBe("chore: mark done");
+    // ...containing only file.txt (other.txt stays untracked/uncommitted).
+    const names = await git(root, [
+      "show",
+      "--name-only",
+      "--pretty=format:",
+      "HEAD",
+    ]);
+    expect(names.trim()).toBe("file.txt");
+    expect(await exists(join(root, "other.txt"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isParentClean — require_clean_parent detection
 // ---------------------------------------------------------------------------
 

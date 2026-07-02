@@ -58,7 +58,7 @@
       pause sem TTY escala. [OQ2] decisão lida via port ctx.ui.requestApproval() (TUI/readline/--yes),
       orquestrador agnóstico e mockável. Depende de T-004,T-007.
 
-- [ ] T-010: Orquestrador — laço externo sobre steps não-agente
+- [x] T-010: Orquestrador — laço externo sobre steps não-agente
       loop/orchestrator.ts: itera backlog, interpola contexto, executa pipeline via registry de
       steps (AD-2), respeita ordem/always/on_fail, stop_conditions e escalation, marca - [x] só
       no fim + commita a marcação. Step agent ainda não registrado. Depende de T-005,T-007,T-008,T-009.

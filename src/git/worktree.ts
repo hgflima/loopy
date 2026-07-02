@@ -47,6 +47,14 @@ export interface CreateGitOptions {
 export interface Git extends GitPort {
   /** Force-delete a branch (`git branch -D`). Throws if git refuses. */
   deleteBranch(branch: string): Promise<void>;
+  /**
+   * Stage exactly `paths` and commit them with `message` — the engine's own
+   * bookkeeping commit (canonically the mark-done edit to `todo.md`, so the
+   * `parent_branch` stays clean for the next task's `require_clean_parent`).
+   * Staging only `paths` keeps unrelated changes out of the commit. Throws if
+   * git refuses (a real fault, not normal flow — AD-5).
+   */
+  commitPaths(paths: readonly string[], message: string): Promise<void>;
 }
 
 /**
@@ -98,6 +106,13 @@ export function createGit(options: CreateGitOptions): Git {
 
     async deleteBranch(branch) {
       await run(["branch", "-D", branch]);
+    },
+
+    async commitPaths(paths, message) {
+      // `--` guards against a path being read as a revision; staging only these
+      // paths keeps the commit scoped to the mark-done edit.
+      await run(["add", "--", ...paths]);
+      await run(["commit", "-m", message]);
     },
 
     async merge(branch, opts): Promise<MergeResult> {
