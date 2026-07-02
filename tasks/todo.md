@@ -17,7 +17,7 @@
       StepResult, ChecksReport, LoopyConfig, StepContext e a interface Step (AD-2).
       Só as deps do SPEC — nenhuma nova. Verify: typecheck/lint/test verdes.
 
-- [ ] T-002: Schema + loader do loopy.yml (zod)
+- [x] T-002: Schema + loader do loopy.yml (zod)
       config/schema.ts (zod para workspace/acp/inputs/checks/pipeline união discriminada das
       4 primitivas + verify/stop_conditions/policies/logging) e config/load.ts (parse YAML,
       valida, defaults, erro claro). Valida o loopy.yml de exemplo. Depende de T-001.

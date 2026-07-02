@@ -129,14 +129,17 @@ pipeline:
     type: shell
     run:
       - git -C "${worktree.path}" add -A
-      - git -C "${worktree.path}" commit -m "feat(${task.id}): ${task.title}"
+      # single-quoted: the message contains ": " which YAML would otherwise
+      # read as a mapping — quoting keeps it a single command string.
+      - 'git -C "${worktree.path}" commit -m "feat(${task.id}): ${task.title}"'
 
   # 6) Merge no parent — atrás de gate de aprovação humana (salvo --yes).
   - id: merge
     type: approval
     prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
     run:
-      - git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"
+      # single-quoted for the same reason as the commit message above.
+      - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"'
     on_conflict: escalate # abortar + escalar (preserva worktree)
 
   # 7) Limpar worktree e branch da task (roda sempre).
