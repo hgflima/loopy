@@ -26,7 +26,7 @@
       backlog/todo.ts: parse de checkboxes, id (T-\d+)/slug/title/body (bloco indentado),
       mark_done idempotente que preserva o arquivo. Fixtures. Depende de T-001.
 
-- [ ] T-004: Resolver de interpolação ${...}
+- [x] T-004: Resolver de interpolação ${...}
       interp/resolver.ts: substituição simples do escopo (task/worktree/iteration/attempt/
       checks.report/inputs/workspace). [OQ1] chave desconhecida ABORTA com erro claro (var+step);
       conhecida-porém-vazia renderiza vazio. retry_prompt vs prompt, resolvido 1x/tentativa. Depende de T-001.
