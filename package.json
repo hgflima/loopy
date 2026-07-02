@@ -1,0 +1,39 @@
+{
+  "name": "loopy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Motor de loop agentico config-driven via ACP",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.29",
+    "commander": "^15",
+    "execa": "^9",
+    "ink": "^7",
+    "react": "^19",
+    "yaml": "^2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "eslint": "^9",
+    "prettier": "^3",
+    "tsx": "^4",
+    "typescript": "^5",
+    "typescript-eslint": "^8",
+    "vitest": "^3"
+  }
+}

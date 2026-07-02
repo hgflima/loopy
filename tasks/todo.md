@@ -11,7 +11,7 @@
 
 ## Fase 0 — Fundação & Walking Skeleton (`--dry-run`)
 
-- [ ] T-001: Scaffold do projeto + types.ts
+- [x] T-001: Scaffold do projeto + types.ts
       package.json (ESM, scripts dev/typecheck/lint/format/test) + tsconfig estrito +
       eslint/prettier + vitest + layout do SPEC (stubs) + src/types.ts com Task, StepConfig,
       StepResult, ChecksReport, LoopyConfig, StepContext e a interface Step (AD-2).

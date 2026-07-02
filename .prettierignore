@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.worktrees/
+.loopy/
+package-lock.json
+
+# Pre-existing inputs / committed agent harness — owned outside this project,
+# not reformatted by the loopy toolchain.
+.claude/
+tasks/
+SPEC.md
+loopy.yml
