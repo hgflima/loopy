@@ -118,7 +118,7 @@
       --config/--verbose. [OQ6] --task avisa (não bloqueia) se houver tasks - [ ] anteriores pendentes.
       Depende de T-015.
 
-- [ ] T-019: Passagem de aceitação + loopy.yml de exemplo + docs
+- [x] T-019: Passagem de aceitação + loopy.yml de exemplo + docs
       Valida Success Criteria #1-#8 fim-a-fim; loopy.yml de exemplo casa com o schema final;
       README/uso; .gitignore (.worktrees/, .loopy/, .loopy.stop); nada temporário sobra ao final.
       Depende de T-016,T-017,T-018.
