@@ -23,6 +23,7 @@ import {
   ndJsonStream,
 } from "@agentclientprotocol/sdk";
 import type {
+  ContentBlock,
   PermissionOption,
   SessionModeState,
   StopReason,
@@ -55,6 +56,16 @@ export interface FakeScenario {
 }
 
 const DEFAULT_TURN: FakeTurn = { text: ["ok"], stopReason: "end_turn" };
+
+/** The raw command that resets context — modeled as a no-op, non-scripted turn. */
+const CLEAR_COMMAND = "/clear";
+
+/** Concatenate the text content blocks of a prompt (ignoring other block types). */
+function promptText(prompt: readonly ContentBlock[]): string {
+  return prompt
+    .map((block) => (block.type === "text" ? block.text : ""))
+    .join("");
+}
 
 function parseScenario(): FakeScenario {
   const raw = process.argv[2];
@@ -92,6 +103,12 @@ async function main(): Promise<void> {
     })
     .onRequest(AGENT_METHODS.session_set_mode, () => ({}))
     .onRequest(AGENT_METHODS.session_prompt, async ({ params, client }) => {
+      // `/clear` resets context: it completes immediately, streams no text, and
+      // does NOT consume a scripted turn (it is not a prompt turn).
+      if (promptText(params.prompt).trim() === CLEAR_COMMAND) {
+        return { stopReason: "end_turn" };
+      }
+
       const turn =
         scenario.turns?.[promptTurn] ?? scenario.defaultTurn ?? DEFAULT_TURN;
       promptTurn += 1;

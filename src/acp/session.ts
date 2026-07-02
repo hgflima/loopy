@@ -1,2 +1,280 @@
-// Placeholder module — implementation lands in a later task (see tasks/plan.md).
-export {};
+/**
+ * Per-task ACP session — one session bound to one worktree (AD-3, T-012).
+ *
+ * The run owns a single ACP process/connection (`acp/agent.ts`); this layer
+ * turns its long-lived {@link ClientContext} into task-sized sessions. Per AD-3
+ * a session's `cwd` is fixed at `session/new` and immutable for its lifetime, so
+ * each worktree needs its own session — which is exactly why sessions are pooled
+ * by worktree path ({@link createSessionPool}, parallel-ready even though v1 runs
+ * `concurrency: 1`).
+ *
+ * A {@link LoopySession} wraps the SDK's `ActiveSession` and exposes the mechanics
+ * the `agent` step (T-014) drives, nothing more (AD-1 — no loop behavior here):
+ *
+ *  - {@link LoopySession.setMode} → `session/set_mode` (`plan` / `acceptEdits` …).
+ *  - {@link LoopySession.clear}   → sends the raw `/clear` command, which the
+ *    agent forwards to reset context while keeping the same `sessionId`.
+ *  - {@link LoopySession.prompt}  → one prompt turn; resolves with the ACP
+ *    `stopReason` only (never the text).
+ *  - {@link LoopySession.readText} → the turn's text from our OWN buffer (OQ3),
+ *    reset before every turn; the SDK's `readText()` is kept as a fallback.
+ *  - {@link LoopySession.cancel}  → `session/cancel`.
+ *
+ * OQ3 timing: the turn buffer is fed asynchronously by the `session/update`
+ * handler in `acp/client.ts`, so it is only *eventually* consistent with a
+ * resolved `prompt()`. To make {@link LoopySession.readText} a reliable
+ * synchronous read, {@link LoopySession.prompt} drives the SDK's `readText()`
+ * (which drains the update queue up to the turn's `stop`) alongside the prompt
+ * response; once that settles every `agent_message_chunk` has been dispatched and
+ * our buffer holds the complete turn.
+ *
+ * Errors as values (AD-5): a non-`end_turn` stop reason is *returned*, not
+ * thrown — {@link classifyStopReason} tells the caller whether it is a failure
+ * (`refusal` / `max_tokens` / `max_turn_requests`) or our own stop-signal
+ * (`cancelled`). Exceptions are reserved for infra/transport faults.
+ */
+import { AGENT_METHODS } from "@agentclientprotocol/sdk";
+import type { ActiveSession, ClientContext } from "@agentclientprotocol/sdk";
+import type { AgentSession, LoggerPort, StopReason } from "../types";
+import type { TurnTextBuffer } from "./client";
+
+/** The raw command that resets an agent's context while keeping the session. */
+export const CLEAR_COMMAND = "/clear";
+
+// ---------------------------------------------------------------------------
+// Stop-reason classification (AC3) — pure, reused by the `agent` step (T-014).
+// ---------------------------------------------------------------------------
+
+/** How the engine reads a prompt turn's {@link StopReason}. */
+export type StopOutcome =
+  /** The turn completed normally (`end_turn`). */
+  | "success"
+  /** The turn ended abnormally and should fail the step. */
+  | "failure"
+  /** We cancelled the turn (`cancelled`) — an engine stop-signal, not a failure. */
+  | "stop_signal";
+
+/**
+ * Classify an ACP {@link StopReason}: only `end_turn` is a success;
+ * `cancelled` is our own stop-signal; everything else (`refusal`, `max_tokens`,
+ * `max_turn_requests`) is a step failure.
+ */
+export function classifyStopReason(reason: StopReason): StopOutcome {
+  if (reason === "end_turn") return "success";
+  if (reason === "cancelled") return "stop_signal";
+  return "failure";
+}
+
+/** `true` only when the turn completed normally (`end_turn`). */
+export function isTurnSuccess(reason: StopReason): boolean {
+  return classifyStopReason(reason) === "success";
+}
+
+/** `true` when the turn ended because we cancelled it (`cancelled`). */
+export function isStopSignal(reason: StopReason): boolean {
+  return classifyStopReason(reason) === "stop_signal";
+}
+
+// ---------------------------------------------------------------------------
+// Session wrapper
+// ---------------------------------------------------------------------------
+
+/** Dependencies a session needs from the run's single agent connection. */
+export interface SessionDeps {
+  /** Long-lived client context from {@link AgentHandle} (`acp/agent.ts`). */
+  readonly ctx: ClientContext;
+  /** Turn-scoped text buffer (OQ3), keyed by `sessionId`. */
+  readonly text: TurnTextBuffer;
+  readonly logger?: LoggerPort;
+}
+
+/** A worktree-bound ACP session plus explicit teardown. */
+export interface LoopySession extends AgentSession {
+  /** Stop routing this session's updates (teardown). Idempotent. */
+  dispose(): void;
+}
+
+class SessionWrapper implements LoopySession {
+  private lastTurnText = "";
+
+  constructor(
+    private readonly deps: SessionDeps,
+    private readonly active: ActiveSession,
+  ) {}
+
+  get sessionId(): string {
+    return this.active.sessionId;
+  }
+
+  /** Session-scoped debug line, e.g. `[acp] cancel (<sessionId>)`. */
+  private logAction(action: string): void {
+    this.deps.logger?.debug(`[acp] ${action} (${this.sessionId})`);
+  }
+
+  async setMode(modeId: string): Promise<void> {
+    await this.deps.ctx.request(AGENT_METHODS.session_set_mode, {
+      sessionId: this.sessionId,
+      modeId,
+    });
+    this.logAction(`set_mode ${modeId}`);
+  }
+
+  /** Reset context via the raw `/clear` command; keeps the same `sessionId`. */
+  async clear(): Promise<void> {
+    await this.runTurn(CLEAR_COMMAND);
+    this.logAction(CLEAR_COMMAND);
+  }
+
+  async prompt(text: string): Promise<StopReason> {
+    return this.runTurn(text);
+  }
+
+  /** The current turn's text (OQ3 buffer first, SDK `readText()` as fallback). */
+  readText(): string {
+    const own = this.deps.text.read(this.sessionId);
+    // Buffer is the source of truth; the SDK-drained text is the cross-check
+    // fallback only if the buffer is somehow still shorter (it should be equal
+    // after `runTurn`'s flush barrier).
+    return own.length >= this.lastTurnText.length ? own : this.lastTurnText;
+  }
+
+  async cancel(): Promise<void> {
+    await this.deps.ctx.notify(AGENT_METHODS.session_cancel, {
+      sessionId: this.sessionId,
+    });
+    this.logAction("cancel");
+  }
+
+  dispose(): void {
+    this.active.dispose();
+  }
+
+  /**
+   * Run one prompt turn: reset the turn buffer, send the prompt, and drain the
+   * SDK update queue up to the turn's `stop`. Returns the ACP `stopReason`
+   * (errors as values, AD-5).
+   *
+   * OQ3 timing: the SDK's `session/update` router enqueues a chunk synchronously,
+   * but our own turn buffer is fed by a *later* notification handler whose
+   * microtask can outlive a resolved `prompt()`. Every one of those handler
+   * microtasks is already queued once the turn's `stop` is read, so crossing a
+   * single macrotask boundary ({@link flushSessionUpdates}) after the drain
+   * guarantees the buffer holds the complete turn — and that no late chunk leaks
+   * into the next turn's (reset) buffer.
+   */
+  private async runTurn(text: string): Promise<StopReason> {
+    this.deps.text.reset(this.sessionId);
+    // Start the prompt first so its `stop` completion is queued before the
+    // concurrent drain reads it.
+    const responsePromise = this.active.prompt(text);
+    const [response, drained] = await Promise.all([
+      responsePromise,
+      this.active.readText(),
+    ]);
+    await flushSessionUpdates();
+    this.lastTurnText = drained;
+    return response.stopReason as StopReason;
+  }
+}
+
+/**
+ * Yield to a macrotask so all pending `session/update` handler microtasks flush
+ * (see {@link SessionWrapper.runTurn}). A macrotask runs only after the microtask
+ * queue drains, so one boundary is enough.
+ */
+function flushSessionUpdates(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+/** A started {@link LoopySession} builder (mirrors `ctx.buildSession(cwd)`). */
+export interface SessionStarter {
+  /** Open the session (`session/new` with `cwd`) and wrap it. */
+  start(): Promise<LoopySession>;
+}
+
+/**
+ * Build a session bound to `cwd` (a worktree). Call {@link SessionStarter.start}
+ * to actually open it — mirrors the SDK's `ctx.buildSession(cwd).start()` while
+ * layering the turn buffer, `/clear`, and stop-reason mechanics on top.
+ */
+export function buildSession(deps: SessionDeps, cwd: string): SessionStarter {
+  return {
+    async start(): Promise<LoopySession> {
+      const active = await deps.ctx.buildSession(cwd).start();
+      return new SessionWrapper(deps, active);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Session pool — keyed by worktree (parallel-ready)
+// ---------------------------------------------------------------------------
+
+/**
+ * A pool of {@link LoopySession}s keyed by worktree path. Since ACP `cwd` is
+ * immutable per session, one worktree maps to exactly one session; the pool
+ * de-dupes concurrent opens and owns teardown. v1 runs `concurrency: 1`, but the
+ * keying is parallel-ready.
+ */
+export interface AgentSessionPool {
+  /** Get (or open, once) the session bound to `cwd`. */
+  session(cwd: string): Promise<LoopySession>;
+  /** The already-open session for `cwd`, if any (no side effects). */
+  peek(cwd: string): LoopySession | undefined;
+  /** Dispose and forget the session for `cwd`. */
+  close(cwd: string): void;
+  /** Dispose every session (teardown at run end). */
+  closeAll(): void;
+  /** Number of distinct worktrees with a live/opening session. */
+  readonly size: number;
+}
+
+/** Build an {@link AgentSessionPool} over one agent connection. */
+export function createSessionPool(deps: SessionDeps): AgentSessionPool {
+  // `opening` de-dupes concurrent opens; `open` holds resolved sessions for
+  // synchronous `peek`/`close`.
+  const opening = new Map<string, Promise<LoopySession>>();
+  const open = new Map<string, LoopySession>();
+
+  return {
+    session(cwd: string): Promise<LoopySession> {
+      const inFlight = opening.get(cwd);
+      if (inFlight) return inFlight;
+
+      const started = buildSession(deps, cwd)
+        .start()
+        .then((session) => {
+          open.set(cwd, session);
+          return session;
+        });
+      // On failure, forget the slot so a later call can retry.
+      started.catch(() => {
+        if (opening.get(cwd) === started) opening.delete(cwd);
+      });
+      opening.set(cwd, started);
+      return started;
+    },
+
+    peek(cwd: string): LoopySession | undefined {
+      return open.get(cwd);
+    },
+
+    close(cwd: string): void {
+      open.get(cwd)?.dispose();
+      open.delete(cwd);
+      opening.delete(cwd);
+    },
+
+    closeAll(): void {
+      for (const session of open.values()) session.dispose();
+      open.clear();
+      opening.clear();
+    },
+
+    get size(): number {
+      return opening.size;
+    },
+  };
+}

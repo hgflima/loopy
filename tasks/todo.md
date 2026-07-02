@@ -73,7 +73,7 @@
       request_permission por kind, fs read/write, terminal, session/update -> onUpdate +
       buffer de texto por turno [OQ3]). Introduz o fake agent scriptable/scenario-driven [OQ5]. Depende de T-001.
 
-- [ ] T-012: Sessão ACP por task
+- [x] T-012: Sessão ACP por task
       acp/session.ts: buildSession(cwd).start(), setMode (session/set_mode), clear (/clear),
       prompt->stopReason; texto do turno via buffer próprio resetado por prompt, readText fallback [OQ3];
       cancel, teardown; non-end_turn = falha; pool keyed por worktree (parallel-ready). Depende de T-011.
