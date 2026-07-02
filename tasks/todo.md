@@ -40,7 +40,7 @@
 
 ## Fase 1 — Spine de execução sem-agente (git + checks + steps + orquestrador)
 
-- [ ] T-006: Checks runner (execa)
+- [x] T-006: Checks runner (execa)
       checks/runner.ts: roda lista nomeada via execa no cwd do worktree, SEM fail-fast, agrega
       exit/stdout/stderr num ChecksReport (= ${checks.report}). [OQ4] truncamento head+tail por check
       (orçamento por-check + teto global ~32KB), passing colapsa p/ 1 linha, marcador de elisão. Depende de T-001.
