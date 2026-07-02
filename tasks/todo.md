@@ -78,7 +78,7 @@
       prompt->stopReason; texto do turno via buffer próprio resetado por prompt, readText fallback [OQ3];
       cancel, teardown; non-end_turn = falha; pool keyed por worktree (parallel-ready). Depende de T-011.
 
-- [ ] T-013: Parser de veredito (AUDIT: PASS/FAIL)
+- [x] T-013: Parser de veredito (AUDIT: PASS/FAIL)
       steps/verdict.ts: parse tolerante da última ocorrência de AUDIT: PASS / AUDIT: FAIL: <motivo>
       sobre o buffer de texto do turno do audit [OQ3] (não o readText cumulativo); ausência = FAIL.
       Puro. Paralelizável com T-011/T-012. Depende de T-001.
