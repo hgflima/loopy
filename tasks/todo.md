@@ -45,7 +45,7 @@
       exit/stdout/stderr num ChecksReport (= ${checks.report}). [OQ4] truncamento head+tail por check
       (orçamento por-check + teto global ~32KB), passing colapsa p/ 1 linha, marcador de elisão. Depende de T-001.
 
-- [ ] T-007: Módulo de git worktree (execa, repo temporário)
+- [x] T-007: Módulo de git worktree (execa, repo temporário)
       git/worktree.ts: add/remove worktree, merge --no-ff (+on_conflict: merge --abort),
       require_clean_parent. Testado contra repo git temporário real. Depende de T-001.
 
