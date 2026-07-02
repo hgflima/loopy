@@ -67,7 +67,7 @@
 
 ## Fase 2 — Fatia do agente ACP (o coração)
 
-- [ ] T-011: Processo ACP + handlers do cliente
+- [x] T-011: Processo ACP + handlers do cliente
       acp/agent.ts (spawn npx claude-agent-acp, ndJsonStream, builder client(), connectWith,
       initialize, shutdown — 1 processo/run) e acp/client.ts (handlers antes do connect:
       request_permission por kind, fs read/write, terminal, session/update -> onUpdate +
