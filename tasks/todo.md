@@ -102,7 +102,7 @@
       logger.ts (log por task em .loopy/logs/<id>.log + captura de tráfego ACP quando
       capture_acp_traffic). Depende de T-010,T-011.
 
-- [ ] T-017: TUI Ink + fallback de linha
+- [x] T-017: TUI Ink + fallback de linha
       tui/App.tsx + components/ (TaskRow, CheckStatus, StreamPane, ApprovalPrompt): árvore de
       progresso ao vivo lendo o store (lista de tasks, try k/max, status por check, stream).
       Fallback para logs de linha sem TTY / --no-tui. Depende de T-016.
