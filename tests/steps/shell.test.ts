@@ -21,14 +21,26 @@ function shellStep(overrides: Partial<ShellStep> = {}): ShellStep {
   };
 }
 
-/** A fake command runner that records what it was asked to run, in order. */
+/**
+ * A fake command runner that records what it was asked to run, in order.
+ * `ran` holds each argv joined by spaces (handy for single-token assertions);
+ * `argvs` holds the raw argv arrays (so a test can assert exact arg boundaries).
+ */
 function recordingRunner(
   outcome: (command: string) => Partial<ShellCommandResult> = () => ({}),
-): { runner: RunShellCommand; ran: string[]; cwds: string[] } {
+): {
+  runner: RunShellCommand;
+  ran: string[];
+  argvs: string[][];
+  cwds: string[];
+} {
   const ran: string[] = [];
+  const argvs: string[][] = [];
   const cwds: string[] = [];
-  const runner: RunShellCommand = async (command, ctx) => {
+  const runner: RunShellCommand = async (argv, ctx) => {
+    const command = argv.join(" ");
     ran.push(command);
+    argvs.push([...argv]);
     cwds.push(ctx.cwd);
     const partial = outcome(command);
     const ok = partial.ok ?? true;
@@ -40,7 +52,7 @@ function recordingRunner(
       stderr: partial.stderr ?? "",
     };
   };
-  return { runner, ran, cwds };
+  return { runner, ran, argvs, cwds };
 }
 
 describe("createShellStep — execute", () => {
@@ -60,8 +72,8 @@ describe("createShellStep — execute", () => {
     expect(ran).toEqual(["a", "b", "c"]);
   });
 
-  it("interpolates each command via ctx.resolve before running it", async () => {
-    const { runner, ran } = recordingRunner();
+  it("interpolates each command per token before running it (quotes consumed)", async () => {
+    const { runner, argvs } = recordingRunner();
     const ctx = makeStepContext({
       step: shellStep({
         run: ['git worktree add -b "${task.branch}" "${worktree.path}"'],
@@ -75,7 +87,10 @@ describe("createShellStep — execute", () => {
 
     await createShellStep({ runCommand: runner }).execute(ctx);
 
-    expect(ran).toEqual(['git worktree add -b "loopy/T-001" "/wt/T-001"']);
+    // The yml's quotes are structural: they group args, they are not passed on.
+    expect(argvs).toEqual([
+      ["git", "worktree", "add", "-b", "loopy/T-001", "/wt/T-001"],
+    ]);
   });
 
   it("stops at the first failing command by default (no `always`)", async () => {
@@ -175,10 +190,102 @@ describe("createShellStep — execute", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Real subprocesses via execa (shell mode) — proves quoted args survive.
+// Regression: interpolated DATA (task title/body/diff) must never be handed to
+// a shell for a second `$`-expansion. The task titled `... ${...}` used to make
+// `git commit -m` fail with `/bin/sh: bad substitution` (and `$(...)` would have
+// been silent command injection). Now each command is argv, so the data lands
+// as a single literal argument, verbatim.
 // ---------------------------------------------------------------------------
 
-describe("createShellStep — execa (real subprocess, shell mode)", () => {
+describe("createShellStep — interpolated data is never shell-expanded", () => {
+  const COMMIT =
+    'git -C "${worktree.path}" commit -m "feat(${task.id}): ${task.title}"';
+
+  /** A resolver like the real one: fills known `${...}` keys, leaves data as-is. */
+  function resolverFor(title: string): (t: string) => string {
+    return (t) =>
+      t
+        .replace(/\$\{worktree\.path\}/g, () => "/wt/T-004")
+        .replace(/\$\{task\.id\}/g, () => "T-004")
+        .replace(/\$\{task\.title\}/g, () => title);
+  }
+
+  it("passes a title containing ${...} as one literal arg (the original bug)", async () => {
+    const { runner, argvs } = recordingRunner();
+    const ctx = makeStepContext({
+      step: shellStep({ run: [COMMIT] }),
+      resolve: resolverFor("Resolver de interpolação ${...}"),
+    });
+
+    const result = await createShellStep({ runCommand: runner }).execute(ctx);
+
+    expect(result.ok).toBe(true);
+    // The whole commit message is a single argv entry — braces intact, never
+    // split, never re-expanded.
+    expect(argvs[0]).toEqual([
+      "git",
+      "-C",
+      "/wt/T-004",
+      "commit",
+      "-m",
+      "feat(T-004): Resolver de interpolação ${...}",
+    ]);
+  });
+
+  it("passes a title containing $(...) as one literal arg (no injection)", async () => {
+    const { runner, argvs } = recordingRunner();
+    const ctx = makeStepContext({
+      step: shellStep({ run: [COMMIT] }),
+      resolve: resolverFor("boom $(rm -rf ~) end"),
+    });
+
+    await createShellStep({ runCommand: runner }).execute(ctx);
+
+    expect(argvs[0]?.[5]).toBe("feat(T-004): boom $(rm -rf ~) end");
+  });
+
+  it("passes a title with quotes/semicolons/backticks as one literal arg", async () => {
+    const { runner, argvs } = recordingRunner();
+    const ctx = makeStepContext({
+      step: shellStep({ run: [COMMIT] }),
+      resolve: resolverFor('a "b"; c `d` & e'),
+    });
+
+    await createShellStep({ runCommand: runner }).execute(ctx);
+
+    expect(argvs[0]?.[5]).toBe('feat(T-004): a "b"; c `d` & e');
+  });
+
+  it("end-to-end: a real subprocess receives ${...} data verbatim (no bad substitution)", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "loopy-shell-")));
+    const ctx = makeStepContext({
+      // A real `git commit -m` would have crashed on ${...} under shell:true;
+      // echoing argv[1] proves the literal survives to the program unchanged.
+      step: shellStep({
+        run: [
+          'node -e "process.stdout.write(process.argv[1])" "msg: ${task.title}"',
+        ],
+      }),
+      worktreePath: dir,
+      resolve: (t) =>
+        t.replace(
+          /\$\{task\.title\}/g,
+          () => "Resolver de interpolação ${...}",
+        ),
+    });
+
+    const result = await createShellStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(result.output).toBe("msg: Resolver de interpolação ${...}");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Real subprocesses via execa (argv, no shell) — proves quoted args survive.
+// ---------------------------------------------------------------------------
+
+describe("createShellStep — execa (real subprocess, argv)", () => {
   it("runs a real command and reports success", async () => {
     const ctx = makeStepContext({
       step: shellStep({ run: ['node -e "process.exit(0)"'] }),

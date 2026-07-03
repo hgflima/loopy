@@ -5,3 +5,4 @@ dist/
 .loopy.stop
 *.log
 .DS_Store
+tasks/handoff.md

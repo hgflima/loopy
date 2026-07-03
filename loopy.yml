@@ -51,9 +51,9 @@ acp:
 # Entradas lidas no início da run
 # ----------------------------------------------------------------------------
 inputs:
-  spec: "SPEC.md"
-  plan: "tasks/plan.md"
-  todo: "tasks/todo.md"
+  spec: ".harn/changes/C-0002-resume-pipeline/spec.md"
+  plan: ".harn/changes/C-0002-resume-pipeline/plan.md"
+  todo: ".harn/changes/C-0002-resume-pipeline/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
@@ -110,17 +110,25 @@ pipeline:
       ${worktree.diff}
     verify: { run: ci, max_attempts: 2, on_fail: escalate }
 
-  # 4) Auditar (read-only): só julga, não edita. Veredito parseável.
+  # 4) Auditar: só julga, não edita. Veredito parseável.
   - id: audit
     type: agent
     clear_context: true
-    mode: plan # read-only: o adaptador bloqueia execução de tools
+    # NÃO use `mode: plan` aqui. Em plan mode o agente conclui apresentando um
+    # plano via ExitPlanMode, entregue como `session/update` do tipo `plan` — que
+    # o motor NÃO bufferiza (só `agent_message_chunk` alimenta o buffer lido pelo
+    # parser de veredito). O "AUDIT: PASS" da última linha nunca chega ao parser,
+    # que fecha fail-closed → o step escala com "veredito ausente". `default`
+    # mantém a resposta como texto normal do turno. O read-only fica por conta da
+    # instrução do prompt (o modo `plan` também não é enforçado sob on_request:allow).
+    mode: default
     prompt: |
       Audite a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}:
-      correção, segurança, casos de borda e aderência ao harness. NÃO edite nada.
+      correção, segurança, casos de borda e aderência ao harness.
+      **CRITICAL:** NUNCA EDITE NADA!
       Diff sob revisão:
       ${worktree.diff}
-      Responda na ÚLTIMA linha exatamente "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
+      Respond a na ÚLTIMA linha exatamente "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
     expect: "AUDIT: PASS" # o motor barra o commit se não vier PASS
     on_expect_fail: escalate
 

@@ -45,6 +45,7 @@ import {
   type RunShellCommand,
   type ShellCommandResult,
 } from "./shell";
+import { tokenizeCommand } from "./tokenize";
 
 /** Options for {@link createApprovalStep}. */
 export interface CreateApprovalStepOptions {
@@ -71,11 +72,15 @@ export function createApprovalStep(
       const step = ctx.step;
       assertStepType(step, "approval");
 
-      // Resolve the prompt AND every action command up front: an unknown-var
-      // interpolation must abort before the human is prompted or anything runs
-      // (OQ1 — fail-fast, no partial side effects, no wasted human decision).
+      // Resolve the prompt AND every action command up front: a malformed quote
+      // or an unknown-var interpolation must abort before the human is prompted
+      // or anything runs (OQ1 — fail-fast, no partial side effects, no wasted
+      // human decision). Each command is tokenized and `${...}` resolved *per
+      // token*, so interpolated data is never re-expanded by a shell.
       const promptText = ctx.resolve(step.prompt);
-      const commands = (step.run ?? []).map((raw) => ctx.resolve(raw));
+      const commands = (step.run ?? []).map((raw) =>
+        tokenizeCommand(raw).map((token) => ctx.resolve(token)),
+      );
 
       // Decide: --yes short-circuits the gate; otherwise ask via the port.
       let approved: boolean;
@@ -98,14 +103,14 @@ export function createApprovalStep(
       const ran: ShellCommandResult[] = [];
       let failure: ShellCommandResult | undefined;
 
-      for (const command of commands) {
-        const result = await runCommand(command, {
+      for (const argv of commands) {
+        const result = await runCommand(argv, {
           cwd: ctx.worktreePath,
           timeoutMs,
         });
         ran.push(result);
         if (result.ok) {
-          ctx.logger.debug(`[approval:${step.id}] ok: ${command}`);
+          ctx.logger.debug(`[approval:${step.id}] ok: ${result.command}`);
           continue;
         }
         failure = result;

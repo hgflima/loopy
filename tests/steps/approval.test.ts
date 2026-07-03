@@ -37,14 +37,25 @@ function recordingUi(
   return { ui, prompts };
 }
 
-/** A fake command runner that records what it ran, in order, and its cwds. */
+/**
+ * A fake command runner that records what it ran, in order, and its cwds.
+ * `ran` holds each argv joined by spaces; `argvs` holds the raw argv arrays.
+ */
 function recordingRunner(
   outcome: (command: string) => Partial<ShellCommandResult> = () => ({}),
-): { runner: RunShellCommand; ran: string[]; cwds: string[] } {
+): {
+  runner: RunShellCommand;
+  ran: string[];
+  argvs: string[][];
+  cwds: string[];
+} {
   const ran: string[] = [];
+  const argvs: string[][] = [];
   const cwds: string[] = [];
-  const runner: RunShellCommand = async (command, ctx) => {
+  const runner: RunShellCommand = async (argv, ctx) => {
+    const command = argv.join(" ");
     ran.push(command);
+    argvs.push([...argv]);
     cwds.push(ctx.cwd);
     const partial = outcome(command);
     const ok = partial.ok ?? true;
@@ -56,7 +67,7 @@ function recordingRunner(
       stderr: partial.stderr ?? "",
     };
   };
-  return { runner, ran, cwds };
+  return { runner, ran, argvs, cwds };
 }
 
 describe("createApprovalStep — execute", () => {
@@ -108,9 +119,9 @@ describe("createApprovalStep — execute", () => {
     expect(cwds).toEqual(["/wt/T-042"]);
   });
 
-  it("interpolates each action command before running it", async () => {
+  it("interpolates each action command per token before running it", async () => {
     const { ui } = recordingUi(true);
-    const { runner, ran } = recordingRunner();
+    const { runner, argvs } = recordingRunner();
     const ctx = makeStepContext({
       step: approvalStep({ run: ['git merge "${task.branch}"'] }),
       ui,
@@ -119,7 +130,43 @@ describe("createApprovalStep — execute", () => {
 
     await createApprovalStep({ runCommand: runner }).execute(ctx);
 
-    expect(ran).toEqual(['git merge "loopy/T-001"']);
+    expect(argvs).toEqual([["git", "merge", "loopy/T-001"]]);
+  });
+
+  it("passes a merge message containing ${...} data as one literal arg (regression)", async () => {
+    const { ui } = recordingUi(true);
+    const { runner, argvs } = recordingRunner();
+    const ctx = makeStepContext({
+      // The merge gate has the same `${task.title}` in its message as commit did.
+      step: approvalStep({
+        run: [
+          'git merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"',
+        ],
+      }),
+      ui,
+      resolve: (t) =>
+        t
+          .replace(/\$\{task\.branch\}/g, () => "loopy/T-004")
+          .replace(/\$\{task\.id\}/g, () => "T-004")
+          .replace(
+            /\$\{task\.title\}/g,
+            () => "Resolver de interpolação ${...}",
+          ),
+    });
+
+    const result = await createApprovalStep({ runCommand: runner }).execute(
+      ctx,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(argvs[0]).toEqual([
+      "git",
+      "merge",
+      "--no-ff",
+      "loopy/T-004",
+      "-m",
+      "merge(T-004): Resolver de interpolação ${...}",
+    ]);
   });
 
   it("auto-approves under --yes without touching the interactive gate", async () => {

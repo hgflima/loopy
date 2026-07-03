@@ -1,14 +1,23 @@
 /**
  * `shell` step interpreter (AD-2) — runs a step's `run:[...]` commands, in
- * order, through a real shell (execa `shell: true`).
+ * order, as direct subprocesses (execa with an argv[], NO shell).
  *
- * Why a real shell (not `parseCommandString`): the example `loopy.yml` commands
- * carry quoted arguments with spaces and special characters — e.g.
- * `git -C "${worktree.path}" commit -m "feat(${task.id}): ${task.title}"`.
- * execa's `parseCommandString` splits on whitespace and does *not* honor quotes,
- * so it would shred those arguments. Delegating the whole line to `/bin/sh -c`
- * makes the yml's quoting mean what it says. The commands are the user's own
- * config (trusted), so shell interpretation is the intended, correct behavior.
+ * Why argv, not `/bin/sh -c` (the security fix). The example `loopy.yml` commands
+ * carry quoted arguments with spaces and interpolated data — e.g.
+ * `git -C "${worktree.path}" commit -m "feat(${task.id}): ${task.title}"`. An
+ * earlier version handed the fully-resolved line to `/bin/sh -c` (`shell: true`)
+ * to honor the yml's quoting. But that let the shell perform a SECOND round of
+ * `$`-expansion on the interpolated DATA: a task titled `... ${...}` produced a
+ * literal `${...}` in the command, which `/bin/sh` failed to expand
+ * (`bad substitution`), and a title like `$(rm -rf ~)` would have been a silent
+ * command injection. Instead we {@link tokenizeCommand} the RAW template (which
+ * honors the quotes so quoted args survive) and resolve `${...}` *per token*,
+ * then run the argv directly — the interpolated data is never re-interpreted by
+ * a shell. This mirrors the argv model `git.commitPaths` already uses.
+ *
+ * Trade: without a shell there are no pipelines/redirection inside a single
+ * command (each `run:` entry is one command); that matches how loopy configs are
+ * written and is the intended, safer behavior.
  *
  * Two behaviors the acceptance criteria (T-008) pin down:
  *
@@ -17,15 +26,15 @@
  *    every command is attempted best-effort (the `cleanup` step must try both
  *    `worktree remove` and `branch -D` even if the first fails). The result is
  *    still truthful: `ok` is false whenever any command that ran failed.
- *  - **Interpolation up front (OQ1).** Every command is resolved via
- *    `ctx.resolve` *before* any command executes, so an unknown-variable
- *    interpolation aborts fail-fast — before a single side effect — rather than
- *    after a prefix of the list has already run.
+ *  - **Interpolation up front (OQ1).** Every command is tokenized and resolved
+ *    via `ctx.resolve` *before* any command executes, so an unknown-variable
+ *    interpolation (or a malformed quote) aborts fail-fast — before a single
+ *    side effect — rather than after a prefix of the list has already run.
  *
  * Errors as values (AD-5): a non-zero exit / spawn failure / timeout is a normal
  * {@link StepResult} with `ok: false`, never a thrown exception. Exceptions are
- * reserved for genuine faults (an unknown interpolation var; being handed a step
- * of the wrong `type`).
+ * reserved for genuine faults (an unknown interpolation var; a malformed command
+ * line; being handed a step of the wrong `type`).
  *
  * The concrete execa runner is injectable ({@link RunShellCommand}) so the
  * order/short-circuit/interpolation logic is unit-testable without spawning
@@ -34,10 +43,11 @@
 import { execa } from "execa";
 import type { Step, StepContext, StepResult } from "../types";
 import { assertStepType } from "./guards";
+import { displayCommand, tokenizeCommand } from "./tokenize";
 
-/** Outcome of running a single shell command (errors captured, never thrown). */
+/** Outcome of running a single command (errors captured, never thrown). */
 export interface ShellCommandResult {
-  /** The resolved command line that was executed. */
+  /** A readable rendering of the argv that ran (for logs/reasons, not re-exec). */
   readonly command: string;
   readonly exitCode: number;
   readonly ok: boolean;
@@ -45,9 +55,12 @@ export interface ShellCommandResult {
   readonly stderr: string;
 }
 
-/** Runs one command line; injectable so the step logic is unit-testable. */
+/**
+ * Runs one command given its resolved `argv` (argv[0] is the program); injectable
+ * so the step logic is unit-testable without spawning processes.
+ */
 export type RunShellCommand = (
-  command: string,
+  argv: readonly string[],
   ctx: { readonly cwd: string; readonly timeoutMs?: number },
 ) => Promise<ShellCommandResult>;
 
@@ -57,18 +70,28 @@ function asString(value: unknown): string {
 }
 
 /**
- * Run one command line via execa in `ctx.cwd` through a shell, never throwing:
- * a non-zero exit, a spawn failure and a timeout all resolve to a
- * {@link ShellCommandResult} with `ok: false`. `shell: true` hands the whole
- * line to `/bin/sh -c`, so the yml's quoting is honored.
+ * Run one command via execa in `ctx.cwd` as a direct subprocess (argv, NO
+ * shell), never throwing: a non-zero exit, a spawn failure and a timeout all
+ * resolve to a {@link ShellCommandResult} with `ok: false`. Because the program
+ * and its arguments are passed as an argv array, no `$`/backtick/glob/quote
+ * interpretation is applied to the interpolated data.
  */
-export const runShellCommandWithExeca: RunShellCommand = async (
-  command,
-  ctx,
-) => {
-  const result = await execa(command, {
+export const runShellCommandWithExeca: RunShellCommand = async (argv, ctx) => {
+  const display = displayCommand(argv);
+  const [file, ...args] = argv;
+  if (file === undefined) {
+    // An empty argv means a `run:` entry tokenized to nothing (e.g. blank line).
+    return {
+      command: display,
+      exitCode: -1,
+      ok: false,
+      stdout: "",
+      stderr: "comando vazio",
+    };
+  }
+
+  const result = await execa(file, args, {
     cwd: ctx.cwd,
-    shell: true,
     reject: false,
     stripFinalNewline: true,
     timeout: ctx.timeoutMs,
@@ -91,7 +114,7 @@ export const runShellCommandWithExeca: RunShellCommand = async (
     }
   }
 
-  return { command, exitCode, ok, stdout, stderr };
+  return { command: display, exitCode, ok, stdout, stderr };
 };
 
 /** Options for {@link createShellStep}. */
@@ -144,22 +167,26 @@ export function createShellStep(options: CreateShellStepOptions = {}): Step {
       assertStepType(step, "shell");
       const always = step.always ?? false;
 
-      // Resolve ALL commands up front: an unknown-var interpolation must abort
-      // before any command runs (OQ1 — fail-fast, no partial side effects).
-      const commands = step.run.map((raw) => ctx.resolve(raw));
+      // Tokenize + resolve ALL commands up front: a malformed quote or an
+      // unknown-var interpolation must abort before any command runs (OQ1 —
+      // fail-fast, no partial side effects). `${...}` is resolved *per token*,
+      // so interpolated data never reaches a shell for a second expansion.
+      const commands = step.run.map((raw) =>
+        tokenizeCommand(raw).map((token) => ctx.resolve(token)),
+      );
 
       const ran: ShellCommandResult[] = [];
       let firstFailure: ShellCommandResult | undefined;
 
-      for (const command of commands) {
-        const result = await runCommand(command, {
+      for (const argv of commands) {
+        const result = await runCommand(argv, {
           cwd: ctx.worktreePath,
           timeoutMs,
         });
         ran.push(result);
 
         if (result.ok) {
-          ctx.logger.debug(`[shell:${step.id}] ok: ${command}`);
+          ctx.logger.debug(`[shell:${step.id}] ok: ${result.command}`);
           continue;
         }
 

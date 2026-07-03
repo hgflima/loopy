@@ -458,7 +458,8 @@ describe("runLoop — registry gaps + report threading", () => {
 
   it("threads the latest ${checks.report} into a later step (real interpreters)", async () => {
     const ran: string[] = [];
-    const recordingRunner: RunShellCommand = async (command) => {
+    const recordingRunner: RunShellCommand = async (argv) => {
+      const command = argv.join(" ");
       ran.push(command);
       return { command, exitCode: 0, ok: true, stdout: "", stderr: "" };
     };
@@ -604,7 +605,9 @@ pipeline:
   - id: implement
     type: shell
     run:
-      - 'echo "\${task.id}" > "\${worktree.path}/feature.txt"'
+      # Steps run as argv (no shell), so shell redirection (\`>\`) is not
+      # available; write the file with node instead of \`echo > file\`.
+      - 'node -e "require(''fs'').writeFileSync(process.argv[1], process.argv[2])" "\${worktree.path}/feature.txt" "\${task.id}"'
       - git -C "\${worktree.path}" add -A
       - 'git -C "\${worktree.path}" commit -m "feat: \${task.id}"'
   - id: merge
@@ -699,7 +702,7 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     expect(result.stoppedBy).toBe("backlog_empty");
 
     // The task branch's file was merged into the parent working tree.
-    expect(readFileSync(join(root, "feature.txt"), "utf8")).toBe("T-100\n");
+    expect(readFileSync(join(root, "feature.txt"), "utf8")).toBe("T-100");
     // The worktree and its branch were cleaned up.
     expect(existsSync(join(root, ".worktrees", "T-100"))).toBe(false);
     const branches = await execa(
