@@ -7,7 +7,7 @@
 
 ## Fase 1 — Fundação pura (dados + fingerprint + I/O atômico)
 
-- [ ] T-020: `src/resume/state.ts` + tipos de resume em `types.ts`
+- [x] T-020: `src/resume/state.ts` + tipos de resume em `types.ts`
       Módulo puro + wrapper de I/O no molde de backlog/todo.ts e config/load.ts.
       types.ts: TaskStatus (running|paused|aborted), TaskCheckpoint {pipelineHash,
       completedSteps, status}, RunState {version:1, tasks}, CheckpointPort
