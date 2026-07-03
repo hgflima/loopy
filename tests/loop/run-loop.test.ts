@@ -23,7 +23,6 @@ import {
   decideEscalation,
   runLoop,
   worktreePathFor,
-  type MarkDonePort,
   type OrchestratorDeps,
 } from "../../src/loop/orchestrator";
 import {
@@ -31,160 +30,36 @@ import {
   createStepRegistry,
 } from "../../src/steps/index";
 import type { RunShellCommand } from "../../src/steps/shell";
+import {
+  emptyState,
+  pipelineFingerprint,
+  recordStepIn,
+  setStatusIn,
+} from "../../src/resume/state";
 import type {
   AgentSession,
   ChecksReport,
   ChecksRunnerPort,
-  EscalationPolicy,
-  LoopyConfig,
-  RunFlags,
   Step,
-  StepConfig,
   StepContext,
   StepResult,
-  StepType,
-  StopConditions,
-  Task,
-  UiPort,
 } from "../../src/types";
-import { defaultConfig, makeLogger } from "../steps/support";
-
-// ---------------------------------------------------------------------------
-// Builders — keep every test a self-contained specification (DAMP).
-// ---------------------------------------------------------------------------
-
-const DEFAULT_FLAGS: RunFlags = {
-  dryRun: false,
-  yes: false,
-  tui: false,
-  verbose: false,
-};
-
-/** A pending task with the fields the loop reads. */
-function makeTask(id: string, over: Partial<Task> = {}): Task {
-  return {
-    id,
-    slug: id.toLowerCase(),
-    title: `Task ${id}`,
-    body: "",
-    branch: `loopy/${id}`,
-    done: false,
-    ...over,
-  };
-}
-
-/** A `LoopyConfig` with a custom pipeline + optional stop/escalation overrides. */
-function makeConfig(
-  pipeline: StepConfig[],
-  over: {
-    readonly checks?: LoopyConfig["checks"];
-    readonly stop?: StopConditions;
-    readonly escalation?: EscalationPolicy;
-  } = {},
-): LoopyConfig {
-  const base = defaultConfig(over.checks ?? {});
-  return {
-    ...base,
-    pipeline,
-    stop_conditions: over.stop ?? base.stop_conditions,
-    policies: {
-      ...base.policies,
-      escalation: over.escalation ?? base.policies.escalation,
-    },
-  };
-}
-
-/** A `MarkDonePort` that records ids and can fire a side effect on each mark. */
-function recordingMarkDone(onMark?: (id: string) => void): {
-  readonly port: MarkDonePort;
-  readonly marked: string[];
-} {
-  const marked: string[] = [];
-  return {
-    marked,
-    port: {
-      async markDone(id) {
-        marked.push(id);
-        onMark?.(id);
-      },
-    },
-  };
-}
-
-/** Records execution order as `${task.id}:${step.id}`, in the order steps ran. */
-interface Recorder {
-  readonly order: string[];
-}
-
-/**
- * A registry of scripted interpreters for shell/checks/approval (agent absent).
- * Each records that it ran, then returns the scripted result — a per-(task,step)
- * entry wins over a per-step one, defaulting to success.
- */
-function scriptedRegistry(
-  rec: Recorder,
-  script: Record<string, StepResult> = {},
-) {
-  const make = (type: StepType): Step => ({
-    type,
-    async execute(ctx: StepContext): Promise<StepResult> {
-      const key = `${ctx.task.id}:${ctx.step.id}`;
-      rec.order.push(key);
-      return script[key] ?? script[ctx.step.id] ?? { ok: true };
-    },
-  });
-  return createStepRegistry([make("shell"), make("checks"), make("approval")]);
-}
-
-const passingChecks: ChecksRunnerPort = {
-  run: async () => ({ ok: true, results: [], text: "" }),
-};
-
-const approvingUi: UiPort = { requestApproval: async () => true };
-
-/** Assemble `OrchestratorDeps`, defaulting every port a mechanics test ignores. */
-function makeDeps(parts: {
-  readonly registry: OrchestratorDeps["registry"];
-  readonly markDone: MarkDonePort;
-  readonly root?: string;
-  readonly flags?: Partial<RunFlags>;
-  readonly checks?: ChecksRunnerPort;
-  readonly ui?: UiPort;
-}): OrchestratorDeps {
-  return {
-    root: parts.root ?? join(tmpdir(), "loopy-fake-root-that-does-not-exist"),
-    flags: { ...DEFAULT_FLAGS, ...parts.flags },
-    registry: parts.registry,
-    checks: parts.checks ?? passingChecks,
-    ui: parts.ui ?? approvingUi,
-    logger: makeLogger(),
-    markDone: parts.markDone,
-  };
-}
-
-/** Handy step-config constructors. */
-const shell = (id: string, over: Partial<StepConfig> = {}): StepConfig =>
-  ({
-    id,
-    type: "shell",
-    run: [],
-    ...over,
-  }) as StepConfig;
-const checks = (id: string, run = "ci"): StepConfig => ({
-  id,
-  type: "checks",
-  run,
-});
-const approval = (id: string): StepConfig => ({
-  id,
-  type: "approval",
-  prompt: "ok?",
-});
-const agent = (id: string): StepConfig => ({
-  id,
-  type: "agent",
-  prompt: "do it",
-});
+import { makeLogger } from "../steps/support";
+import {
+  DEFAULT_FLAGS,
+  agent,
+  approval,
+  checks,
+  fakeCheckpoint,
+  makeConfig,
+  makeDeps,
+  makeTask,
+  passingChecks,
+  recordingMarkDone,
+  scriptedRegistry,
+  shell,
+  type Recorder,
+} from "./support";
 
 // ---------------------------------------------------------------------------
 // decideEscalation (pure)
@@ -566,6 +441,159 @@ describe("runLoop — agent session wiring", () => {
     // No agent step ran, so the lazy session was never opened.
     expect(providerCalls).toEqual([]);
     expect(rec.order).toEqual(["T-1:a", "T-1:b"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Checkpoint / resume (C-0002 — T-021)
+// ---------------------------------------------------------------------------
+
+describe("runLoop — checkpoint: skip + record + status", () => {
+  it("records each successful step via checkpoint.recordStep", async () => {
+    const pipeline = [shell("a"), shell("b")];
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline);
+    const cp = fakeCheckpoint(pipeline);
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    expect(cp.calls).toContain("recordStep:T-1:a");
+    expect(cp.calls).toContain("recordStep:T-1:b");
+  });
+
+  it("skips steps already in completedSteps (resume-skip)", async () => {
+    const pipeline = [shell("a"), shell("b"), shell("c")];
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig(pipeline);
+    // Pre-populate checkpoint: steps a and b already done.
+    const hash = pipelineFingerprint(pipeline);
+    let initial = emptyState();
+    initial = recordStepIn(initial, "T-1", "a", hash);
+    initial = recordStepIn(initial, "T-1", "b", hash);
+    initial = setStatusIn(initial, "T-1", "running", hash);
+    const cp = fakeCheckpoint(pipeline, initial);
+
+    const logger = makeLogger();
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+      logger,
+    });
+
+    // Only step c actually ran.
+    expect(rec.order).toEqual(["T-1:c"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
+    // Resume-skip messages logged.
+    expect(logger.infos.some((m) => m.includes('step "a" já concluído'))).toBe(true);
+    expect(logger.infos.some((m) => m.includes('step "b" já concluído'))).toBe(true);
+  });
+
+  it("sets status running before pipeline, clears on success", async () => {
+    const pipeline = [shell("a")];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline);
+    const cp = fakeCheckpoint(pipeline);
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: scriptedRegistry(rec), markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    expect(cp.calls).toContain("setStatus:T-1:running");
+    expect(cp.calls).toContain("clearTask:T-1");
+    // After success, the task has no checkpoint entry.
+    expect(cp.state().tasks["T-1"]).toBeUndefined();
+  });
+
+  it("sets status paused on escalation pause", async () => {
+    const pipeline = [shell("s")];
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, { s: { ok: false, reason: "boom" } });
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline, {
+      escalation: { action: "pause", keep_worktree: true, notify: "stderr" },
+    });
+    const cp = fakeCheckpoint(pipeline);
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    expect(result.stoppedBy).toBe("escalation_pause");
+    expect(cp.calls).toContain("setStatus:T-1:paused");
+    expect(cp.state().tasks["T-1"]?.status).toBe("paused");
+  });
+
+  it("sets status aborted on escalation abort_loop", async () => {
+    const pipeline = [shell("s")];
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, { s: { ok: false, reason: "boom" } });
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline, {
+      escalation: { action: "abort_loop", keep_worktree: false, notify: "stderr" },
+    });
+    const cp = fakeCheckpoint(pipeline);
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    expect(result.stoppedBy).toBe("escalation_abort");
+    expect(cp.calls).toContain("setStatus:T-1:aborted");
+    expect(cp.state().tasks["T-1"]?.status).toBe("aborted");
+  });
+
+  it("clears checkpoint on skip_task escalation", async () => {
+    const pipeline = [shell("s")];
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      "T-1:s": { ok: false, reason: "nope" },
+    });
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline, {
+      escalation: { action: "skip_task", keep_worktree: true, notify: "stderr" },
+    });
+    const cp = fakeCheckpoint(pipeline);
+
+    const result = await runLoop(config, [makeTask("T-1"), makeTask("T-2")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    expect(result.stoppedBy).toBe("backlog_empty");
+    // T-1 failed and was skipped — checkpoint cleared (not resumable).
+    expect(cp.calls).toContain("clearTask:T-1");
+    expect(cp.state().tasks["T-1"]).toBeUndefined();
+    // T-2 succeeded — also cleared.
+    expect(cp.state().tasks["T-2"]).toBeUndefined();
+  });
+
+  it("without checkpoint in deps, behavior is identical (no crash)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([shell("a"), shell("b")]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    expect(rec.order).toEqual(["T-1:a", "T-1:b"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
   });
 });
 
