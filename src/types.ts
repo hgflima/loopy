@@ -258,6 +258,35 @@ export interface LoopyConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Resume — step-level checkpoint state (C-0002)
+// ---------------------------------------------------------------------------
+
+/** Lifecycle status of a task's checkpoint. */
+export type TaskStatus = "running" | "paused" | "aborted";
+
+/** Persisted progress of a single task within a run. */
+export interface TaskCheckpoint {
+  readonly pipelineHash: string;
+  readonly completedSteps: readonly string[];
+  readonly status: TaskStatus;
+}
+
+/** Top-level resume state persisted to `.loopy/state.json`. */
+export interface RunState {
+  readonly version: 1;
+  readonly tasks: Readonly<Record<string, TaskCheckpoint>>;
+}
+
+/** Port for checkpoint I/O — keeps the orchestrator testable without disk. */
+export interface CheckpointPort {
+  read(): RunState;
+  recordStep(taskId: string, stepId: string): void;
+  setStatus(taskId: string, status: TaskStatus): void;
+  clearTask(taskId: string): void;
+  pruneOrphans(knownTaskIds: readonly string[]): void;
+}
+
+// ---------------------------------------------------------------------------
 // CLI flags
 // ---------------------------------------------------------------------------
 
@@ -277,6 +306,8 @@ export interface RunFlags {
   readonly tui: boolean;
   /** Include ACP traffic in logs. */
   readonly verbose: boolean;
+  /** `--clean [T-XXX]`: teardown worktree+branch+checkpoint and exit. */
+  readonly clean?: string | boolean;
 }
 
 // ---------------------------------------------------------------------------
