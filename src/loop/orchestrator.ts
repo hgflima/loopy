@@ -34,9 +34,20 @@ import {
   selectPrompt,
   type ScopeVars,
 } from "../interp/resolver";
+import {
+  clearTaskIn,
+  completedStepsFor,
+  loadState,
+  pipelineFingerprint,
+  pruneOrphansIn,
+  recordStepIn,
+  saveState,
+  setStatusIn,
+} from "../resume/state";
 import type { StepRegistry } from "../steps/index";
 import type {
   AgentSession,
+  CheckpointPort,
   ChecksRunnerPort,
   EscalationAction,
   GitPort,
@@ -371,6 +382,52 @@ export function createMarkDonePort(
 }
 
 // ---------------------------------------------------------------------------
+// Live outer loop — checkpoint port (C-0002 resume)
+// ---------------------------------------------------------------------------
+
+/** Options for {@link createCheckpointPort}. */
+export interface CreateCheckpointPortOptions {
+  /** Absolute path to `.loopy/state.json`. */
+  readonly statePath: string;
+  /** Pipeline fingerprint stamped on every write (constant per run). */
+  readonly pipelineHash: string;
+}
+
+/**
+ * Build a {@link CheckpointPort} backed by `.loopy/state.json` on disk. State is
+ * held in memory (loaded once via `loadState`); every mutation applies the pure
+ * transition from `state.ts` and `saveState` atomically to disk. The
+ * `pipelineHash` is stamped on `recordStep` / `setStatus` so the caller never
+ * has to pass it per-call.
+ */
+export function createCheckpointPort(
+  options: CreateCheckpointPortOptions,
+): CheckpointPort {
+  let state = loadState(options.statePath);
+  return {
+    read() {
+      return state;
+    },
+    recordStep(taskId, stepId) {
+      state = recordStepIn(state, taskId, stepId, options.pipelineHash);
+      saveState(options.statePath, state);
+    },
+    setStatus(taskId, status) {
+      state = setStatusIn(state, taskId, status, options.pipelineHash);
+      saveState(options.statePath, state);
+    },
+    clearTask(taskId) {
+      state = clearTaskIn(state, taskId);
+      saveState(options.statePath, state);
+    },
+    pruneOrphans(knownTaskIds) {
+      state = pruneOrphansIn(state, knownTaskIds);
+      saveState(options.statePath, state);
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Live outer loop (T-010) — dependencies + not-wired handles
 // ---------------------------------------------------------------------------
 
@@ -483,6 +540,18 @@ export interface OrchestratorDeps {
    * absent (the non-agent spine), the fail-loud {@link session} is used instead.
    */
   readonly sessionProvider?: SessionProvider;
+  /**
+   * Step-level checkpoint port (C-0002 resume). When present, `runLoop`
+   * reconciles resume state before the loop and `runTaskPipeline` skips
+   * completed steps + records progress. Absent → resume is fully inert.
+   */
+  readonly checkpoint?: CheckpointPort;
+  /**
+   * All known task ids from the backlog (pending + done). Used by
+   * `pruneOrphans` to clean up orphaned checkpoint entries. Absent →
+   * pruning uses only the `tasks` passed to `runLoop`.
+   */
+  readonly knownTaskIds?: readonly string[];
 }
 
 /**
@@ -553,6 +622,7 @@ async function runTaskPipeline(
   task: Task,
   iteration: number,
   deps: OrchestratorDeps,
+  completedSteps: ReadonlySet<string> = new Set(),
 ): Promise<PipelineOutcome> {
   const worktreePath = worktreePathFor(config, task);
   // One ACP session per task (AD-3), bound to the worktree's absolute cwd and
@@ -577,6 +647,15 @@ async function runTaskPipeline(
   const keepWorktree = config.policies.escalation.keep_worktree;
 
   for (const step of config.pipeline) {
+    // Resume: skip steps already completed in a prior run (before any other
+    // skip logic — a completed step is never re-evaluated).
+    if (completedSteps.has(step.id)) {
+      deps.logger.info(
+        `[orchestrator] resume: step "${step.id}" já concluído — pulado`,
+      );
+      continue;
+    }
+
     const always = step.always ?? false;
     const failed = firstFailure !== undefined;
     // After a failure, skip non-`always` steps. An `always` teardown step still
@@ -626,6 +705,7 @@ async function runTaskPipeline(
     if (result.report !== undefined) checksReport = result.report.text;
 
     if (result.ok) {
+      deps.checkpoint?.recordStep(task.id, step.id);
       deps.logger.debug(`[orchestrator] step "${step.id}" ok`);
       continue;
     }
@@ -718,6 +798,42 @@ export async function runLoop(
     stoppedBy,
   });
 
+  // --- Resume reconciliation (C-0002) ---
+  const { checkpoint } = deps;
+  let completedStepsMap: Map<string, ReadonlySet<string>> | undefined;
+  if (checkpoint) {
+    const pipelineHash = pipelineFingerprint(config.pipeline);
+    // Prune orphan checkpoints (tasks no longer in the backlog).
+    const knownIds = deps.knownTaskIds ?? tasks.map((t) => t.id);
+    const knownSet = new Set(knownIds);
+    const stateBefore = checkpoint.read();
+    for (const taskId of Object.keys(stateBefore.tasks)) {
+      if (!knownSet.has(taskId)) {
+        deps.logger.info(
+          `[orchestrator] resume: checkpoint órfão "${taskId}" podado (task ausente do backlog)`,
+        );
+      }
+    }
+    checkpoint.pruneOrphans(knownIds);
+
+    // Compute completedSteps per task.
+    const state = checkpoint.read();
+    const allowAborted = deps.flags.task !== undefined;
+    completedStepsMap = new Map();
+    for (const task of tasks) {
+      const cp = state.tasks[task.id];
+      if (cp !== undefined && cp.pipelineHash !== pipelineHash) {
+        deps.logger.info(
+          `[orchestrator] resume: pipeline mudou desde o checkpoint de ${task.id} — recomeçando`,
+        );
+      }
+      completedStepsMap.set(
+        task.id,
+        completedStepsFor(state, task.id, pipelineHash, { allowAborted }),
+      );
+    }
+  }
+
   for (const task of tasks) {
     if (existsSync(stopSignalPath)) {
       deps.logger.info(
@@ -751,10 +867,20 @@ export async function runLoop(
     deps.logger.info(
       `[orchestrator] iteração ${iterations}: task ${task.id} — ${task.title}`,
     );
-    const outcome = await runTaskPipeline(config, task, iterations, deps);
+    checkpoint?.setStatus(task.id, "running");
+    const completedSteps =
+      completedStepsMap?.get(task.id) ?? new Set<string>();
+    const outcome = await runTaskPipeline(
+      config,
+      task,
+      iterations,
+      deps,
+      completedSteps,
+    );
 
     if (outcome.ok) {
       await deps.markDone.markDone(task.id);
+      checkpoint?.clearTask(task.id);
       completed.push(task.id);
       deps.logger.info(
         `[orchestrator] task ${task.id} concluída e marcada [x]`,
@@ -773,13 +899,18 @@ export async function runLoop(
     // Surface to the operator per `policies.escalation.notify` (e.g. stderr).
     if (policy.notify) deps.notify?.(message);
     if (decideEscalation(policy.action) === "stop") {
+      checkpoint?.setStatus(
+        task.id,
+        policy.action === "abort_loop" ? "aborted" : "paused",
+      );
       return finish(
         policy.action === "abort_loop"
           ? "escalation_abort"
           : "escalation_pause",
       );
     }
-    // skip_task → move on to the next task.
+    // skip_task → clear the checkpoint (the task is abandoned, not resumable).
+    checkpoint?.clearTask(task.id);
   }
 
   return finish("backlog_empty");
