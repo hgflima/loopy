@@ -45,7 +45,7 @@
 
 ## Fase 3 — Superfície CLI (auto-resume real + --clean)
 
-- [ ] T-022: wire .loopy/state.json no CLI + flag --clean
+- [x] T-022: wire .loopy/state.json no CLI + flag --clean
       src/index.ts. execute() mantém o backlog completo (loadBacklog → knownTaskIds,
       pendingTasks para pending). toFlags mapeia clean de --clean [id]; buildProgram
       adiciona .option("--clean [id]", ...). Se flags.clean truthy → cleanFlow e
