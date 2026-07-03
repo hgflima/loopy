@@ -24,7 +24,7 @@
 
 ## Fase 2 — Resume no orquestrador (valor central: pular concluídos)
 
-- [ ] T-021: CheckpointPort + resume em runTaskPipeline/runLoop
+- [x] T-021: CheckpointPort + resume em runTaskPipeline/runLoop
       src/loop/orchestrator.ts, tudo atrás de deps.checkpoint? (ausente ⇒ idêntico
       ao atual). createCheckpointPort({statePath, pipelineHash}) no molde de
       createMarkDonePort (state em memória via loadState, transições puras de
