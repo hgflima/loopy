@@ -45,13 +45,21 @@ import {
 import { InterpolationError } from "./interp/resolver";
 import { createLogFactory } from "./logging/logger";
 import {
+  createCheckpointPort,
   createMarkDonePort,
   formatDryRunPlan,
   planDryRun,
   runLoop,
+  worktreePathFor,
   type OrchestratorDeps,
   type RunLoopResult,
 } from "./loop/orchestrator";
+import {
+  clearTaskIn,
+  loadState,
+  pipelineFingerprint,
+  saveState,
+} from "./resume/state";
 import { createFullRegistry } from "./steps/index";
 import { startUi } from "./tui/start";
 import type {
@@ -59,6 +67,7 @@ import type {
   LoggerPort,
   LoopyConfig,
   RunFlags,
+  RunState,
   Task,
 } from "./types";
 
@@ -87,6 +96,8 @@ export interface RunLiveArgs {
   readonly configPath: string;
   /** Absolute path of the backlog (`todo.md`). */
   readonly todoPath: string;
+  /** All known task ids from the backlog (pending + done) for orphan pruning. */
+  readonly knownTaskIds: readonly string[];
   readonly io: RunIO;
 }
 
@@ -142,6 +153,10 @@ export function buildProgram(io: RunIO): Command {
       "auto-aprova gates de aprovacao (nao-interativo / CI)",
       false,
     )
+    .option(
+      "--clean [id]",
+      "teardown (worktree+branch+checkpoint) e sai; sem id usa a task com checkpoint pausado/em-progresso",
+    )
     .option("--no-tui", "forca logs de linha (sem Ink)")
     .option("--verbose", "inclui trafego ACP no log", false)
     .allowExcessArguments(false)
@@ -164,6 +179,12 @@ function toFlags(opts: Record<string, unknown>): RunFlags {
     // `--no-tui` flips this to false; default (unset) is true.
     tui: opts.tui !== false,
     verbose: opts.verbose === true,
+    clean:
+      typeof opts.clean === "string"
+        ? opts.clean
+        : opts.clean === true
+          ? true
+          : undefined,
   };
 }
 
@@ -242,7 +263,7 @@ function teeLogger(file: LoggerPort, io: RunIO, verbose: boolean): LoggerPort {
  * already-tested building blocks; it hardcodes no loop behavior (AD-1).
  */
 async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
-  const { config, tasks, flags, root, todoPath, io } = args;
+  const { config, tasks, flags, root, todoPath, knownTaskIds, io } = args;
   const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
 
   const logFactory = createLogFactory({
@@ -265,6 +286,9 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     run: (list, opts) => runChecks(list, { cwd: resolvePath(root, opts.cwd) }),
   };
 
+  const statePath = resolvePath(root, ".loopy/state.json");
+  const pipelineHash = pipelineFingerprint(config.pipeline);
+
   const deps: OrchestratorDeps = {
     root,
     flags,
@@ -280,6 +304,8 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     git,
     notify: (message) => io.err(`${message}\n`),
     sessionProvider: (cwd) => pool.session(cwd),
+    checkpoint: createCheckpointPort({ statePath, pipelineHash }),
+    knownTaskIds,
   };
 
   try {
@@ -301,6 +327,7 @@ async function runLiveFlow(
   config: LoopyConfig,
   paths: { readonly configPath: string; readonly todoPath: string },
   pending: readonly Task[],
+  knownTaskIds: readonly string[],
   flags: RunFlags,
   io: RunIO,
   hooks: RunHooks,
@@ -365,6 +392,7 @@ async function runLiveFlow(
       root,
       configPath: paths.configPath,
       todoPath: paths.todoPath,
+      knownTaskIds,
       io,
     });
   } catch (err) {
@@ -383,6 +411,80 @@ async function runLiveFlow(
   return problem ? 1 : 0;
 }
 
+/**
+ * Pick the `--clean` target: explicit id, or the single paused/running entry.
+ * Returns the task id on success, or an error message on ambiguity/absence.
+ */
+function resolveCleanTarget(
+  state: RunState,
+  clean: string | boolean,
+): { id: string } | { error: string } {
+  if (typeof clean === "string") return { id: clean };
+  const resumable = Object.entries(state.tasks).filter(
+    ([, cp]) => cp.status === "paused" || cp.status === "running",
+  );
+  if (resumable.length === 0) {
+    return { error: "nenhum checkpoint pausado/em-progresso encontrado. Passe o id explicitamente." };
+  }
+  if (resumable.length > 1) {
+    const ids = resumable.map(([id]) => id).join(", ");
+    return { error: `múltiplos checkpoints (${ids}). Passe o id explicitamente.` };
+  }
+  return { id: resumable[0]![0] };
+}
+
+/** Run `op` and log success; on failure log fallback (best-effort git teardown). */
+async function tryRemove(
+  op: () => Promise<void>,
+  label: string,
+  detail: string,
+  io: RunIO,
+): Promise<void> {
+  try {
+    await op();
+    io.out(`loopy: ${label} removido: ${detail}\n`);
+  } catch {
+    io.out(`loopy: ${label} já ausente: ${detail}\n`);
+  }
+}
+
+/**
+ * `--clean [id]` teardown: remove worktree + branch + checkpoint entry and exit.
+ * Best-effort: tolerates missing worktree/branch (logs instead of failing).
+ */
+async function cleanFlow(
+  dir: string,
+  config: LoopyConfig,
+  backlog: readonly Task[],
+  clean: string | boolean,
+  io: RunIO,
+): Promise<number> {
+  const root = resolvePath(dir);
+  const statePath = resolvePath(root, ".loopy/state.json");
+  const state = loadState(statePath);
+
+  const target = resolveCleanTarget(state, clean);
+  if ("error" in target) {
+    io.err(`loopy: --clean: ${target.error}\n`);
+    return 1;
+  }
+
+  const task = backlog.find((t) => t.id === target.id);
+  if (task === undefined) {
+    io.err(`loopy: --clean: task "${target.id}" não encontrada no backlog.\n`);
+    return 1;
+  }
+
+  const wtPath = resolvePath(root, worktreePathFor(config, task));
+  const git = createGit({ root });
+  await tryRemove(() => git.removeWorktree(wtPath, { force: true }), "worktree", wtPath, io);
+  await tryRemove(() => git.deleteBranch(task.branch), "branch", task.branch, io);
+
+  saveState(statePath, clearTaskIn(state, target.id));
+  io.out(`loopy: checkpoint limpo para ${target.id}.\n`);
+  return 0;
+}
+
 /** Load config + backlog for `dir` and dispatch on the flags. */
 async function execute(
   dir: string,
@@ -397,9 +499,14 @@ async function execute(
   const config = loadConfig(configPath);
 
   const todoPath = resolvePath(dir, config.inputs.todo);
-  const pending = pendingTasks(
-    loadBacklog(todoPath, backlogOptionsFrom(config.inputs.backlog)),
-  );
+  const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+  const backlog = loadBacklog(todoPath, backlogOptions);
+  const knownTaskIds = backlog.map((t) => t.id);
+  const pending = pendingTasks(backlog);
+
+  if (flags.clean) {
+    return cleanFlow(dir, config, backlog, flags.clean, io);
+  }
 
   if (flags.dryRun) {
     return printDryRun(config, pending, { configPath, todoPath }, io);
@@ -410,6 +517,7 @@ async function execute(
     config,
     { configPath, todoPath },
     pending,
+    knownTaskIds,
     flags,
     io,
     hooks,
