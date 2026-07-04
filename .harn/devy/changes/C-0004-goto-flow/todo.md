@@ -158,7 +158,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     Deps: T-003 (schema aceita), idealmente após T-006 (fix-loop executável).
     Files: `examples/loopy.yml`, `tests/fixtures/project/loopy.yml`. Scope: S.
 
-- [ ] T-010: docs — CONTEXT.md + CLAUDE.md (+ SPEC/README se preciso)
+- [x] T-010: docs — CONTEXT.md + CLAUDE.md (+ SPEC/README se preciso)
     `CONTEXT.md`: verbetes novos (Desvio/goto, on_success, max_step_visits), nuance no
     verbete Pipeline (ordem é o default, goto sobrepõe), on_fail agora escalate|goto.
     `CLAUDE.md` (raiz + filhos afetados src/config, src/loop, src/steps): glossário
