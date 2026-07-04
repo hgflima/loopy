@@ -68,7 +68,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     Deps: T-002, T-003. Files: `src/config/warnings.ts` (NOVO ou em load.ts),
     `src/index.ts` (surface stderr), `tests/config/warnings.test.ts` (NOVO). Scope: M.
 
-- [ ] T-005: dry-run — arestas de desvio por step
+- [x] T-005: dry-run — arestas de desvio por step
     Cada step imprime suas arestas quando presentes, no slot do campo. Em `resolveStep`
     (orchestrator.ts): `on_success -> <id>` e `on_fail -> escalate | goto <id>`. Ajustar a
     formatação de `on_fail` que hoje faz `setting("on_fail", step.on_fail)` (quebra ao
