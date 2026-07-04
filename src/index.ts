@@ -505,7 +505,10 @@ async function execute(
   const pending = pendingTasks(backlog);
 
   if (flags.clean) {
-    return cleanFlow(dir, config, backlog, flags.clean, io);
+    // `--clean` sem id anexado + `-t <id>` → usa o id da task (mesma intenção
+    // que `--clean <id>`); caso contrário respeita o id anexado ao próprio flag.
+    const target = flags.clean === true && flags.task ? flags.task : flags.clean;
+    return cleanFlow(dir, config, backlog, target, io);
   }
 
   if (flags.dryRun) {

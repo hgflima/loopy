@@ -233,6 +233,40 @@ describe("run — --clean", () => {
     expect(cap.stderr()).toMatch(/T-003/);
   });
 
+  it("--clean without id but -t <id> present: targets that task", async () => {
+    // Two paused checkpoints would be ambiguous for a bare `--clean`, but the
+    // `-t T-002` filter disambiguates — `-t T-002 --clean` == `--clean T-002`.
+    const state: RunState = {
+      version: 1,
+      tasks: {
+        "T-002": {
+          pipelineHash: "sha256:a",
+          completedSteps: [],
+          status: "paused",
+        },
+        "T-003": {
+          pipelineHash: "sha256:b",
+          completedSteps: [],
+          status: "paused",
+        },
+      },
+    };
+    const dir = makeTempProject(state);
+    const cap = capture();
+
+    const code = await run([dir, "-t", "T-002", "--clean"], cap.io);
+
+    expect(code).toBe(0);
+    expect(cap.stdout()).toMatch(/checkpoint limpo.*T-002/);
+
+    const updated: RunState = JSON.parse(
+      readFileSync(join(dir, ".loopy/state.json"), "utf8"),
+    );
+    // Only the targeted checkpoint is cleared; T-003 is untouched.
+    expect(updated.tasks["T-002"]).toBeUndefined();
+    expect(updated.tasks["T-003"]).toBeDefined();
+  });
+
   it("with unknown task id: errors with exit 1", async () => {
     const state: RunState = {
       version: 1,
