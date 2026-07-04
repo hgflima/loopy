@@ -41,6 +41,7 @@ import type {
   ChecksReport,
   ChecksRunnerPort,
   Step,
+  StepConfig,
   StepContext,
   StepResult,
 } from "../../src/types";
@@ -594,6 +595,263 @@ describe("runLoop — checkpoint: skip + record + status", () => {
     expect(rec.order).toEqual(["T-1:a", "T-1:b"]);
     expect(marked).toEqual(["T-1"]);
     expect(result.completed).toEqual(["T-1"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Program counter: goto flow (T-006)
+// ---------------------------------------------------------------------------
+
+describe("runLoop — program counter (goto flow)", () => {
+  it("sequential (no goto): declared order, failure → escalate (regression zero)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      b: { ok: false, reason: "boom" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([shell("a"), shell("b"), shell("c")]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // a runs, b fails → escalate. c is never reached by PC.
+    expect(rec.order).toEqual(["T-1:a", "T-1:b"]);
+    expect(marked).toEqual([]);
+    expect(result.escalated).toEqual(["T-1"]);
+  });
+
+  it("on_success: { goto } jumps to target, skipping intermediate steps", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([
+      shell("a", { on_success: { goto: "c" } }),
+      shell("b"),
+      shell("c"),
+    ]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // a succeeds → goto c → c succeeds → done. b never runs.
+    expect(rec.order).toEqual(["T-1:a", "T-1:c"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
+  });
+
+  it("on_fail: { goto } jumps to target instead of escalating", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      a: { ok: false, reason: "a failed" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig([
+      shell("a", { on_fail: { goto: "c" } }),
+      shell("b"),
+      shell("c"),
+    ]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // a fails → goto c → c succeeds → done. b never runs.
+    expect(rec.order).toEqual(["T-1:a", "T-1:c"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
+  });
+
+  it("fix-loop: review→implement cycle runs until max_step_visits then escalates with reason", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      review: { ok: false, reason: "review failed" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = makeConfig(
+      [
+        shell("implement"),
+        shell("review", { on_fail: { goto: "implement" } }),
+      ],
+      {
+        stop: {
+          max_iterations: 25,
+          max_step_visits: 2,
+          stop_signal_file: ".loopy.stop",
+        },
+      },
+    );
+
+    const logger = makeLogger();
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port, logger }),
+    );
+
+    // implement(1) → review(1,fail) → implement(2) → review(2,fail) →
+    // implement(visit 3 > 2) → escalate WITHOUT executing
+    expect(rec.order).toEqual([
+      "T-1:implement",
+      "T-1:review",
+      "T-1:implement",
+      "T-1:review",
+    ]);
+    expect(marked).toEqual([]);
+    expect(result.escalated).toEqual(["T-1"]);
+    // The escalation message carries the reason for the visit exceeded.
+    expect(
+      logger.errors.some((m) => m.includes("max_step_visits")),
+    ).toBe(true);
+  });
+
+  it("terminal (success) still runs pending always steps linearly", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    // goto jumps over cleanup → cleanup runs in teardown after terminal success.
+    const config = makeConfig(
+      [
+        shell("a", { on_success: { goto: "c" } }),
+        shell("cleanup", { always: true }),
+        shell("c"),
+      ],
+      {
+        escalation: {
+          action: "pause",
+          keep_worktree: false,
+          notify: "stderr",
+        },
+      },
+    );
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // a → c (cleanup skipped by goto) → terminal success → cleanup in teardown.
+    expect(rec.order).toEqual(["T-1:a", "T-1:c", "T-1:cleanup"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
+  });
+
+  it("terminal (escalate) still runs pending always steps (keep_worktree off)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      b: { ok: false, reason: "boom" },
+    });
+    const { port } = recordingMarkDone();
+    const config = makeConfig(
+      [shell("a"), shell("b"), shell("cleanup", { always: true })],
+      {
+        escalation: {
+          action: "pause",
+          keep_worktree: false,
+          notify: "stderr",
+        },
+      },
+    );
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // a → b(fail) → terminal escalate → cleanup in teardown (keep_worktree off).
+    expect(rec.order).toEqual(["T-1:a", "T-1:b", "T-1:cleanup"]);
+    expect(result.escalated).toEqual(["T-1"]);
+  });
+
+  it("terminal (escalate) suppresses always steps when keep_worktree on", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec, {
+      a: { ok: false, reason: "boom" },
+    });
+    const { port } = recordingMarkDone();
+    const config = makeConfig(
+      [shell("a"), shell("cleanup", { always: true })],
+      {
+        escalation: {
+          action: "pause",
+          keep_worktree: true,
+          notify: "stderr",
+        },
+      },
+    );
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // a(fail) → terminal escalate + keep_worktree → cleanup suppressed.
+    expect(rec.order).toEqual(["T-1:a"]);
+    expect(result.escalated).toEqual(["T-1"]);
+  });
+
+  it("on_fail: { goto } seeds checksReport from result.output (feedback carry, OQ-8)", async () => {
+    // Custom interpreter that captures the resolved ${checks.report} from its context.
+    const capturedReports: string[] = [];
+    const capturingShell: Step = {
+      type: "shell",
+      async execute(ctx: StepContext): Promise<StepResult> {
+        capturedReports.push(ctx.resolve("${checks.report}"));
+        return { ok: true };
+      },
+    };
+    // Custom interpreter for "review" that fails with output (no report).
+    const failingChecks: Step = {
+      type: "checks",
+      async execute(): Promise<StepResult> {
+        return { ok: false, reason: "review failed", output: "Fix bug in line 42" };
+      },
+    };
+
+    const registry = createStepRegistry([capturingShell, failingChecks]);
+    const { port } = recordingMarkDone();
+    const reviewStep: StepConfig = {
+      id: "review",
+      type: "checks",
+      run: "ci",
+      on_fail: { goto: "implement" },
+    };
+    const config = makeConfig(
+      [
+        // type: shell → capturingShell
+        shell("implement"),
+        // type: checks → failingChecks; on_fail goto back to implement
+        reviewStep,
+      ],
+      {
+        stop: {
+          max_iterations: 25,
+          max_step_visits: 2,
+          stop_signal_file: ".loopy.stop",
+        },
+      },
+    );
+
+    await runLoop(
+      config,
+      [makeTask("T-1")],
+      makeDeps({ registry, markDone: port }),
+    );
+
+    // 1st implement: empty report (no prior review)
+    expect(capturedReports[0]).toBe("");
+    // 2nd implement (after review failed with goto): sees review's output
+    expect(capturedReports[1]).toBe("Fix bug in line 42");
   });
 });
 

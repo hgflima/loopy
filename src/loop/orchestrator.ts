@@ -54,6 +54,7 @@ import type {
   LoggerPort,
   LoopyConfig,
   OnFailAction,
+  PipelineOutcome,
   RunFlags,
   StepConfig,
   StepContext,
@@ -593,23 +594,19 @@ function buildTaskStepContext(
 // Live outer loop (T-010) — per-task pipeline
 // ---------------------------------------------------------------------------
 
-/** Outcome of interpreting one task's whole pipeline. */
-export interface PipelineOutcome {
-  /** `true` only when every step that ran succeeded. */
-  readonly ok: boolean;
-  /** Id of the first step that failed (drives escalation attribution). */
-  readonly failedStepId?: string;
-  /** The first failure's reason. */
-  readonly reason?: string;
-}
+export type { PipelineOutcome };
 
 /**
- * Run one task's pipeline in order (T-010). A step runs when the pipeline is
- * still healthy **or** the step is `always: true` (e.g. `cleanup`); once a step
- * fails, subsequent non-`always` steps are skipped. A step whose `type` has no
- * registered interpreter (the `agent` step until T-015) is a logged no-op that
- * does not fail the pipeline. The latest `${checks.report}` is threaded forward
- * so a later step sees the most recent checks output (AD-4).
+ * Run one task's pipeline via a **program counter (PC)** over
+ * `stepIndex: Map<id, index>` (T-006). On each PC entry: increment
+ * `visits[id]`; if `visits[id] > max_step_visits` → terminal escalate without
+ * executing (fail-closed, respects `policies.escalation`). Execute the step;
+ * on success → `on_success.goto ? stepIndex[goto] : PC+1`; on failure →
+ * `on_fail: {goto}` ? `stepIndex[goto]` : escalate. PC past the last step
+ * → terminal success. At any terminal, unexecuted `always` steps run in
+ * declaration order, linearly (no PC/goto in teardown), respecting
+ * `keep_worktree`. On `on_fail: {goto}`, the checks report is seeded from
+ * `result.report?.text ?? result.output` (OQ-8 feedback carry).
  *
  * Errors are values (AD-5): interpreters return `ok:false` for expected
  * failures; only genuine faults throw and propagate to the caller.
@@ -621,12 +618,17 @@ async function runTaskPipeline(
   deps: OrchestratorDeps,
   completedSteps: ReadonlySet<string> = new Set(),
 ): Promise<PipelineOutcome> {
+  const { pipeline, stop_conditions, policies } = config;
+  const maxStepVisits = stop_conditions.max_step_visits;
   const worktreePath = worktreePathFor(config, task);
+  // On a failed task, `keep_worktree` preserves the worktree for inspection —
+  // which means the teardown (`always`) steps that would remove it must be
+  // suppressed. Read once; it is config-driven, not engine policy (AD-1).
+  const keepWorktree = policies.escalation.keep_worktree;
+
   // One ACP session per task (AD-3), bound to the worktree's absolute cwd and
   // opened lazily on the first agent step's use (after `create-worktree`). The
-  // same instance is shared by every step of this task. On the non-agent spine
-  // (no provider) this is the fail-loud session — never touched by shell/checks/
-  // approval, so it stays a no-op there.
+  // same instance is shared by every step of this task.
   const { sessionProvider } = deps;
   const session: AgentSession =
     sessionProvider !== undefined
@@ -634,53 +636,70 @@ async function runTaskPipeline(
           sessionProvider(resolve(deps.root, worktreePath)),
         )
       : (deps.session ?? notWiredSession);
-  // The first failing step (undefined while the pipeline is still healthy).
-  let firstFailure:
-    { readonly stepId: string; readonly reason?: string } | undefined;
-  let checksReport = "";
-  // On a failed task, `keep_worktree` preserves the worktree for inspection —
-  // which means the teardown (`always`) steps that would remove it must be
-  // suppressed. Read once; it is config-driven, not engine policy (AD-1).
-  const keepWorktree = config.policies.escalation.keep_worktree;
 
-  for (const step of config.pipeline) {
+  // Step index: Map<id, index> for O(1) goto resolution.
+  const stepIndex = new Map<string, number>();
+  for (let i = 0; i < pipeline.length; i++) {
+    stepIndex.set(pipeline[i]!.id, i);
+  }
+
+  // Per-step visit counters (entry guard for max_step_visits).
+  const visits: Record<string, number> = {};
+  // Track which steps have executed (for always/teardown).
+  const executedSteps = new Set<string>();
+  let checksReport = "";
+
+  // --- Program counter loop ---
+  type Terminal =
+    | { readonly ok: true }
+    | {
+        readonly ok: false;
+        readonly failedStepId: string;
+        readonly reason?: string;
+        readonly visitExceeded?: PipelineOutcome["visitExceeded"];
+      };
+  let pc = 0;
+  let terminal: Terminal | undefined;
+
+  while (pc < pipeline.length) {
+    const step = pipeline[pc]!;
+
     // Resume: skip steps already completed in a prior run (before any other
     // skip logic — a completed step is never re-evaluated).
     if (completedSteps.has(step.id)) {
       deps.logger.info(
         `[orchestrator] resume: step "${step.id}" já concluído — pulado`,
       );
+      pc += 1;
       continue;
     }
 
-    const always = step.always ?? false;
-    const failed = firstFailure !== undefined;
-    // After a failure, skip non-`always` steps. An `always` teardown step still
-    // runs — unless `keep_worktree` is on, which suppresses it too so the failed
-    // worktree survives for inspection.
-    if (failed && !always) {
-      deps.logger.debug(
-        `[orchestrator] step "${step.id}" pulado (falha anterior; não é always)`,
-      );
-      continue;
-    }
-    if (failed && keepWorktree) {
-      deps.logger.debug(
-        `[orchestrator] step "${step.id}" (always) pulado: keep_worktree preserva o worktree após a falha`,
-      );
-      continue;
+    // Entry guard: increment visits; exceed → terminal escalate WITHOUT executing.
+    visits[step.id] = (visits[step.id] ?? 0) + 1;
+    if (visits[step.id]! > maxStepVisits) {
+      const reason = `step "${step.id}" excedeu max_step_visits (${maxStepVisits})`;
+      deps.logger.error(`[orchestrator] ${reason} — escalando`);
+      terminal = {
+        ok: false,
+        failedStepId: step.id,
+        reason,
+        visitExceeded: { stepId: step.id, visits: visits[step.id]! - 1 },
+      };
+      break;
     }
 
+    // No interpreter → logged no-op, advance PC (AD-2).
     const interpreter = deps.registry.get(step.type);
     if (interpreter === undefined) {
-      // No interpreter for this type yet (agent → T-015). Skip, don't fail:
-      // that is what keeps the non-agent spine runnable end-to-end.
       deps.logger.info(
         `[orchestrator] step "${step.id}" (type "${step.type}") sem intérprete registrado — pulado`,
       );
+      executedSteps.add(step.id);
+      pc += 1;
       continue;
     }
 
+    // Build context and execute.
     const ctx = buildTaskStepContext(
       config,
       task,
@@ -689,37 +708,102 @@ async function runTaskPipeline(
         iteration,
         attempt: FIRST_ATTEMPT,
         worktreePath,
-        // ${worktree.diff} is populated once the agent step lands (T-014); for
-        // the non-agent spine it is a known-but-empty value.
         diff: "",
         checksReport,
       },
       deps,
       session,
     );
-
     const result: StepResult = await interpreter.execute(ctx);
-    if (result.report !== undefined) checksReport = result.report.text;
+    executedSteps.add(step.id);
 
     if (result.ok) {
+      // Thread checks report (normal flow — only from result.report).
+      if (result.report !== undefined) checksReport = result.report.text;
       deps.checkpoint?.recordStep(task.id, step.id);
       deps.logger.debug(`[orchestrator] step "${step.id}" ok`);
+
+      // on_success: { goto } → jump; else → PC + 1.
+      if (step.on_success) {
+        const targetIdx = stepIndex.get(step.on_success.goto);
+        if (targetIdx !== undefined) {
+          pc = targetIdx;
+          continue;
+        }
+      }
+      pc += 1;
       continue;
     }
 
-    firstFailure ??= { stepId: step.id, reason: result.reason };
+    // Step failed.
     deps.logger.error(
       `[orchestrator] step "${step.id}" falhou: ${result.reason ?? "(sem motivo)"}`,
     );
+
+    const onFail = step.on_fail;
+    if (onFail !== undefined && typeof onFail === "object") {
+      // on_fail: { goto } — jump to target; thread feedback carry (OQ-8).
+      // output-as-report only on goto jump; normal flow uses result.report only.
+      checksReport = result.report?.text ?? result.output ?? "";
+      const targetIdx = stepIndex.get(onFail.goto);
+      if (targetIdx !== undefined) {
+        pc = targetIdx;
+        continue;
+      }
+    }
+
+    // escalate: explicit "escalate", omitted on_fail, or orphan goto target.
+    terminal = { ok: false, failedStepId: step.id, reason: result.reason };
+    break;
   }
 
-  return firstFailure === undefined
-    ? { ok: true }
-    : {
-        ok: false,
-        failedStepId: firstFailure.stepId,
-        reason: firstFailure.reason,
-      };
+  // PC past last step → terminal success.
+  terminal ??= { ok: true };
+
+  // --- Teardown: run unexecuted always steps (best-effort, linear, no PC/goto). ---
+  // Suppressed when escalation + keep_worktree (worktree preserved for inspection).
+  if (terminal.ok || !keepWorktree) {
+    for (const step of pipeline) {
+      if (!(step.always ?? false)) continue;
+      if (executedSteps.has(step.id)) continue;
+
+      const interpreter = deps.registry.get(step.type);
+      if (interpreter === undefined) continue;
+
+      try {
+        const ctx = buildTaskStepContext(
+          config,
+          task,
+          step,
+          {
+            iteration,
+            attempt: FIRST_ATTEMPT,
+            worktreePath,
+            diff: "",
+            checksReport,
+          },
+          deps,
+          session,
+        );
+        const result = await interpreter.execute(ctx);
+        executedSteps.add(step.id);
+
+        if (result.ok) {
+          deps.logger.debug(`[orchestrator] teardown step "${step.id}" ok`);
+        } else {
+          deps.logger.error(
+            `[orchestrator] teardown step "${step.id}" falhou: ${result.reason ?? "(sem motivo)"}`,
+          );
+        }
+      } catch (err) {
+        deps.logger.error(
+          `[orchestrator] teardown step "${step.id}" lançou exceção: ${err}`,
+        );
+      }
+    }
+  }
+
+  return terminal;
 }
 
 // ---------------------------------------------------------------------------
