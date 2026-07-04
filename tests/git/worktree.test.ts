@@ -124,7 +124,7 @@ describe("createGit — worktree lifecycle", () => {
 });
 
 // ---------------------------------------------------------------------------
-// merge — --no-ff success + conflict abort (on_conflict: escalate)
+// merge — --no-ff success + conflict abort (on_fail: escalate)
 // ---------------------------------------------------------------------------
 
 describe("createGit — merge", () => {

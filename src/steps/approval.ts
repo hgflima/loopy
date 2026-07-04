@@ -3,7 +3,7 @@
  * action (canonically the merge into `parent_branch`, see the example
  * `loopy.yml`). Three moving parts, exactly as the spec's primitive table lists:
  * `prompt` (what the human is asked), `run:[...]` (the action, run only once
- * approved), and `on_conflict` (how a failed action escalates).
+ * approved), and `on_fail` (how a failed action escalates).
  *
  * The human decision comes through the transport-agnostic {@link UiPort}
  * (`ctx.ui.requestApproval`) — Ink's `ApprovalPrompt`, a `readline` fallback, or
@@ -17,11 +17,11 @@
  *
  *  - **Gate before action.** The `run:[...]` commands execute *only* after
  *    approval. A rejection runs nothing and returns `ok: false`, which the
- *    orchestrator reads (together with `on_conflict`) to escalate — the merge
+ *    orchestrator reads (together with `on_fail`) to escalate — the merge
  *    gate "pausa e só integra após aprovação (ou --yes)" (Success Criterion #5).
  *  - **Action failure = conflict → escalate.** The canonical action is a merge;
  *    when it fails (a content conflict, most often) the step returns `ok: false`
- *    with the failing command and the configured `on_conflict` action woven into
+ *    with the failing command and the configured `on_fail` action woven into
  *    the reason, so escalation is observable at the step boundary (Q5). The
  *    worktree is preserved by the escalation policy, not torn down here.
  *  - **Interpolation up front (OQ1).** The prompt *and* every action command are
@@ -124,11 +124,11 @@ export function createApprovalStep(
 
       if (failure !== undefined) {
         // A failed action is treated as a conflict: report it with the
-        // configured on_conflict action so escalation is attributable (Q5).
-        const onConflict = step.on_conflict ?? "escalate";
+        // configured on_fail action so escalation is attributable (Q5).
+        const onFail = step.on_fail ?? "escalate";
         const head =
           `[approval:${step.id}] a ação falhou (exit ${failure.exitCode}): ` +
-          `${failure.command}. on_conflict: ${onConflict}.`;
+          `${failure.command}. on_fail: ${onFail}.`;
         const reason = withCommandDetail(head, failure);
         ctx.logger.error(reason);
         return { ok: false, reason, output };

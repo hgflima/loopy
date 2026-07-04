@@ -13,7 +13,7 @@
  *  - **merge (`--no-ff`)** — integrate a task branch into the parent. On a
  *    conflict it aborts cleanly (`git merge --abort`) and reports
  *    `{ ok: false, conflict: true }` so the orchestrator can escalate while
- *    preserving the worktree (`on_conflict: escalate`, Q5).
+ *    preserving the worktree (`on_fail: escalate`, Q5).
  *  - **isParentClean** — `require_clean_parent`: is the parent working tree
  *    free of uncommitted changes before the next task starts.
  *

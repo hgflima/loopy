@@ -210,7 +210,7 @@ describe("createApprovalStep — execute", () => {
     expect(ran).toEqual([]);
   });
 
-  it("treats a failing action as a conflict and respects on_conflict", async () => {
+  it("treats a failing action as a conflict and respects on_fail", async () => {
     const { ui } = recordingUi(true);
     const { runner } = recordingRunner((cmd) =>
       cmd.includes("merge")
@@ -218,7 +218,7 @@ describe("createApprovalStep — execute", () => {
         : {},
     );
     const ctx = makeStepContext({
-      step: approvalStep({ run: ["git merge"], on_conflict: "escalate" }),
+      step: approvalStep({ run: ["git merge"], on_fail: "escalate" }),
       ui,
     });
 
@@ -227,9 +227,10 @@ describe("createApprovalStep — execute", () => {
     );
 
     expect(result.ok).toBe(false);
-    // The failure is attributable to the merge and carries the on_conflict
+    // The failure is attributable to the merge and carries the on_fail
     // action so escalation is observable at the step boundary.
     expect(result.reason).toContain("merge");
+    expect(result.reason).toContain("on_fail");
     expect(result.reason).toContain("escalate");
     expect(result.output).toContain("CONFLICT");
   });
