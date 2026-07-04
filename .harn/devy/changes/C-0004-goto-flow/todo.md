@@ -86,7 +86,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
 
 ## Phase 2 — Program counter em runtime + feedback do fix-loop
 
-- [ ] T-006: runTaskPipeline → program counter
+- [x] T-006: runTaskPipeline → program counter
     Trocar o `for...of` linear por PC sobre `stepIndex: Map<id,índice>`. Semântica:
     ao ENTRAR num PC incrementa `visits[id]`; se `visits[id] > max_step_visits` → terminal
     **escalate** com motivo "step <id> excedeu max_step_visits (N)" SEM executar (respeita
