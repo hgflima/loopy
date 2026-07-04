@@ -1,13 +1,23 @@
 {
-  "name": "loopy",
+  "name": "@hgflima/loopy",
   "version": "0.1.0",
-  "private": true,
   "description": "Motor de loop agentico config-driven via ACP",
   "type": "module",
+  "bin": {
+    "loopy": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=20"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -31,6 +41,7 @@
     "@types/react": "^19",
     "eslint": "^9",
     "prettier": "^3",
+    "tsup": "^8.5.1",
     "tsx": "^4",
     "typescript": "^5",
     "typescript-eslint": "^8",
