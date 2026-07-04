@@ -182,6 +182,48 @@ describe("run — flag parsing", () => {
   });
 });
 
+describe("formatDryRunPlan — arestas de desvio por step (T-005)", () => {
+  /** Render the dry-run plan for a given config against the fixture backlog. */
+  function render(config: ReturnType<typeof loadConfig>) {
+    const tasks = pendingTasks(
+      loadBacklog(
+        join(PROJECT, "tasks/todo.md"),
+        backlogOptionsFrom(config.inputs.backlog),
+      ),
+    );
+    return formatDryRunPlan(planDryRun(config, tasks));
+  }
+
+  /** Fixture config with on_success on implement and on_fail:{goto} on audit. */
+  function configWithEdges() {
+    const base = loadConfig(join(PROJECT, "loopy.yml"));
+    const pipeline = base.pipeline.map((step) => {
+      if (step.id === "implement")
+        return { ...step, on_success: { goto: "audit" } };
+      if (step.id === "audit")
+        return { ...step, on_fail: { goto: "implement" } };
+      return step;
+    });
+    return { ...base, pipeline };
+  }
+
+  it("prints on_success: goto <id> when present", () => {
+    expect(render(configWithEdges())).toContain("on_success: goto audit");
+  });
+
+  it("prints on_fail: goto <id> for goto actions (never [object Object])", () => {
+    const output = render(configWithEdges());
+    expect(output).toContain("on_fail: goto implement");
+    expect(output).not.toContain("[object Object]");
+  });
+
+  it("omits on_success when absent (regressão zero)", () => {
+    expect(render(loadConfig(join(PROJECT, "loopy.yml")))).not.toContain(
+      "on_success",
+    );
+  });
+});
+
 describe("formatDryRunPlan — resolved pipeline snapshot", () => {
   it("matches the committed fixture project", () => {
     const config = loadConfig(join(PROJECT, "loopy.yml"));
