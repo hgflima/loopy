@@ -23,7 +23,7 @@
       Verify: npm run typecheck && npm run lint; npx vitest run tests/steps/agent.test.ts
       tests/cli/dry-run.test.ts; npx tsx src/index.ts <dir> --dry-run (verify sem on_fail).
 
-- [ ] T-024: Approval-side — `on_conflict` → `on_fail` no nível do step
+- [x] T-024: Approval-side — `on_conflict` → `on_fail` no nível do step
       Fatia vertical approval-side, independente de T-023. types.ts: ApprovalStep ganha
       on_fail?, remove on_conflict (L149). schema.ts: approvalStepSchema troca on_conflict
       → on_fail (L154). approval.ts: lê step.on_fail (era on_conflict, L128); msg L131 e
