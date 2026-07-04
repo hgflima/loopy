@@ -46,6 +46,63 @@ function formatValidationError(error: ZodError, sourcePath?: string): string {
 }
 
 /**
+ * Pre-scan the raw YAML object for removed keys (ADR-0001) and throw a guided
+ * ConfigError listing all occurrences before zod runs. Pure function — no I/O.
+ *
+ * Detects: `on_expect_fail`, `on_conflict` (top-level step keys) and
+ * `on_fail` nested inside `verify`. Match is by key name in any step,
+ * regardless of `type` (OQ-4). All hits are collected (OQ-3) and reported in a
+ * single multi-line message reusing the `Config inválido em …` header.
+ */
+function scanRemovedKeys(raw: unknown, sourcePath?: string): void {
+  if (
+    typeof raw !== "object" ||
+    raw === null ||
+    !Array.isArray((raw as Record<string, unknown>).pipeline)
+  ) {
+    return; // Let zod handle structural issues
+  }
+
+  const pipeline = (raw as Record<string, unknown>).pipeline as unknown[];
+  const issues: string[] = [];
+
+  for (let i = 0; i < pipeline.length; i++) {
+    const step = pipeline[i];
+    if (typeof step !== "object" || step === null) continue;
+
+    const s = step as Record<string, unknown>;
+    const stepLabel =
+      typeof s.id === "string" && s.id.length > 0
+        ? `step "${s.id}"`
+        : `pipeline[${i}]`;
+
+    for (const key of ["on_expect_fail", "on_conflict"] as const) {
+      if (key in s) {
+        issues.push(
+          `  - ${stepLabel}: '${key}' foi removido (ADR-0001) — use 'on_fail'. Ver docs/MIGRATION.md`,
+        );
+      }
+    }
+
+    if (
+      typeof s.verify === "object" &&
+      s.verify !== null &&
+      "on_fail" in (s.verify as Record<string, unknown>)
+    ) {
+      issues.push(
+        `  - ${stepLabel}: 'verify.on_fail' foi removido (ADR-0001) — mova para 'on_fail' no nível do step. Ver docs/MIGRATION.md`,
+      );
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new ConfigError(
+      `Config inválido${inFile(sourcePath)}:\n${issues.join("\n")}`,
+    );
+  }
+}
+
+/**
  * Validate an in-memory `loopy.yml` document and return a typed `LoopyConfig`
  * with defaults applied. Throws {@link ConfigError} on malformed YAML or on any
  * schema violation (unknown keys, wrong step fields, missing values, …).
@@ -70,6 +127,8 @@ export function parseConfig(
     }
     throw err;
   }
+
+  scanRemovedKeys(raw, sourcePath);
 
   const result = loopyConfigSchema.safeParse(raw);
   if (!result.success) {

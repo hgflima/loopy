@@ -154,6 +154,98 @@ describe("parseConfig — invalid input", () => {
   });
 });
 
+/** Extract ConfigError from a throwing function. */
+function getError(fn: () => unknown): ConfigError {
+  try {
+    fn();
+  } catch (err) {
+    if (err instanceof ConfigError) return err;
+    throw new Error(`Expected ConfigError, got ${err}`);
+  }
+  throw new Error("Expected function to throw");
+}
+
+/** Shorthand: parse with sourcePath so error messages include the path. */
+function parseMigration(yaml: string): ConfigError {
+  return getError(() => parseConfig(yaml, { sourcePath: "loopy.yml" }));
+}
+
+describe("parseConfig — migration pre-scan (T-026)", () => {
+  it("rejects on_expect_fail with a guided error citing the step and on_fail", () => {
+    const yaml = configYaml((c) => {
+      (c.pipeline as Record<string, unknown>[])[0]!.on_expect_fail = "escalate";
+    });
+
+    const err = parseMigration(yaml);
+    expect(err.message).toMatch(/on_expect_fail/);
+    expect(err.message).toMatch(/on_fail/);
+    expect(err.message).toMatch(/MIGRATION\.md/);
+    expect(err.message).toMatch(/step "implement"/);
+  });
+
+  it("rejects on_conflict with a guided error citing the step and on_fail", () => {
+    const yaml = configYaml((c) => {
+      (c.pipeline as Record<string, unknown>[]).push({
+        id: "merge",
+        type: "approval",
+        prompt: "merge?",
+        on_conflict: "escalate",
+      });
+    });
+
+    const err = parseMigration(yaml);
+    expect(err.message).toMatch(/on_conflict/);
+    expect(err.message).toMatch(/on_fail/);
+    expect(err.message).toMatch(/MIGRATION\.md/);
+    expect(err.message).toMatch(/step "merge"/);
+  });
+
+  it("rejects verify.on_fail with a message to move to step level (OQ-5)", () => {
+    const yaml = configYaml((c) => {
+      (c.pipeline as Record<string, unknown>[])[0]!.verify = {
+        run: "ci",
+        max_attempts: 3,
+        on_fail: "escalate",
+      };
+    });
+
+    const err = parseMigration(yaml);
+    expect(err.message).toMatch(/verify\.on_fail/);
+    expect(err.message).toMatch(/mova para 'on_fail' no nível do step/);
+    expect(err.message).toMatch(/MIGRATION\.md/);
+  });
+
+  it("collects multiple legacy keys in a single report (OQ-3)", () => {
+    const yaml = configYaml((c) => {
+      const pipeline = c.pipeline as Record<string, unknown>[];
+      pipeline[0]!.on_expect_fail = "escalate";
+      pipeline.push({
+        id: "merge",
+        type: "approval",
+        prompt: "merge?",
+        on_conflict: "escalate",
+      });
+    });
+
+    const err = parseMigration(yaml);
+    expect(err.message).toMatch(/on_expect_fail/);
+    expect(err.message).toMatch(/on_conflict/);
+    expect(err.message).toMatch(/step "implement"/);
+    expect(err.message).toMatch(/step "merge"/);
+  });
+
+  it("uses pipeline[<i>] when step has no id (OQ-6)", () => {
+    const yaml = configYaml((c) => {
+      const pipeline = c.pipeline as Record<string, unknown>[];
+      delete pipeline[0]!.id;
+      pipeline[0]!.on_expect_fail = "escalate";
+    });
+
+    const err = parseMigration(yaml);
+    expect(err.message).toMatch(/pipeline\[0\]/);
+  });
+});
+
 describe("loadConfig — from disk", () => {
   it("validates the example loopy.yml at the repo root", () => {
     const config = loadConfig(EXAMPLE_YML);
