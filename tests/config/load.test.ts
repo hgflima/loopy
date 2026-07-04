@@ -225,7 +225,7 @@ describe("loadConfig — from disk", () => {
     if (implement?.type === "agent") {
       expect(implement.clear_context).toBe(true);
       expect(implement.verify?.run).toBe("ci");
-      expect(implement.verify?.max_attempts).toBe(4);
+      expect(implement.verify?.max_attempts).toBe(3);
     }
   });
 
