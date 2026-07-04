@@ -7,7 +7,7 @@
 
 ## Fase 1 — Renomeação do core (por família de chave)
 
-- [ ] T-023: Agent-side — `verify.on_fail` + `on_expect_fail` → `on_fail` no nível do step
+- [x] T-023: Agent-side — `verify.on_fail` + `on_expect_fail` → `on_fail` no nível do step
       Fatia vertical agent-side (tipo→schema→intérprete→dry-run→config→testes),
       independentemente verde. types.ts: VerifyConfig vira { run, max_attempts }
       (remove on_fail L105); AgentStep ganha on_fail?, remove on_expect_fail (L126).
