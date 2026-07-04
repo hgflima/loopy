@@ -1,0 +1,117 @@
+version: "1"
+name: agentic-loop
+
+workspace:
+  root: "."
+  parent_branch: "main"
+  worktrees_dir: ".worktrees"
+
+acp:
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  request_timeout_seconds: 1800
+  permissions:
+    default_mode: acceptEdits
+    on_request: allow
+
+inputs:
+  spec: ".harn/devy/changes/C-0005-step-metrics/spec.md"
+  plan: ".harn/devy/changes/C-0005-step-metrics/plan.md"
+  todo: ".harn/devy/changes/C-0005-step-metrics/todo.md"
+  backlog:
+    pending_marker: "- [ ]"
+    done_marker: "- [x]"
+    task_id_pattern: "T-\\d+"
+    body: indented
+    mark_done_on_success: true
+
+checks:
+  ci:
+    - { name: typecheck, run: "npm run typecheck" }
+    - { name: lint, run: "npm run lint" }
+    - { name: test, run: "npm test" }
+
+pipeline:
+  - id: create-worktree
+    type: shell
+    run:
+      - git worktree add -b "${task.branch}" "${worktree.path}" "${workspace.parent_branch}"
+      - npm ci --prefix "${worktree.path}"
+
+  - id: implement
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      /devy:build Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
+      ${task.body}
+      ${checks.report}
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+    retry_prompt: |
+      A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
+      ${checks.report}
+    verify: { run: ci, max_attempts: 3 }
+
+  - id: simplify
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      /devy:code-simplify Simplifique o que está no worktree sem alterar comportamento: remova
+      duplicação, clareie nomes, reduza complexidade. Não adicione dependências.
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+      Diff atual:
+      ${worktree.diff}
+    verify: { run: ci, max_attempts: 3 }
+
+  - id: review
+    type: agent
+    clear_context: true
+    mode: default
+    prompt: |
+      /devy:review Reveja a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}
+      **CRITICAL:** NUNCA EDITE NADA!
+      Diff sob revisão:
+      ${worktree.diff}
+      Respond a na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
+    expect: "REVIEW: PASS"
+    on_fail: { goto: implement }
+
+  - id: commit
+    type: shell
+    run:
+      - git -C "${worktree.path}" add -A
+      - 'git -C "${worktree.path}" commit --allow-empty -m "feat(${task.id}): ${task.title}"'
+
+  - id: merge
+    type: approval
+    prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
+    run:
+      - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"'
+    on_fail: escalate
+
+  - id: cleanup
+    type: shell
+    always: true
+    run:
+      - git -C "${workspace.root}" worktree remove --force "${worktree.path}"
+      - git -C "${workspace.root}" branch -D "${task.branch}"
+
+stop_conditions:
+  max_iterations: 25
+  max_step_visits: 10
+  stop_signal_file: ".loopy.stop"
+
+concurrency: 1
+
+policies:
+  escalation:
+    action: pause
+    keep_worktree: true
+    notify: stderr
+  git:
+    require_clean_parent: true
+
+logging:
+  dir: ".loopy/logs"
+  per_task: true
+  capture_acp_traffic: true
