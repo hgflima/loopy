@@ -21,6 +21,7 @@
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
 import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
 import { relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
@@ -71,7 +72,15 @@ import type {
   Task,
 } from "./types";
 
-const VERSION = "0.1.0";
+/**
+ * Single source of truth: read the version from `package.json` at runtime rather
+ * than hardcoding it (a hardcoded string silently drifts every release). Works in
+ * both `dist/index.js` and `src/index.ts` (tsx) since each sits one level below
+ * the package root, so `../package.json` resolves the same way.
+ */
+const VERSION = (
+  createRequire(import.meta.url)("../package.json") as { version: string }
+).version;
 
 /** Raw output sink (no implicit newline), so commander and our prints share it. */
 export interface RunIO {
