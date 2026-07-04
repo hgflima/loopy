@@ -11,7 +11,7 @@
     Verificação: `npm test -- config` && `npm test -- interp` && `npm run typecheck`.
     Deps: nenhuma. Files: src/config/schema.ts, src/types.ts, src/interp/resolver.ts, src/loop/orchestrator.ts, examples/loopy.yml, testes. Scope: M.
 
-- [ ] T-002: Tipos de métrica + módulo puro `src/metrics/` (folds + metrics.json + formatação)
+- [x] T-002: Tipos de métrica + módulo puro `src/metrics/` (folds + metrics.json + formatação)
     Tipos aditivos: `TurnUsage`, `StepCost`, `Sample`, `StepMetrics`, `TaskMetrics`, `RunMetrics`, `ChangeMetrics`. Módulo puro: folds Amostra→Step→Task→Run→Change (soma tokens/tempo/visitas; cost = último snapshot não-nulo); load/merge/save de `.loopy/metrics.json` (atômico mkdir+.tmp+rename; load tolerante → vazio; invalidação por `change.id` divergente); formatação (tokens k/M, Δt h/m/s, custo). Sem wiring.
     Aceite: fold soma correto por nível; Visitas somadas; tokens `n/d` propagados; merge acrescenta Run em `runs[]` + refold da Change; troca de `change.id` → arquivo novo; load ausente/corrompido → vazio.
     Verificação: `npm test -- metrics` && `npm run typecheck`.
