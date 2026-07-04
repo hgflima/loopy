@@ -35,7 +35,9 @@ function readRepoFile(name: string): string {
 
 /** Load the committed example `loopy.yml` through the engine's own loader. */
 function loadExampleConfig(): LoopyConfig {
-  return loadConfig(repoFile("loopy.yml"));
+  return loadConfig(
+    repoFile(".harn/devy/changes/C-0003-unify-on-fail/loopy.yml"),
+  );
 }
 
 /** A single fabricated pending task, enough to resolve every interpolation. */
@@ -80,7 +82,7 @@ describe("acceptance · example loopy.yml matches the final schema", () => {
       "create-worktree:shell",
       "implement:agent",
       "simplify:agent",
-      "audit:agent",
+      "review:agent",
       "commit:shell",
       "merge:approval",
       "cleanup:shell",

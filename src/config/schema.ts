@@ -109,7 +109,6 @@ const verifySchema = z
   .object({
     run: nonEmptyString,
     max_attempts: z.number().int().min(1),
-    on_fail: onFailSchema,
   })
   .strict();
 
@@ -123,7 +122,7 @@ const agentStepSchema = z
     clear_context: z.boolean().default(true),
     verify: verifySchema.optional(),
     expect: nonEmptyString.optional(),
-    on_expect_fail: onFailSchema.optional(),
+    on_fail: onFailSchema.optional(),
   })
   .strict();
 

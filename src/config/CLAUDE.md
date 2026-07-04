@@ -23,5 +23,5 @@ Valida e carrega o `loopy.yml` num `LoopyConfig` tipado, com defaults aplicados.
 - Exemplo canônico validado: `/loopy.yml` na raiz do repo.
 
 ## Patterns & Pitfalls
-- `onFailSchema = z.literal("escalate")`: hoje `on_fail`/`on_conflict`/`on_expect_fail` só aceitam `"escalate"`. Ampliar a ação é ampliar esse literal + o mapeamento em `../loop/`.
+- `onFailSchema = z.literal("escalate")`: hoje `on_fail`/`on_conflict` só aceitam `"escalate"`. Ampliar a ação é ampliar esse literal + o mapeamento em `../loop/`.
 - `permissions.on_request: "policy"` é aceito pelo schema mas trata como `allow` no runtime (deny-patterns ainda não implementados — ver `../acp/`).

@@ -4,8 +4,13 @@ import { describe, expect, it } from "vitest";
 import { stringify } from "yaml";
 import { ConfigError, loadConfig, parseConfig } from "../../src/config/load";
 
-// Path to the real example config committed at the repo root.
-const EXAMPLE_YML = fileURLToPath(new URL("../../loopy.yml", import.meta.url));
+// Path to the real example config (moved to .harn/devy/changes/C-0003-unify-on-fail/).
+const EXAMPLE_YML = fileURLToPath(
+  new URL(
+    "../../.harn/devy/changes/C-0003-unify-on-fail/loopy.yml",
+    import.meta.url,
+  ),
+);
 
 /**
  * A minimal-but-complete valid config as a plain object. Tests clone this and
@@ -48,7 +53,7 @@ function baseConfig(): Record<string, unknown> {
         id: "implement",
         type: "agent",
         prompt: "do it",
-        verify: { run: "ci", max_attempts: 4, on_fail: "escalate" },
+        verify: { run: "ci", max_attempts: 4 },
       },
       { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
     ],

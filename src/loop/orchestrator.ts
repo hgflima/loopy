@@ -200,17 +200,14 @@ function resolveStep(
       fields.push(setting("clear_context", String(step.clear_context ?? true)));
       fields.push(prompt("prompt", resolve(selectPrompt(step, FIRST_ATTEMPT))));
       if (step.verify) {
-        const { run, max_attempts, on_fail } = step.verify;
+        const { run, max_attempts } = step.verify;
         fields.push(
-          setting(
-            "verify",
-            `run=${run} max_attempts=${max_attempts} on_fail=${on_fail}`,
-          ),
+          setting("verify", `run=${run} max_attempts=${max_attempts}`),
         );
       }
       if (step.expect) fields.push(setting("expect", resolve(step.expect)));
-      if (step.on_expect_fail) {
-        fields.push(setting("on_expect_fail", step.on_expect_fail));
+      if (step.on_fail) {
+        fields.push(setting("on_fail", step.on_fail));
       }
       break;
     }

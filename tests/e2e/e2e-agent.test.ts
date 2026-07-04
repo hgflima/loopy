@@ -144,7 +144,7 @@ pipeline:
     retry_prompt: |
       Os checks falharam. Corrija.
       \${checks.report}
-    verify: { run: ci, max_attempts: 2, on_fail: escalate }
+    verify: { run: ci, max_attempts: 2 }
   - id: simplify
     type: agent
     clear_context: true
@@ -152,7 +152,7 @@ pipeline:
     prompt: |
       Simplifique sem alterar comportamento. Diff:
       \${worktree.diff}
-    verify: { run: ci, max_attempts: 2, on_fail: escalate }
+    verify: { run: ci, max_attempts: 2 }
   - id: audit
     type: agent
     clear_context: true
@@ -162,7 +162,7 @@ pipeline:
       \${worktree.diff}
       Responda "${auditExpect}" ou FALHA.
     expect: "${auditExpect}"
-    on_expect_fail: escalate
+    on_fail: escalate
   - id: commit
     type: shell
     run:

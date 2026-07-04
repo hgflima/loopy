@@ -8,7 +8,7 @@ Implementa os intérpretes dos 4 tipos de step (`agent`/`shell`/`checks`/`approv
 - Cada `create*Step()` retorna um `Step` sem estado por-run → uma instância é reusada entre tasks. Lê o step atual de `ctx.step` (o orquestrador só roteia o `type` casado).
 
 ## Usage Patterns
-- **`agent`** (`agent.ts`): o *inner loop* do modelo de dois níveis. `mode` uma vez (`session/set_mode`, persiste e sobrevive a `/clear`); `/clear` antes de **cada** prompt se `clear_context` (memória vive no disco/prompt, nunca na conversa); loop `verify: { run, max_attempts, on_fail }` re-prompta com `${checks.report}` fresco por tentativa; gate `expect` via `parseVerdict`.
+- **`agent`** (`agent.ts`): o *inner loop* do modelo de dois níveis. `mode` uma vez (`session/set_mode`, persiste e sobrevive a `/clear`); `/clear` antes de **cada** prompt se `clear_context` (memória vive no disco/prompt, nunca na conversa); loop `verify: { run, max_attempts }` re-prompta com `${checks.report}` fresco por tentativa; gate `expect` via `parseVerdict`. A ação em falha (verify esgotado ou expect não-bate) é governada por `step.on_fail` (default `escalate`).
 - **`shell`** (`shell.ts` + `tokenize.ts`): tokeniza+resolve TODOS os comandos *antes* de rodar (fail-fast, sem efeito parcial), roda argv direto via execa. Para no 1º erro — exceto `always:true` (best-effort, ex.: `cleanup` tenta `worktree remove` E `branch -D`).
 - **`checks`** (`checks.ts`): roda uma lista nomeada de `checks:` standalone.
 - **`approval`** (`approval.ts`): gate humano via `ctx.ui`, opcionalmente roda `run:` após aprovar.

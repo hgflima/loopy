@@ -16,12 +16,12 @@
  *  - **`prompt` / `retry_prompt`** → `prompt` on the first attempt, `retry_prompt`
  *    on retries (falling back to `prompt`), resolved per attempt so a retry's
  *    `${checks.report}` carries *that* attempt's failing checks.
- *  - **`verify: { run, max_attempts, on_fail }`** → the inner loop: after each
- *    prompt, run the named checks list; on green, the step succeeds; on red,
- *    re-prompt with the report until `max_attempts` is spent, then fail with
- *    `on_fail` (escalate) and the last report attached for `${checks.report}`.
- *  - **`expect` + `on_expect_fail`** → a verdict gate (the `audit` step): parse
- *    the final turn's text with {@link parseVerdict} (T-013) using the label
+ *  - **`verify: { run, max_attempts }`** → the inner loop: after each prompt,
+ *    run the named checks list; on green, the step succeeds; on red, re-prompt
+ *    with the report until `max_attempts` is spent, then fail with `on_fail`
+ *    (escalate) and the last report attached for `${checks.report}`.
+ *  - **`expect` + `on_fail`** → a verdict gate (the `audit` step): parse the
+ *    final turn's text with {@link parseVerdict} (T-013) using the label
  *    derived from `expect`, and block the step unless the verdict is PASS
  *    (fail-closed on absence).
  *
@@ -135,10 +135,10 @@ function applyVerdictGate(ctx: StepContext, step: AgentStep): StepResult {
   const expected = ctx.resolve(step.expect);
   const verdict = parseVerdict(text, { label: labelFromExpect(expected) });
   if (!verdict.pass) {
-    const onFail = step.on_expect_fail ?? "escalate";
+    const onFail = step.on_fail ?? "escalate";
     const reason =
       `[agent:${step.id}] veredito esperado "${expected}" não satisfeito: ` +
-      `${verdict.reason ?? "sem PASS"}. on_expect_fail: ${onFail}.`;
+      `${verdict.reason ?? "sem PASS"}. on_fail: ${onFail}.`;
     ctx.logger.error(reason);
     return { ok: false, reason, output: text };
   }
@@ -225,9 +225,10 @@ export function createAgentStep(): Step {
       }
 
       if (!succeeded && verify !== undefined) {
+        const onFail = step.on_fail ?? "escalate";
         const reason =
           `[agent:${step.id}] verify "${verify.run}" falhou após ` +
-          `${maxAttempts} tentativa(s); aplicando on_fail: ${verify.on_fail}.`;
+          `${maxAttempts} tentativa(s); aplicando on_fail: ${onFail}.`;
         ctx.logger.error(reason);
         return {
           ok: false,
