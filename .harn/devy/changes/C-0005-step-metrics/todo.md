@@ -31,7 +31,7 @@
     Verificação: `npm test -- orchestrator` && `npm run typecheck`.
     Deps: T-002, T-003. Files: src/loop/orchestrator.ts, testes. Scope: M.
 
-- [ ] T-005: index.ts — merge `metrics.json` + Run report (stderr), gated por `metrics`
+- [x] T-005: index.ts — merge `metrics.json` + Run report (stderr), gated por `metrics`
     Após `runLoop`: resolver `metrics.report.index` uma vez a nível de Run (escopo run-level `change.*`/`inputs.*`/`workspace.*`, normalizado contra `root`); merge do `RunMetrics` em `.loopy/metrics.json` (append em `runs[]`, atômico); ler rollup da Change e emitir Run report em stderr (line-reporter, após a TUI parar no `finally`). Tudo gated pela presença de `config.metrics`.
     Aceite (com `metrics`): `.loopy/metrics.json` no shape esperado; Run report com breakdown por Step + linha "Change até agora". (Sem `metrics`): nenhum artefato novo, saída byte-idêntica. `usage`/`cost` null → Step sucede, mostra `n/d`.
     Verificação: `npm test -- index` && `npm run typecheck`.
