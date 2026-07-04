@@ -47,7 +47,7 @@
       Verify: npx vitest run tests/config/schema*.test.ts — caso órfão rejeitado;
       com verify OU expect presente → aceito.
 
-- [ ] T-026: Pré-varredura de migração no `load.ts` — erro guiado (OQ-3/4/5/6)
+- [x] T-026: Pré-varredura de migração no `load.ts` — erro guiado (OQ-3/4/5/6)
       Função pura inline no load.ts, ANTES do zod, sobre o YAML cru. Percorre o pipeline,
       detecta as três chaves removidas por step (match por nome em qualquer step, sem
       olhar type — OQ-4), coleta TODAS (OQ-3) e lança ConfigError reaproveitando o
