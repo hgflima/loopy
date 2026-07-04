@@ -35,9 +35,7 @@ function readRepoFile(name: string): string {
 
 /** Load the committed example `loopy.yml` through the engine's own loader. */
 function loadExampleConfig(): LoopyConfig {
-  return loadConfig(
-    repoFile(".harn/devy/changes/C-0003-unify-on-fail/loopy.yml"),
-  );
+  return loadConfig(repoFile("examples/loopy.yml"));
 }
 
 /** A single fabricated pending task, enough to resolve every interpolation. */

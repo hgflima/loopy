@@ -4,12 +4,9 @@ import { describe, expect, it } from "vitest";
 import { ConfigError, loadConfig, parseConfig } from "../../src/config/load";
 import { configYaml } from "./_helpers";
 
-// Path to the real example config (moved to .harn/devy/changes/C-0003-unify-on-fail/).
+// Path to the canonical example config committed at examples/loopy.yml.
 const EXAMPLE_YML = fileURLToPath(
-  new URL(
-    "../../.harn/devy/changes/C-0003-unify-on-fail/loopy.yml",
-    import.meta.url,
-  ),
+  new URL("../../examples/loopy.yml", import.meta.url),
 );
 
 describe("parseConfig — valid input", () => {
@@ -247,7 +244,7 @@ describe("parseConfig — migration pre-scan (T-026)", () => {
 });
 
 describe("loadConfig — from disk", () => {
-  it("validates the example loopy.yml at the repo root", () => {
+  it("validates the canonical example loopy.yml (examples/loopy.yml)", () => {
     const config = loadConfig(EXAMPLE_YML);
 
     expect(config.name).toBe("agentic-loop");

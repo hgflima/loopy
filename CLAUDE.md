@@ -11,7 +11,7 @@ CLI TypeScript/Node que roda um **loop agêntico de dois níveis** sobre um dire
 - Contrato congelado de tipos: `src/types.ts` (`Step`/`StepContext`/`StepResult`/`LoopyConfig` + ports). É declaration-only; sua corretude é provada por `tsc --noEmit`.
 
 ## Usage Patterns
-Dev do próprio loopy: `npm run dev -- [args]` (tsx). Qualidade: `npm run typecheck`, `npm run lint`, `npm test` (vitest). Build: `npm run build` (tsup → `dist/`). O exemplo canônico do config é o `/loopy.yml` da raiz (validado nos testes).
+Dev do próprio loopy: `npm run dev -- [args]` (tsx). Qualidade: `npm run typecheck`, `npm run lint`, `npm test` (vitest). Build: `npm run build` (tsup → `dist/`). O exemplo canônico do config vive em `examples/loopy.yml` (carregado pelos testes de aceite e de `config/load`); `tests/fixtures/project/loopy.yml` é o fixture usado pelos testes de CLI.
 
 Stack: `@agentclientprotocol/sdk`, `commander`, `execa`, `ink`+`react`, `yaml`, `zod`. Node ≥20, ESM (`"type": "module"`).
 
