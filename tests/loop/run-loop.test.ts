@@ -34,7 +34,7 @@ import type { RunShellCommand } from "../../src/steps/shell";
 import {
   emptyState,
   pipelineFingerprint,
-  recordStepIn,
+  saveProgressIn,
   setStatusIn,
 } from "../../src/resume/state";
 import type {
@@ -451,7 +451,7 @@ describe("runLoop — agent session wiring", () => {
 // ---------------------------------------------------------------------------
 
 describe("runLoop — checkpoint: skip + record + status", () => {
-  it("records each successful step via checkpoint.recordStep", async () => {
+  it("saves progress for each successful step via checkpoint.saveProgress", async () => {
     const pipeline = [shell("a"), shell("b")];
     const rec: Recorder = { order: [] };
     const registry = scriptedRegistry(rec);
@@ -464,21 +464,20 @@ describe("runLoop — checkpoint: skip + record + status", () => {
       checkpoint: cp.port,
     });
 
-    expect(cp.calls).toContain("recordStep:T-1:a");
-    expect(cp.calls).toContain("recordStep:T-1:b");
+    // After step "a" succeeds, progress saved with pc="b" (next step).
+    expect(cp.calls).toContain("saveProgress:T-1:b");
   });
 
-  it("skips steps already in completedSteps (resume-skip)", async () => {
+  it("resumes from saved PC position (skips prior steps)", async () => {
     const pipeline = [shell("a"), shell("b"), shell("c")];
     const rec: Recorder = { order: [] };
     const registry = scriptedRegistry(rec);
     const { port, marked } = recordingMarkDone();
     const config = makeConfig(pipeline);
-    // Pre-populate checkpoint: steps a and b already done.
+    // Pre-populate checkpoint: PC at step c (a and b already done).
     const hash = pipelineFingerprint(pipeline);
     let initial = emptyState();
-    initial = recordStepIn(initial, "T-1", "a", hash);
-    initial = recordStepIn(initial, "T-1", "b", hash);
+    initial = saveProgressIn(initial, "T-1", "c", { a: 1, b: 1 }, "", hash);
     initial = setStatusIn(initial, "T-1", "running", hash);
     const cp = fakeCheckpoint(pipeline, initial);
 
@@ -493,9 +492,8 @@ describe("runLoop — checkpoint: skip + record + status", () => {
     expect(rec.order).toEqual(["T-1:c"]);
     expect(marked).toEqual(["T-1"]);
     expect(result.completed).toEqual(["T-1"]);
-    // Resume-skip messages logged.
-    expect(logger.infos.some((m) => m.includes('step "a" já concluído'))).toBe(true);
-    expect(logger.infos.some((m) => m.includes('step "b" já concluído'))).toBe(true);
+    // Resume log present.
+    expect(logger.infos.some((m) => m.includes('retomando de step "c"'))).toBe(true);
   });
 
   it("sets status running before pipeline, clears on success", async () => {

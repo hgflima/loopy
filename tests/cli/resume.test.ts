@@ -146,7 +146,9 @@ describe("run — --clean", () => {
       tasks: {
         "T-002": {
           pipelineHash: "sha256:abc",
-          completedSteps: ["create-worktree", "implement"],
+          pc: "simplify",
+          visits: { "create-worktree": 1, "implement": 1 },
+          checksReport: "",
           status: "paused",
         },
       },
@@ -177,7 +179,9 @@ describe("run — --clean", () => {
       tasks: {
         "T-003": {
           pipelineHash: "sha256:def",
-          completedSteps: ["create-worktree"],
+          pc: "implement",
+          visits: { "create-worktree": 1 },
+          checksReport: "",
           status: "running",
         },
       },
@@ -212,12 +216,16 @@ describe("run — --clean", () => {
       tasks: {
         "T-002": {
           pipelineHash: "sha256:a",
-          completedSteps: [],
+          pc: "",
+          visits: {},
+          checksReport: "",
           status: "paused",
         },
         "T-003": {
           pipelineHash: "sha256:b",
-          completedSteps: [],
+          pc: "",
+          visits: {},
+          checksReport: "",
           status: "running",
         },
       },
@@ -241,12 +249,16 @@ describe("run — --clean", () => {
       tasks: {
         "T-002": {
           pipelineHash: "sha256:a",
-          completedSteps: [],
+          pc: "",
+          visits: {},
+          checksReport: "",
           status: "paused",
         },
         "T-003": {
           pipelineHash: "sha256:b",
-          completedSteps: [],
+          pc: "",
+          visits: {},
+          checksReport: "",
           status: "paused",
         },
       },
@@ -273,7 +285,9 @@ describe("run — --clean", () => {
       tasks: {
         "T-999": {
           pipelineHash: "sha256:x",
-          completedSteps: [],
+          pc: "",
+          visits: {},
+          checksReport: "",
           status: "paused",
         },
       },
@@ -293,7 +307,9 @@ describe("run — --clean", () => {
       tasks: {
         "T-002": {
           pipelineHash: "sha256:abc",
-          completedSteps: [],
+          pc: "",
+          visits: {},
+          checksReport: "",
           status: "paused",
         },
       },

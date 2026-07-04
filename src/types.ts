@@ -292,10 +292,15 @@ export interface PipelineOutcome {
 /** Lifecycle status of a task's checkpoint. */
 export type TaskStatus = "running" | "paused" | "aborted";
 
-/** Persisted progress of a single task within a run. */
+/** Persisted progress of a single task within a run (PC-based, C-0004). */
 export interface TaskCheckpoint {
   readonly pipelineHash: string;
-  readonly completedSteps: readonly string[];
+  /** Step id the PC points to (next step to execute on resume). `""` = start. */
+  readonly pc: string;
+  /** Number of times each step has been visited so far. */
+  readonly visits: Readonly<Record<string, number>>;
+  /** Current checks report carry (feedback from fix-loop, OQ-10). */
+  readonly checksReport: string;
   readonly status: TaskStatus;
 }
 
@@ -308,7 +313,13 @@ export interface RunState {
 /** Port for checkpoint I/O — keeps the orchestrator testable without disk. */
 export interface CheckpointPort {
   read(): RunState;
-  recordStep(taskId: string, stepId: string): void;
+  /** Persist the current PC position, visit counters, and carry after each transition. */
+  saveProgress(
+    taskId: string,
+    pc: string,
+    visits: Readonly<Record<string, number>>,
+    checksReport: string,
+  ): void;
   setStatus(taskId: string, status: TaskStatus): void;
   clearTask(taskId: string): void;
   pruneOrphans(knownTaskIds: readonly string[]): void;
