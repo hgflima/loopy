@@ -15,7 +15,7 @@ import type {
   ChecksRunnerPort,
   StopReason,
 } from "../../src/types";
-import { makeStepContext } from "./support";
+import { makeLogger, makeStepContext } from "./support";
 
 // ---------------------------------------------------------------------------
 // Doubles
@@ -303,5 +303,109 @@ describe("agent step — stop reasons and knobs", () => {
 
   it('exposes the agent step under type "agent"', () => {
     expect(createAgentStep().type).toBe("agent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Initial checksReport seeding from ctx (OQ-9 — goto re-entry carries feedback)
+// ---------------------------------------------------------------------------
+
+describe("agent step — initial checksReport seeding (OQ-9)", () => {
+  it("seeds initial checksReport from ctx.resolve so re-entry via goto carries feedback", async () => {
+    const seededReport = "Fix bug in line 42";
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: {
+        id: "implement",
+        type: "agent",
+        prompt: "Implement. Report: ${checks.report}",
+      } as AgentStep,
+      session,
+      resolve: (template) => {
+        if (template === "${checks.report}") return seededReport;
+        if (template === "${worktree.path}") return ".worktrees/T-001";
+        if (template === "${worktree.diff}") return "";
+        return template;
+      },
+    });
+
+    await createAgentStep().execute(ctx);
+
+    // The first prompt must contain the seeded report from the goto carry.
+    expect(session.promptCalls()[0]).toContain(seededReport);
+  });
+
+  it("checksReport is empty on a fresh run (no prior goto — regression zero)", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: {
+        id: "implement",
+        type: "agent",
+        prompt: "Implement. Report: [${checks.report}]",
+      } as AgentStep,
+      session,
+      resolve: (template) => {
+        if (template === "${checks.report}") return "";
+        if (template === "${worktree.path}") return ".worktrees/T-001";
+        if (template === "${worktree.diff}") return "";
+        return template;
+      },
+    });
+
+    await createAgentStep().execute(ctx);
+
+    // Empty report — no prior goto, no leak.
+    expect(session.promptCalls()[0]).toContain("Report: []");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// on_fail formatting in logs (not [object Object])
+// ---------------------------------------------------------------------------
+
+describe("agent step — on_fail formatting in logs", () => {
+  it("formats on_fail: { goto } in verify-exhausted log (not [object Object])", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const checksRunner = scriptedChecks([red("erro")]);
+    const logger = makeLogger();
+    const ctx = makeStepContext({
+      step: verifyStep({
+        verify: { run: "ci", max_attempts: 1 },
+        on_fail: { goto: "implement" },
+      }),
+      checksConfig: CI,
+      checks: checksRunner.port,
+      session,
+      logger,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(false);
+    const errorMsg = logger.errors.find((m) => m.includes("on_fail"));
+    expect(errorMsg).toBeDefined();
+    expect(errorMsg).toContain("goto implement");
+    expect(errorMsg).not.toContain("[object Object]");
+  });
+
+  it("formats on_fail: { goto } in verdict-gate log (not [object Object])", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn"],
+      texts: ["AUDIT: FAIL: something wrong"],
+    });
+    const logger = makeLogger();
+    const ctx = makeStepContext({
+      step: auditStep({ on_fail: { goto: "implement" } }),
+      session,
+      logger,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(false);
+    const errorMsg = logger.errors.find((m) => m.includes("on_fail"));
+    expect(errorMsg).toBeDefined();
+    expect(errorMsg).toContain("goto implement");
+    expect(errorMsg).not.toContain("[object Object]");
   });
 });

@@ -48,7 +48,7 @@
  * checks list that does not exist, or being handed a step of the wrong `type`.
  */
 import { createResolver, createScope, selectPrompt } from "../interp/resolver";
-import { buildScopeVars } from "../loop/orchestrator";
+import { buildScopeVars, formatOnFail } from "../loop/orchestrator";
 import { classifyStopReason } from "../acp/session";
 import type {
   AgentStep,
@@ -138,7 +138,7 @@ function applyVerdictGate(ctx: StepContext, step: AgentStep): StepResult {
     const onFail = step.on_fail ?? "escalate";
     const reason =
       `[agent:${step.id}] veredito esperado "${expected}" não satisfeito: ` +
-      `${verdict.reason ?? "sem PASS"}. on_fail: ${onFail}.`;
+      `${verdict.reason ?? "sem PASS"}. on_fail: ${formatOnFail(onFail)}.`;
     ctx.logger.error(reason);
     return { ok: false, reason, output: text };
   }
@@ -177,7 +177,7 @@ export function createAgentStep(): Step {
       }
 
       let lastReport: ChecksReport | undefined;
-      let checksReport = "";
+      let checksReport = ctx.resolve("${checks.report}");
       let succeeded = false;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -228,7 +228,7 @@ export function createAgentStep(): Step {
         const onFail = step.on_fail ?? "escalate";
         const reason =
           `[agent:${step.id}] verify "${verify.run}" falhou após ` +
-          `${maxAttempts} tentativa(s); aplicando on_fail: ${onFail}.`;
+          `${maxAttempts} tentativa(s); aplicando on_fail: ${formatOnFail(onFail)}.`;
         ctx.logger.error(reason);
         return {
           ok: false,
