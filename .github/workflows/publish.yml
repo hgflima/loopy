@@ -1,7 +1,12 @@
 name: publish
 
-# Publica no npm quando voce cria um GitHub Release.
-# Fluxo: bumpa a versao no package.json -> cria um Release (tag vX.Y.Z) -> esta esteira roda.
+# Publica no npm via Trusted Publishing (OIDC) quando voce cria um GitHub Release.
+# Sem NPM_TOKEN: a autenticacao usa tokens efemeros via OIDC.
+# Pre-requisito (uma vez): o primeiro publish do pacote e feito manualmente (local),
+# e depois o Trusted Publisher e registrado na pagina do pacote no npmjs.com
+# apontando para este repo + este arquivo de workflow (publish.yml).
+#
+# Fluxo: bumpa a versao -> cria um GitHub Release (tag vX.Y.Z) -> esta esteira roda.
 on:
   release:
     types: [published]
@@ -11,15 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # necessario para o npm provenance
+      id-token: write # necessario para OIDC / provenance
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
+
+      # Trusted Publishing exige npm >= 11.5.1 (mais novo que o bundlado no Node 22).
+      - run: npm install -g npm@latest
 
       - run: npm ci
 
@@ -27,7 +35,5 @@ jobs:
 
       - run: npm test
 
-      # prepublishOnly ja roda o build (tsup) antes de empacotar.
+      # Sem NODE_AUTH_TOKEN: o OIDC autentica o publish. prepublishOnly roda o build.
       - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
