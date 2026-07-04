@@ -466,6 +466,10 @@ export interface AgentSession {
   readText(): string;
   /** Cancel the current turn (`session/cancel`). */
   cancel(): Promise<void>;
+  /** Sum of per-turn usage since last drain; resets the accumulator. `null` when ACP did not report. */
+  drainUsage(): TurnUsage | null;
+  /** Cumulative cost snapshot of the Session. `null` when ACP did not report. */
+  readCost(): StepCost | null;
 }
 
 /** Result of a merge attempt. */

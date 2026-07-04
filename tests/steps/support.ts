@@ -103,6 +103,8 @@ const inertSession: AgentSession = {
   prompt: async () => "end_turn",
   readText: () => "",
   cancel: async () => {},
+  drainUsage: () => null,
+  readCost: () => null,
 };
 
 const inertGit: GitPort = {

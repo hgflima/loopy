@@ -458,6 +458,8 @@ const notWiredSession: AgentSession = {
   prompt: notWired("session.prompt"),
   readText: notWired("session.readText"),
   cancel: notWired("session.cancel"),
+  drainUsage: () => null,
+  readCost: () => null,
 };
 
 /** Fail-loud `GitPort`: no non-agent step reaches for engine-level git here. */
@@ -507,6 +509,8 @@ function createLazySession(open: () => Promise<AgentSession>): AgentSession {
     cancel: async () => {
       if (opened !== undefined) await opened.cancel();
     },
+    drainUsage: () => opened?.drainUsage() ?? null,
+    readCost: () => opened?.readCost() ?? null,
   };
 }
 

@@ -290,7 +290,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     permissions: { on_request: config.acp.permissions.on_request },
     logger,
   });
-  const pool = createSessionPool({ ctx: agent.ctx, text: agent.text, logger });
+  const pool = createSessionPool({ ctx: agent.ctx, text: agent.text, cost: agent.cost, logger });
   const git = createGit({ root });
   const checks: ChecksRunnerPort = {
     run: (list, opts) => runChecks(list, { cwd: resolvePath(root, opts.cwd) }),

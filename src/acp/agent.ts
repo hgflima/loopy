@@ -38,6 +38,7 @@ import type {
 import type { LoggerPort, PermissionOnRequest } from "../types";
 import {
   createClientApp,
+  type CostBuffer,
   type FileSystemPort,
   type PermissionResolver,
   type TerminalManager,
@@ -94,6 +95,8 @@ export interface AgentHandle {
   readonly protocolVersion: number;
   /** Turn-scoped agent text, keyed by sessionId (OQ3). */
   readonly text: TurnTextBuffer;
+  /** Per-session cumulative cost buffer (C-0005). */
+  readonly cost: CostBuffer;
   /** Terminal manager behind the `terminal/*` handlers. */
   readonly terminals: TerminalManager;
   /** Resolves when the underlying process has exited. */
@@ -168,7 +171,7 @@ export async function openAgent(
     Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
   );
 
-  const { app, textBuffer, terminals } = createClientApp({
+  const { app, textBuffer, costBuffer, terminals } = createClientApp({
     name: options.clientInfo?.name,
     onRequest: options.permissions.on_request,
     permissionResolver: options.permissionResolver,
@@ -233,6 +236,7 @@ export async function openAgent(
     agentInfo: value.init.agentInfo ?? null,
     protocolVersion: value.init.protocolVersion,
     text: textBuffer,
+    cost: costBuffer,
     terminals,
     closed,
     shutdown,

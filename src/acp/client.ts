@@ -200,6 +200,49 @@ export function agentChunkText(update: SessionUpdate): string | undefined {
   return content.type === "text" ? content.text : undefined;
 }
 
+/**
+ * Extract cost from a `usage_update`, or `undefined` for any other update type
+ * or when cost is absent. Feeds the {@link CostBuffer} (C-0005).
+ */
+export function usageUpdateCost(
+  update: SessionUpdate,
+): { readonly amount: number; readonly currency: string } | undefined {
+  if (update.sessionUpdate !== "usage_update") return undefined;
+  const cost = (update as { cost?: { amount: number; currency: string } | null }).cost;
+  return cost ?? undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Per-session cost buffer (C-0005 T-003) — fed by `usage_update`
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-session buffer of the cumulative ACP cost (from `usage_update`).
+ * The `usage_update` arrives via `session/update` after the `flushSessionUpdates`
+ * barrier, so by the time `SessionWrapper.readCost()` reads it the value is
+ * settled. The buffer stores the **last** snapshot per session (cost is
+ * cumulative — spike confirmed); `null` when no `usage_update` with cost arrived.
+ */
+export interface CostBuffer {
+  /** Store the latest cumulative cost snapshot for a session. */
+  set(sessionId: string, amount: number, currency: string): void;
+  /** Read the latest cost snapshot; `null` when none received. */
+  read(sessionId: string): { readonly amount: number; readonly currency: string } | null;
+}
+
+/** Build an in-memory {@link CostBuffer}. */
+export function createCostBuffer(): CostBuffer {
+  const store = new Map<string, { readonly amount: number; readonly currency: string }>();
+  return {
+    set(sessionId, amount, currency) {
+      store.set(sessionId, { amount, currency });
+    },
+    read(sessionId) {
+      return store.get(sessionId) ?? null;
+    },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem port (fs/read_text_file + fs/write_text_file)
 // ---------------------------------------------------------------------------
@@ -424,6 +467,8 @@ export interface ClientAppOptions {
   readonly onUpdate?: (notification: SessionNotification) => void;
   /** Turn buffer (OQ3) to feed; a fresh one is created when omitted. */
   readonly textBuffer?: TurnTextBuffer;
+  /** Cost buffer (C-0005) to feed; a fresh one is created when omitted. */
+  readonly costBuffer?: CostBuffer;
   /** Filesystem behind the `fs/*` handlers (node fs by default). */
   readonly fs?: FileSystemPort;
   /** Terminal manager behind the `terminal/*` handlers. */
@@ -436,6 +481,7 @@ export interface ClientAppOptions {
 export interface ClientAppBundle {
   readonly app: ClientApp;
   readonly textBuffer: TurnTextBuffer;
+  readonly costBuffer: CostBuffer;
   readonly terminals: TerminalManager;
 }
 
@@ -450,6 +496,7 @@ export function createClientApp(
   options: ClientAppOptions = {},
 ): ClientAppBundle {
   const textBuffer = options.textBuffer ?? createTurnTextBuffer();
+  const costBuffer = options.costBuffer ?? createCostBuffer();
   const terminals = options.terminals ?? createTerminalManager();
   const fs = options.fs ?? createNodeFileSystem();
   const resolvePermission =
@@ -501,7 +548,9 @@ export function createClientApp(
       options.onUpdate?.(params);
       const text = agentChunkText(params.update);
       if (text !== undefined) textBuffer.append(params.sessionId, text);
+      const cost = usageUpdateCost(params.update);
+      if (cost !== undefined) costBuffer.set(params.sessionId, cost.amount, cost.currency);
     });
 
-  return { app, textBuffer, terminals };
+  return { app, textBuffer, costBuffer, terminals };
 }

@@ -35,8 +35,14 @@
  */
 import { AGENT_METHODS } from "@agentclientprotocol/sdk";
 import type { ActiveSession, ClientContext } from "@agentclientprotocol/sdk";
-import type { AgentSession, LoggerPort, StopReason } from "../types";
-import type { TurnTextBuffer } from "./client";
+import type {
+  AgentSession,
+  LoggerPort,
+  StepCost,
+  StopReason,
+  TurnUsage,
+} from "../types";
+import type { CostBuffer, TurnTextBuffer } from "./client";
 
 /** The raw command that resets an agent's context while keeping the session. */
 export const CLEAR_COMMAND = "/clear";
@@ -85,6 +91,8 @@ export interface SessionDeps {
   readonly ctx: ClientContext;
   /** Turn-scoped text buffer (OQ3), keyed by `sessionId`. */
   readonly text: TurnTextBuffer;
+  /** Per-session cumulative cost buffer (C-0005), keyed by `sessionId`. */
+  readonly cost?: CostBuffer;
   readonly logger?: LoggerPort;
 }
 
@@ -94,8 +102,20 @@ export interface LoopySession extends AgentSession {
   dispose(): void;
 }
 
+/** Zero-valued usage accumulator — reused on init and reset. */
+const ZERO_USAGE = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cachedReadTokens: 0,
+  cachedWriteTokens: 0,
+  thoughtTokens: 0,
+  totalTokens: 0,
+};
+
 class SessionWrapper implements LoopySession {
   private lastTurnText = "";
+  private usageAcc = { ...ZERO_USAGE };
+  private usageAvailable = false;
 
   constructor(
     private readonly deps: SessionDeps,
@@ -149,6 +169,31 @@ class SessionWrapper implements LoopySession {
     this.active.dispose();
   }
 
+  /** Sum of per-turn usage since last drain; resets the accumulator. */
+  drainUsage(): TurnUsage | null {
+    if (!this.usageAvailable) return null;
+    const { inputTokens, outputTokens, cachedReadTokens, cachedWriteTokens, thoughtTokens, totalTokens } = this.usageAcc;
+    const snapshot: TurnUsage = {
+      inputTokens,
+      outputTokens,
+      cachedReadTokens: cachedReadTokens || undefined,
+      cachedWriteTokens: cachedWriteTokens || undefined,
+      thoughtTokens: thoughtTokens || undefined,
+      totalTokens,
+      available: true,
+    };
+    this.usageAcc = { ...ZERO_USAGE };
+    this.usageAvailable = false;
+    return snapshot;
+  }
+
+  /** Cumulative cost snapshot from the cost buffer; `null` when not reported. */
+  readCost(): StepCost | null {
+    const raw = this.deps.cost?.read(this.sessionId);
+    if (raw == null) return null;
+    return { amount: raw.amount, currency: raw.currency, available: true };
+  }
+
   /**
    * Run one prompt turn: reset the turn buffer, send the prompt, and drain the
    * SDK update queue up to the turn's `stop`. Returns the ACP `stopReason`
@@ -173,6 +218,19 @@ class SessionWrapper implements LoopySession {
     ]);
     await flushSessionUpdates();
     this.lastTurnText = drained;
+
+    // C-0005: accumulate per-turn usage (usage is per-turn — spike confirmed).
+    const usage = response.usage;
+    if (usage != null) {
+      this.usageAcc.inputTokens += usage.inputTokens;
+      this.usageAcc.outputTokens += usage.outputTokens;
+      this.usageAcc.cachedReadTokens += usage.cachedReadTokens ?? 0;
+      this.usageAcc.cachedWriteTokens += usage.cachedWriteTokens ?? 0;
+      this.usageAcc.thoughtTokens += usage.thoughtTokens ?? 0;
+      this.usageAcc.totalTokens += usage.totalTokens;
+      this.usageAvailable = true;
+    }
+
     return response.stopReason as StopReason;
   }
 }

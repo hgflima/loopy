@@ -27,12 +27,14 @@ import {
   ALLOW_KINDS,
   REJECT_KINDS,
   agentChunkText,
+  createCostBuffer,
   createNodeFileSystem,
   createPermissionResolver,
   createTerminalManager,
   createTurnTextBuffer,
   pickOptionByKind,
   resolvePermissionOutcome,
+  usageUpdateCost,
   type TerminalManager,
 } from "../../src/acp/client";
 
@@ -200,6 +202,65 @@ describe("agentChunkText", () => {
       },
     };
     expect(agentChunkText(update)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// usageUpdateCost — extract cost from a usage_update (C-0005)
+// ---------------------------------------------------------------------------
+
+describe("usageUpdateCost", () => {
+  it("extracts cost from a usage_update with cost present", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "usage_update",
+      used: 1000,
+      size: 200000,
+      cost: { amount: 0.42, currency: "USD" },
+    };
+    expect(usageUpdateCost(update)).toEqual({ amount: 0.42, currency: "USD" });
+  });
+
+  it("returns undefined for a usage_update without cost", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "usage_update",
+      used: 1000,
+      size: 200000,
+    };
+    expect(usageUpdateCost(update)).toBeUndefined();
+  });
+
+  it("returns undefined for non-usage_update updates", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hi" },
+    };
+    expect(usageUpdateCost(update)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-session cost buffer (C-0005)
+// ---------------------------------------------------------------------------
+
+describe("createCostBuffer", () => {
+  it("returns null for an unseen session", () => {
+    const buf = createCostBuffer();
+    expect(buf.read("never")).toBeNull();
+  });
+
+  it("stores and reads the last cost snapshot per session", () => {
+    const buf = createCostBuffer();
+    buf.set("s1", 0.10, "USD");
+    buf.set("s1", 0.25, "USD");
+    expect(buf.read("s1")).toEqual({ amount: 0.25, currency: "USD" });
+  });
+
+  it("keeps sessions independent", () => {
+    const buf = createCostBuffer();
+    buf.set("s1", 0.10, "USD");
+    buf.set("s2", 0.50, "EUR");
+    expect(buf.read("s1")).toEqual({ amount: 0.10, currency: "USD" });
+    expect(buf.read("s2")).toEqual({ amount: 0.50, currency: "EUR" });
   });
 });
 
