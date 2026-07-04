@@ -28,6 +28,7 @@ function sampleVars(overrides: Partial<ScopeVars> = {}): ScopeVars {
       parent_branch: "main",
       worktrees_dir: ".worktrees",
     },
+    change: { id: "C-0005-step-metrics", dir: ".harn/devy/changes/C-0005-step-metrics" },
     ...overrides,
   };
 }
@@ -162,6 +163,8 @@ describe("createScope — introspection", () => {
     const scope = createScope(sampleVars());
     expect(scope.keys()).toEqual([
       "attempt",
+      "change.dir",
+      "change.id",
       "checks.report",
       "inputs.plan",
       "inputs.spec",
@@ -223,5 +226,34 @@ describe("selectPrompt — retry_prompt vs prompt", () => {
 
   it("treats attempt 0 (or below) as the first prompt", () => {
     expect(selectPrompt(step, 0)).toBe("PRIMEIRO");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-001 — ${change.id} / ${change.dir} (C-0005)
+// ---------------------------------------------------------------------------
+
+describe("resolve — ${change.*} (C-0005 T-001)", () => {
+  it("resolves ${change.id} from the scope", () => {
+    const scope = createScope(sampleVars());
+    expect(resolve("change: ${change.id}", scope)).toBe("change: C-0005-step-metrics");
+  });
+
+  it("resolves ${change.dir} from the scope", () => {
+    const scope = createScope(sampleVars());
+    expect(resolve("dir: ${change.dir}", scope)).toBe(
+      "dir: .harn/devy/changes/C-0005-step-metrics",
+    );
+  });
+
+  it("lists change.id and change.dir in keys()", () => {
+    const scope = createScope(sampleVars());
+    expect(scope.keys()).toContain("change.id");
+    expect(scope.keys()).toContain("change.dir");
+  });
+
+  it("unknown var still fails fast even with change.* in scope", () => {
+    const scope = createScope(sampleVars());
+    expect(() => resolve("${change.nope}", scope)).toThrow(InterpolationError);
   });
 });

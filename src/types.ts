@@ -250,6 +250,16 @@ export interface LoggingConfig {
   readonly capture_acp_traffic: boolean;
 }
 
+/** Where the Change report is persisted (opt-in via `metrics.report`). */
+export interface MetricsReportConfig {
+  readonly index: string;
+}
+
+/** Opt-in metrics block — presence enables collection + Run report. */
+export interface MetricsConfig {
+  readonly report?: MetricsReportConfig;
+}
+
 /** The fully-validated `loopy.yml` (defaults applied) — produced by T-002. */
 export interface LoopyConfig {
   readonly version: string;
@@ -264,6 +274,7 @@ export interface LoopyConfig {
   readonly concurrency: number;
   readonly policies: Policies;
   readonly logging: LoggingConfig;
+  readonly metrics?: MetricsConfig;
 }
 
 // ---------------------------------------------------------------------------

@@ -157,6 +157,34 @@ describe("buildScopeVars", () => {
       parent_branch: "main",
       worktrees_dir: ".worktrees",
     });
+    // change derived from dirname(inputs.todo)
+    expect(vars.change.id).toBe("tasks");
+    expect(vars.change.dir).toBe("tasks");
+  });
+
+  it("derives change.id from basename(dirname(inputs.todo))", () => {
+    const base = makeConfig();
+    const config = {
+      ...base,
+      inputs: { ...base.inputs, todo: ".harn/devy/changes/C-0005-step-metrics/todo.md" },
+    };
+    const [task] = makeTasks();
+    const vars = buildScopeVars(config, task!, {
+      iteration: 1, attempt: 1, worktreePath: ".worktrees/T-002", diff: "", checksReport: "",
+    });
+    expect(vars.change.id).toBe("C-0005-step-metrics");
+    expect(vars.change.dir).toBe(".harn/devy/changes/C-0005-step-metrics");
+  });
+
+  it("falls back change.id to config.name when todo is at root", () => {
+    const base = makeConfig();
+    const config = { ...base, inputs: { ...base.inputs, todo: "todo.md" } };
+    const [task] = makeTasks();
+    const vars = buildScopeVars(config, task!, {
+      iteration: 1, attempt: 1, worktreePath: ".worktrees/T-002", diff: "", checksReport: "",
+    });
+    expect(vars.change.id).toBe(config.name);
+    expect(vars.change.dir).toBe(".");
   });
 });
 

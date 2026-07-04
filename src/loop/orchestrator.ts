@@ -26,7 +26,7 @@
  * (AD-4).
  */
 import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { markDoneInFile, type BacklogOptions } from "../backlog/todo";
 import {
   createResolver,
@@ -95,6 +95,17 @@ export function worktreePathFor(config: LoopyConfig, task: Task): string {
 }
 
 /**
+ * Derive `change.id` and `change.dir` from `dirname(inputs.todo)`.
+ * Fallback: when the backlog lives at the repo root (`dirname` is `"."`
+ * or empty), `change.id` falls back to `config.name`.
+ */
+function deriveChange(config: LoopyConfig): { readonly id: string; readonly dir: string } {
+  const dir = dirname(config.inputs.todo);
+  if (dir === "." || dir === "") return { id: config.name, dir: "." };
+  return { id: basename(dir), dir };
+}
+
+/**
  * Assemble the documented `${...}` interpolation variables for one task from the
  * config, the task, and the current runtime values. This is the single source of
  * truth for the scope, reused by both the dry-run planner and (later) the live
@@ -127,6 +138,7 @@ export function buildScopeVars(
       parent_branch: config.workspace.parent_branch,
       worktrees_dir: config.workspace.worktrees_dir,
     },
+    change: deriveChange(config),
   };
 }
 

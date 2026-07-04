@@ -285,6 +285,22 @@ const loggingSchema = z
   .strict();
 
 // ---------------------------------------------------------------------------
+// metrics (opt-in — C-0005)
+// ---------------------------------------------------------------------------
+
+const metricsReportSchema = z
+  .object({
+    index: nonEmptyString,
+  })
+  .strict();
+
+const metricsSchema = z
+  .object({
+    report: metricsReportSchema.optional(),
+  })
+  .strict();
+
+// ---------------------------------------------------------------------------
 // Top-level config
 // ---------------------------------------------------------------------------
 
@@ -301,6 +317,7 @@ export const loopyConfigSchema = z
     concurrency: z.number().int().min(1).default(1),
     policies: policiesSchema,
     logging: loggingSchema,
+    metrics: metricsSchema.optional(),
   })
   .strict();
 
