@@ -85,7 +85,7 @@ export function defaultConfig(checks: ChecksConfig = {}): LoopyConfig {
     },
     checks,
     pipeline: [],
-    stop_conditions: { max_iterations: 25, stop_signal_file: ".loopy.stop" },
+    stop_conditions: { max_iterations: 25, max_step_visits: 10, stop_signal_file: ".loopy.stop" },
     concurrency: 1,
     policies: {
       escalation: { action: "pause", keep_worktree: true, notify: "stderr" },

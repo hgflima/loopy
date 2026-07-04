@@ -93,8 +93,14 @@ export interface StepResult {
 export type AgentMode =
   "acceptEdits" | "plan" | "bypassPermissions" | "default" | (string & {});
 
+/** Target of a goto jump — `id` must reference an existing pipeline step. */
+export type GotoAction = { readonly goto: string };
+
 /** What a step signals on failure; resolved to a policy by the orchestrator. */
-export type OnFailAction = "escalate";
+export type OnFailAction = "escalate" | GotoAction;
+
+/** What a step signals on success when overriding sequential flow. */
+export type OnSuccessAction = GotoAction;
 
 /** Inner-loop config of an `agent` step: `prompt -> checks -> retry`. */
 export interface VerifyConfig {
@@ -109,6 +115,8 @@ export interface StepBase {
   readonly id: string;
   /** Runs even if a previous step failed (e.g. `cleanup`). Default `false`. */
   readonly always?: boolean;
+  /** Override sequential flow on success: jump to the target step. */
+  readonly on_success?: OnSuccessAction;
 }
 
 /** `agent` — one ACP agent turn (with optional inner verify loop + verdict). */
@@ -211,6 +219,8 @@ export type ChecksConfig = Readonly<Record<string, readonly CheckCommand[]>>;
 
 export interface StopConditions {
   readonly max_iterations: number;
+  /** Max executions per step per task; exceeded → escalate (fail-closed). */
+  readonly max_step_visits: number;
   readonly stop_signal_file: string;
 }
 
@@ -254,6 +264,25 @@ export interface LoopyConfig {
   readonly concurrency: number;
   readonly policies: Policies;
   readonly logging: LoggingConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline outcome (used by the orchestrator's outer loop)
+// ---------------------------------------------------------------------------
+
+/** Outcome of interpreting one task's whole pipeline. */
+export interface PipelineOutcome {
+  /** `true` only when every step that ran succeeded. */
+  readonly ok: boolean;
+  /** Id of the first step that failed (drives escalation attribution). */
+  readonly failedStepId?: string;
+  /** The first failure's reason. */
+  readonly reason?: string;
+  /** Set when escalation was triggered by max_step_visits exceeded. */
+  readonly visitExceeded?: {
+    readonly stepId: string;
+    readonly visits: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
