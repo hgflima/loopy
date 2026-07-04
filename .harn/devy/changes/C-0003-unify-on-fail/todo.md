@@ -62,7 +62,7 @@
 
 ## Fase 3 — Documentação
 
-- [ ] T-027: `docs/MIGRATION.md` + revalidar `CONTEXT.md`
+- [x] T-027: `docs/MIGRATION.md` + revalidar `CONTEXT.md`
       docs/MIGRATION.md NOVO: guia enxuto com tabela antiga→on_fail (3 chaves), diffs yml
       por caso, nota "escalate é o único valor", header citando ADR-0001. CONTEXT.md:
       revalidar o verbete "Ação em falha (on_fail)" já migrado (sem mudança prevista).
