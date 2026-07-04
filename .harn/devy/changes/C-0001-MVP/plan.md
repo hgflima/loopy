@@ -1,7 +1,7 @@
 # Implementation Plan: `loopy` — Motor de Loop Agêntico Config-Driven via ACP
 
-> Fase: **PLAN**. Derivado de `SPEC.md` (SPECIFY, decisões travadas) e do `loopy.yml` de exemplo.
-> Repo ainda sem código: só `SPEC.md`, `loopy.yml`, `.claude/`. Não é git repo ainda.
+> Fase: **PLAN**. Derivado de `spec.md` (SPECIFY, decisões travadas) e do `loopy.yml` de exemplo.
+> Repo ainda sem código: só `.harn/devy/changes/C-0001-MVP/spec.md`, `loopy.yml`, `.claude/`. Não é git repo ainda.
 
 ## Overview
 
@@ -18,7 +18,7 @@ O caminho de valor incremental:
 - **AD-4 — `StepContext` + interpolação uma vez por task/tentativa.** O contexto resolve `${task.*}`, `${worktree.*}`, `${iteration}`, `${attempt}`, `${checks.report}`, `${inputs.*}`, `${workspace.*}`, e carrega handles: session pool, git, checks runner, logger, store/UI events, config, flags. Interpolação é substituição simples com interface para estender a expressões depois.
 - **AD-5 — Erros como valores nos limites de step.** `StepResult` = `{ ok, ... }` ou falha estruturada (com `report`/motivo); o orquestrador nunca depende de exceptions para fluxo normal. Exceptions só para bugs/infra.
 - **AD-6 — Testabilidade.** Lógica pura e limites cobertos por `vitest`; I/O externo mockado. ACP exercitado contra um **fake agent** (subprocesso stub falando JSON-RPC ndjson) a partir da Fase 2. Git testado contra **repo temporário real** (não mockar git). Ink validado via store/estado, não render visual.
-- **AD-7 — Dogfooding do backlog.** `tasks/todo.md` é escrito no formato que o próprio `loopy` parseia (`- [ ] T-NNN: título` + corpo indentado), então o plano é auto-consumível pelo motor quando ele existir.
+- **AD-7 — Dogfooding do backlog.** `todo.md` é escrito no formato que o próprio `loopy` parseia (`- [ ] T-NNN: título` + corpo indentado), então o plano é auto-consumível pelo motor quando ele existir.
 
 ## Dependency Graph
 

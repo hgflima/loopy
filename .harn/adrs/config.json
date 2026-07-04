@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "root_dir": "docs/adrs",
+  "numbering": "sequential",
+  "template": "template.md",
+  "lint": "strict",
+  "fail_mode": "closed",
+  "hooks": {
+    "pre_commit": true,
+    "pre_tool_use": true,
+    "post_tool_use": true
+  },
+  "state_machine": {
+    "initial": [
+      "proposed",
+      "accepted"
+    ],
+    "unlocked_statuses": [
+      "proposed"
+    ],
+    "transitions": {
+      "proposed": [
+        "accepted",
+        "rejected"
+      ],
+      "accepted": [
+        "deprecated",
+        "superseded"
+      ],
+      "rejected": [],
+      "deprecated": [],
+      "superseded": []
+    },
+    "mutable_fields": [
+      "status",
+      "status_date",
+      "supersedes",
+      "superseded_by"
+    ]
+  }
+}

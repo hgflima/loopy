@@ -1,10 +1,10 @@
 # Backlog: `loopy` — Motor de Loop Agêntico Config-Driven via ACP
 
 > Formato consumível pelo próprio `loopy` (`- [ ] T-NNN: título` + corpo indentado).
-> Detalhes, acceptance criteria e verificação completos em `tasks/plan.md`.
+> Detalhes, acceptance criteria e verificação completos em `plan.md`.
 > Invariante em toda task: o motor só interpreta o `loopy.yml` — nada de loop hardcoded (AD-1).
 >
-> Decisões de implementação fechadas (ver tabela em `tasks/plan.md`):
+> Decisões de implementação fechadas (ver tabela em `plan.md`):
 > OQ1 interpolação de chave desconhecida → abortar (fail-fast).  OQ2 approval na TUI → useInput + port requestApproval().
 > OQ3 texto do agente → buffer próprio por turno (reset por prompt), readText fallback.  OQ4 ChecksReport → head+tail por check.
 > OQ5 fake agent → scriptable (scenario-driven).  OQ6 --task → fora de escopo + aviso não-bloqueante.

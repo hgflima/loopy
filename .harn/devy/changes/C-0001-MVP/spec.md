@@ -138,7 +138,7 @@ loopy/
 ├── loopy.yml                 # config de exemplo (no projeto-alvo)
 ├── package.json
 ├── tsconfig.json
-└── SPEC.md / tasks/plan.md / tasks/todo.md
+└── .harn/devy/changes/C-0001-MVP/{spec,plan,todo}.md
 ```
 
 Artefatos gerados em runtime no **projeto-alvo**: `.worktrees/<id>/` (worktrees), `.loopy/logs/<id>.log`, `.loopy.stop` (stop-signal, criado pelo operador). Todos no `.gitignore`.
@@ -265,7 +265,7 @@ Testáveis; a spec está "feita" quando:
 
 ## Decisões (Open Questions resolvidas)
 
-1. **Caminhos dos inputs (Q1).** `SPEC.md` na raiz + `tasks/plan.md` + `tasks/todo.md` — alinhado ao que o harness `devy` gera. Todos configuráveis em `inputs`.
+1. **Caminhos dos inputs (Q1).** `.harn/devy/changes/C-0001-MVP/spec.md` + `plan.md` + `todo.md` — alinhado ao que o harness `devy` gera. Todos configuráveis em `inputs`.
 2. **Harness nos worktrees (Q2).** O agente resolve o `.claude` do **cwd da sessão** (= worktree), verificado no source do adaptador → o `.claude` **precisa estar commitado no `parent_branch`**.
 3. **Contexto por task (Q3).** **Contexto fresco por step** via `/clear` (knob `clear_context`, default `true`): 1 sessão ACP por task, `/clear` antes de cada prompt. Memória vive no disco (worktree/diff) e nas specs.
 4. **Concorrência (Q4).** **Sequencial no v1** (`concurrency: 1`), mas store/orchestrator **parallel-ready** (sem singleton de "task atual"; pool de sessões keyed por worktree). O adaptador já hospeda N sessões, então subir para N depois é incremental.

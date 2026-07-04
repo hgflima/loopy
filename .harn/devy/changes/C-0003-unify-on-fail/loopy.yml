@@ -14,9 +14,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: "spec.md"
-  plan: "plan.md"
-  todo: "todo.md"
+  spec: ".harn/devy/changes/C-0003-unify-on-fail/spec.md"
+  plan: ".harn/devy/changes/C-0003-unify-on-fail/plan.md"
+  todo: ".harn/devy/changes/C-0003-unify-on-fail/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
@@ -42,9 +42,9 @@ pipeline:
     clear_context: true
     mode: acceptEdits
     prompt: |
-      Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
+      /devy:build Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
       ${task.body}
-      NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
     retry_prompt: |
       A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
       ${checks.report}
@@ -55,25 +55,24 @@ pipeline:
     clear_context: true
     mode: acceptEdits
     prompt: |
-      Simplifique o que está no worktree sem alterar comportamento: remova
+      /devy:code-simplify Simplifique o que está no worktree sem alterar comportamento: remova
       duplicação, clareie nomes, reduza complexidade. Não adicione dependências.
-      NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
       Diff atual:
       ${worktree.diff}
     verify: { run: ci, max_attempts: 3, on_fail: escalate }
 
-  - id: audit
+  - id: review
     type: agent
     clear_context: true
     mode: default
     prompt: |
-      /verify audite a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}:
-      correção, segurança, casos de borda e aderência ao harness.
+      /devy:review Reveja a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}
       **CRITICAL:** NUNCA EDITE NADA!
       Diff sob revisão:
       ${worktree.diff}
-      Respond a na ÚLTIMA linha exatamente "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
-    expect: "AUDIT: PASS"
+      Respond a na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
+    expect: "REVIEW: PASS"
     on_expect_fail: escalate
 
   - id: commit
