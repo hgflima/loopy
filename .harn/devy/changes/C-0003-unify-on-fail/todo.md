@@ -40,7 +40,7 @@
 
 ## Fase 2 — Guarda-corpos (aditivos)
 
-- [ ] T-025: `.refine` em `agentStepSchema` — `on_fail` exige `verify` ou `expect` (OQ-7)
+- [x] T-025: `.refine` em `agentStepSchema` — `on_fail` exige `verify` ou `expect` (OQ-7)
       schema.ts: .refine no agentStepSchema rejeita on_fail órfão (sem verify e sem
       expect) com mensagem pt-BR ancorada no path on_fail. approval NÃO recebe guarda
       (modo de falha intrínseco). Depende de T-023 (agentStepSchema já com on_fail).
