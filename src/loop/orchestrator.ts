@@ -227,6 +227,8 @@ function resolveStep(
   }
 
   // Common to all step types — pushed after per-type fields.
+  if (step.on_success)
+    fields.push(setting("on_success", `goto ${step.on_success.goto}`));
   if (step.on_fail) fields.push(setting("on_fail", formatOnFail(step.on_fail)));
 
   return {
