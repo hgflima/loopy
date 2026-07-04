@@ -35,7 +35,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     fica em T-005; se acusar, é o esperado e será resolvido lá).
     Deps: nenhuma. Files: `src/types.ts`. Scope: S.
 
-- [ ] T-003: schema.ts — validação do goto (superRefine ×3)
+- [x] T-003: schema.ts — validação do goto (superRefine ×3)
     Validar a forma nova e rejeitar o sempre-erro. `.strict()`/readonly preservados.
     Mudanças: `gotoSchema = z.object({ goto: nonEmptyString }).strict()`; `onFailSchema`
     vira `z.union([z.literal("escalate"), gotoSchema])`; `on_success: gotoSchema.optional()`
