@@ -53,7 +53,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     Deps: T-002. Files: `src/config/schema.ts`, `tests/config/schema.test.ts` (NOVO).
     Scope: M.
 
-- [ ] T-004: canal de warning — collectPipelineWarnings
+- [x] T-004: canal de warning — collectPipelineWarnings
     Emitir warning não-bloqueante (ciclo é válido: fix-loop). Hoje a validação só faz
     throw-ou-passa — este canal é novo. Função pura `collectPipelineWarnings(pipeline):
     string[]`: (a) detecta ciclo no grafo de goto → "confirme que é intencional"; (b)
