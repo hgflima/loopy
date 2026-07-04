@@ -53,6 +53,7 @@ import type {
   GitPort,
   LoggerPort,
   LoopyConfig,
+  OnFailAction,
   RunFlags,
   StepConfig,
   StepContext,
@@ -182,6 +183,8 @@ const prompt = (label: string, value: string): ResolvedField => ({
   value,
 });
 const command = (value: string): ResolvedField => ({ kind: "command", value });
+const formatOnFail = (a: OnFailAction): string =>
+  typeof a === "string" ? a : `goto ${a.goto}`;
 
 /**
  * Resolve the template fields of one step against `resolve`. Each primitive
@@ -206,28 +209,25 @@ function resolveStep(
         );
       }
       if (step.expect) fields.push(setting("expect", resolve(step.expect)));
-      if (step.on_fail) {
-        fields.push(setting("on_fail", step.on_fail));
-      }
       break;
     }
     case "shell": {
       for (const cmd of step.run) fields.push(command(resolve(cmd)));
-      if (step.on_fail) fields.push(setting("on_fail", step.on_fail));
       break;
     }
     case "checks": {
       fields.push(setting("run", step.run));
-      if (step.on_fail) fields.push(setting("on_fail", step.on_fail));
       break;
     }
     case "approval": {
       fields.push(prompt("prompt", resolve(step.prompt)));
       for (const cmd of step.run ?? []) fields.push(command(resolve(cmd)));
-      if (step.on_fail) fields.push(setting("on_fail", step.on_fail));
       break;
     }
   }
+
+  // Common to all step types — pushed after per-type fields.
+  if (step.on_fail) fields.push(setting("on_fail", formatOnFail(step.on_fail)));
 
   return {
     id: step.id,

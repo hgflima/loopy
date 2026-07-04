@@ -191,6 +191,7 @@ const pipelineSchema = z
 const stopConditionsSchema = z
   .object({
     max_iterations: z.number().int().positive(),
+    max_step_visits: z.number().int().positive().default(10),
     stop_signal_file: nonEmptyString,
   })
   .strict();

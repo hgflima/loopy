@@ -264,7 +264,7 @@ describe("runLoop — stop conditions", () => {
     const registry = scriptedRegistry(rec);
     const { port, marked } = recordingMarkDone();
     const config = makeConfig([shell("s")], {
-      stop: { max_iterations: 2, stop_signal_file: ".loopy.stop" },
+      stop: { max_iterations: 2, max_step_visits: 10, stop_signal_file: ".loopy.stop" },
     });
 
     const result = await runLoop(
