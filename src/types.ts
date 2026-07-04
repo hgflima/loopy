@@ -100,9 +100,8 @@ export type OnFailAction = "escalate";
 export interface VerifyConfig {
   /** Name of a list under `checks:` to run after each prompt. */
   readonly run: string;
-  /** Max prompt/verify attempts before applying `on_fail`. */
+  /** Max prompt/verify attempts before applying the step's `on_fail`. */
   readonly max_attempts: number;
-  readonly on_fail: OnFailAction;
 }
 
 /** Fields shared by every pipeline step. */
@@ -123,7 +122,7 @@ export interface AgentStep extends StepBase {
   readonly verify?: VerifyConfig;
   /** Verdict gate, e.g. `"AUDIT: PASS"`; blocks continuation if unmet. */
   readonly expect?: string;
-  readonly on_expect_fail?: OnFailAction;
+  readonly on_fail?: OnFailAction;
 }
 
 /** `shell` — external commands via execa, in order. */

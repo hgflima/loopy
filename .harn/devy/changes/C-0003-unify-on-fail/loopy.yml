@@ -48,7 +48,7 @@ pipeline:
     retry_prompt: |
       A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
       ${checks.report}
-    verify: { run: ci, max_attempts: 3, on_fail: escalate }
+    verify: { run: ci, max_attempts: 3 }
 
   - id: simplify
     type: agent
@@ -60,7 +60,7 @@ pipeline:
       **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
       Diff atual:
       ${worktree.diff}
-    verify: { run: ci, max_attempts: 3, on_fail: escalate }
+    verify: { run: ci, max_attempts: 3 }
 
   - id: review
     type: agent
@@ -73,7 +73,7 @@ pipeline:
       ${worktree.diff}
       Respond a na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
     expect: "REVIEW: PASS"
-    on_expect_fail: escalate
+    on_fail: escalate
 
   - id: commit
     type: shell

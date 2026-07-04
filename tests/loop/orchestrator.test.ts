@@ -57,7 +57,7 @@ pipeline:
     retry_prompt: |
       Os checks falharam. Corrija.
       \${checks.report}
-    verify: { run: ci, max_attempts: 3, on_fail: escalate }
+    verify: { run: ci, max_attempts: 3 }
   - id: audit
     type: agent
     clear_context: true
@@ -67,7 +67,7 @@ pipeline:
       \${worktree.diff}
       Responda "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
     expect: "AUDIT: PASS"
-    on_expect_fail: escalate
+    on_fail: escalate
   - id: merge
     type: approval
     prompt: "Aprovar merge da task \${task.id} em \${workspace.parent_branch}?"

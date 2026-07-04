@@ -205,7 +205,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
             prompt:
               Implemente T-002 — Primeira task pendente conforme SPEC.md.
               Implementar o parser do backlog conforme a spec.
-            verify: run=ci max_attempts=3 on_fail=escalate
+            verify: run=ci max_attempts=3
         [3] audit (agent)
             mode: plan
             clear_context: true
@@ -213,7 +213,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
               Audite T-002 contra SPEC.md. NAO edite.
               Responda "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
             expect: AUDIT: PASS
-            on_expect_fail: escalate
+            on_fail: escalate
         [4] merge (approval)
             prompt:
               Aprovar merge da task T-002 em main?
@@ -234,7 +234,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
             clear_context: true
             prompt:
               Implemente T-003 — Segunda task pendente conforme SPEC.md.
-            verify: run=ci max_attempts=3 on_fail=escalate
+            verify: run=ci max_attempts=3
         [3] audit (agent)
             mode: plan
             clear_context: true
@@ -242,7 +242,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
               Audite T-003 contra SPEC.md. NAO edite.
               Responda "AUDIT: PASS" ou "AUDIT: FAIL: <motivo>".
             expect: AUDIT: PASS
-            on_expect_fail: escalate
+            on_fail: escalate
         [4] merge (approval)
             prompt:
               Aprovar merge da task T-003 em main?

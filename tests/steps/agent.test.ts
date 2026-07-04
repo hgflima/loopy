@@ -90,7 +90,7 @@ function verifyStep(overrides: Partial<AgentStep> = {}): AgentStep {
     type: "agent",
     prompt: "Implemente ${task.id}.",
     retry_prompt: "Corrija.\n${checks.report}",
-    verify: { run: "ci", max_attempts: 4, on_fail: "escalate" },
+    verify: { run: "ci", max_attempts: 4 },
     ...overrides,
   };
 }
@@ -103,7 +103,7 @@ function auditStep(overrides: Partial<AgentStep> = {}): AgentStep {
     mode: "plan",
     prompt: "Audite ${task.id}. Responda AUDIT: PASS ou AUDIT: FAIL.",
     expect: "AUDIT: PASS",
-    on_expect_fail: "escalate",
+    on_fail: "escalate",
     ...overrides,
   };
 }
@@ -162,7 +162,7 @@ describe("agent step — inner verify loop", () => {
     const checks = scriptedChecks([red("erro A"), red("erro B")]);
     const ctx = makeStepContext({
       step: verifyStep({
-        verify: { run: "ci", max_attempts: 2, on_fail: "escalate" },
+        verify: { run: "ci", max_attempts: 2 },
       }),
       checksConfig: CI,
       checks: checks.port,
@@ -183,7 +183,7 @@ describe("agent step — inner verify loop", () => {
     const session = scriptedSession({ stopReasons: ["end_turn"] });
     const ctx = makeStepContext({
       step: verifyStep({
-        verify: { run: "missing", max_attempts: 1, on_fail: "escalate" },
+        verify: { run: "missing", max_attempts: 1 },
       }),
       checksConfig: CI,
       checks: scriptedChecks([GREEN]).port,
@@ -213,7 +213,7 @@ describe("agent step — expect gate", () => {
     expect(session.modeCalls()).toContain("plan");
   });
 
-  it("blocks the step when the verdict is FAIL (on_expect_fail)", async () => {
+  it("blocks the step when the verdict is FAIL (on_fail)", async () => {
     const session = scriptedSession({
       stopReasons: ["end_turn"],
       texts: ["Analisei.\nAUDIT: FAIL: faltou tratar o caso vazio"],
