@@ -17,7 +17,7 @@
     Verificação: `npm test -- metrics` && `npm run typecheck`.
     Deps: nenhuma. Files: src/types.ts, src/metrics/* (novo), testes. Scope: M.
 
-- [ ] T-003: Captura ACP — `AgentSession.drainUsage()`/`readCost()` + acumulador + buffer de cost
+- [x] T-003: Captura ACP — `AgentSession.drainUsage()`/`readCost()` + acumulador + buffer de cost
     `AgentSession` ganha `drainUsage(): TurnUsage | null` (soma desde o último drain, reseta) e `readCost(): StepCost | null` (snapshot cumulativo). `SessionWrapper` soma `PromptResponse.usage` por-turno (espelha `TurnTextBuffer`, reset por-turno); cost via buffer alimentado no branch `usage_update` de `client.ts` após a barreira `flushSessionUpdates`. `notWiredSession` → null; `createLazySession` → delega ao aberto, null se não-aberta.
     Aceite: multi-turno soma; drain reseta; `usage` null → `available:false`; `/clear` = zeros inócuo; cost cumulativo → último snapshot; assinaturas públicas existentes inalteradas; `StepResult` intocado.
     Verificação: `npm test -- acp` && `npm run typecheck`.
