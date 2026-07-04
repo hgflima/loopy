@@ -218,7 +218,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
             prompt:
               Aprovar merge da task T-002 em main?
             $ git -C "." merge --no-ff "T-002-primeira-task-pendente"
-            on_conflict: escalate
+            on_fail: escalate
         [5] cleanup (shell) [always]
             $ git -C "." worktree remove --force ".worktrees/T-002"
 
@@ -247,7 +247,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
             prompt:
               Aprovar merge da task T-003 em main?
             $ git -C "." merge --no-ff "T-003-segunda-task-pendente"
-            on_conflict: escalate
+            on_fail: escalate
         [5] cleanup (shell) [always]
             $ git -C "." worktree remove --force ".worktrees/T-003""
     `);

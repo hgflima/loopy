@@ -643,7 +643,7 @@ pipeline:
     prompt: "Aprovar merge de \${task.id}?"
     run:
       - 'git -C "\${workspace.root}" merge --no-ff "\${task.branch}" -m "merge: \${task.id}"'
-    on_conflict: escalate
+    on_fail: escalate
   - id: cleanup
     type: shell
     always: true

@@ -224,9 +224,7 @@ function resolveStep(
     case "approval": {
       fields.push(prompt("prompt", resolve(step.prompt)));
       for (const cmd of step.run ?? []) fields.push(command(resolve(cmd)));
-      if (step.on_conflict) {
-        fields.push(setting("on_conflict", step.on_conflict));
-      }
+      if (step.on_fail) fields.push(setting("on_fail", step.on_fail));
       break;
     }
   }

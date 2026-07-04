@@ -140,12 +140,12 @@ export interface ChecksStep extends StepBase {
   readonly on_fail?: OnFailAction;
 }
 
-/** `approval` — human gate + action + conflict handling. */
+/** `approval` — human gate + action + on_fail handling. */
 export interface ApprovalStep extends StepBase {
   readonly type: "approval";
   readonly prompt: string;
   readonly run?: readonly string[];
-  readonly on_conflict?: OnFailAction;
+  readonly on_fail?: OnFailAction;
 }
 
 /** Discriminated union of the 4 step primitives (discriminant: `type`). */

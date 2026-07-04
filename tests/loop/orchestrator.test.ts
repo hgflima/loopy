@@ -73,7 +73,7 @@ pipeline:
     prompt: "Aprovar merge da task \${task.id} em \${workspace.parent_branch}?"
     run:
       - git -C "\${workspace.root}" merge --no-ff "\${task.branch}"
-    on_conflict: escalate
+    on_fail: escalate
   - id: cleanup
     type: shell
     always: true

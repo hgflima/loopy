@@ -150,7 +150,7 @@ const approvalStepSchema = z
     type: z.literal("approval"),
     prompt: nonEmptyString,
     run: commandListSchema.optional(),
-    on_conflict: onFailSchema.optional(),
+    on_fail: onFailSchema.optional(),
   })
   .strict();
 
