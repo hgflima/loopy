@@ -145,7 +145,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     `src/resume/state.ts`, `src/loop/orchestrator.ts` (port + reconciliação),
     `tests/resume/state.test.ts`, `tests/loop/resume.test.ts`. Scope: L.
 
-- [ ] T-009: migrar example + fixture
+- [x] T-009: migrar example + fixture
     `examples/loopy.yml`: adicionar `max_step_visits` em stop_conditions e o fix-loop
     documentado (`review` com `on_fail: { goto: implement }`), com `${checks.report}`
     referenciado no prompt do `implement` (vazio no 1º run, preenchido na volta).
