@@ -106,7 +106,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     `tests/loop/orchestrator.test.ts` (MOD+NOVO), `tests/loop/run-loop.test.ts` (MOD).
     Scope: L (task central — se necessário, isolar o entry-guard de visitas num commit).
 
-- [ ] T-007: feedback do fix-loop (threading do report no salto)
+- [x] T-007: feedback do fix-loop (threading do report no salto)
     O alvo do goto precisa saber o que corrigir, senão não converge. Reusar
     `${checks.report}` (nenhuma var nova): no salto por `on_fail:{goto}`, o motor semeia
     `checksReport = result.report?.text ?? result.output` (para `review` com expect, report
