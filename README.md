@@ -83,8 +83,8 @@ raiz do repo). Blocos:
 - **`acp`** — mecânica do subprocesso ACP (`command`, timeout, `permissions`).
 - **`inputs`** — caminhos de `spec` / `plan` / `todo` + regras do `backlog`.
 - **`checks`** — listas nomeadas e reutilizáveis de comandos do projeto-alvo.
-- **`pipeline`** — a lista **ordenada** de steps tipados (o loop em si).
-- **`stop_conditions`** — `max_iterations` + `stop_signal_file`.
+- **`pipeline`** — a lista de steps tipados (o loop em si). A ordem declarada é o fluxo default; Desvios (`on_fail: { goto }` / `on_success: { goto }`) sobrepõem-na, permitindo saltos e ciclos (fix-loop).
+- **`stop_conditions`** — `max_iterations`, `max_step_visits` (teto de visitas por step por task, default 10) + `stop_signal_file`.
 - **`concurrency`** — sequencial no v1 (`1`); o data-model é parallel-ready.
 - **`policies`** — `escalation` (pause / skip_task / abort_loop + `keep_worktree`)
   e `git.require_clean_parent`.
@@ -96,15 +96,19 @@ Cada item de `pipeline` é uma das 4 primitivas, validadas por **zod** no _shape
 
 | `type`     | Papel                            | Campos                                                                                                                                              |
 | ---------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`    | Um turno do agente ACP           | `prompt`, `retry_prompt`, `mode`, `clear_context` (default `true`), `verify:{run,max_attempts,on_fail}` (loop interno), `expect` + `on_expect_fail` |
-| `shell`    | Comandos externos (execa)        | `run:[…]`, `always`, `on_fail`                                                                                                                      |
-| `checks`   | Roda uma lista nomeada de checks | `run` (referência a `checks:`)                                                                                                                      |
-| `approval` | Gate humano + ação               | `prompt`, `run:[…]`, `on_conflict`                                                                                                                  |
+| `agent`    | Um turno do agente ACP           | `prompt`, `retry_prompt`, `mode`, `clear_context` (default `true`), `verify:{run,max_attempts}` (loop interno), `expect`, `on_fail`, `on_success` |
+| `shell`    | Comandos externos (execa)        | `run:[…]`, `always`, `on_fail`, `on_success`                                                                                                      |
+| `checks`   | Roda uma lista nomeada de checks | `run` (referência a `checks:`), `on_fail`, `on_success`                                                                                           |
+| `approval` | Gate humano + ação               | `prompt`, `run:[…]`, `on_fail`, `on_success`                                                                                                      |
 
 ### Os dois loops
 
 - **Loop externo** — o motor itera as tasks `- [ ]` do backlog em ordem e, para
-  cada uma, executa o `pipeline` na ordem. Marca `- [x]` **apenas** após o
+  cada uma, executa o `pipeline` via **Program counter (PC)**: a ordem declarada
+  é o default, mas Desvios (`on_fail: { goto }` / `on_success: { goto }`)
+  saltam para outro step pelo `id`, permitindo ciclos intencionais (fix-loop).
+  Cada entrada num step conta uma **Visita**, limitada por `max_step_visits`
+  (default 10, fail-closed → escalate). Marca `- [x]` **apenas** após o
   pipeline inteiro da task ter sucesso, e commita essa marcação.
 - **Loop interno** — o bloco `verify:` de um step `agent`:
   `prompt → checks → em falha, re-prompta com ${checks.report}` até passar ou

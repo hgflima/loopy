@@ -1,7 +1,7 @@
 # Loop — o orquestrador (loop externo)
 
 ## Purpose & Scope
-O loop externo sobre o backlog: itera as tasks pendentes em ordem e, para cada uma, interpreta o `pipeline` do yml via registry (AD-2), aplicando `always`, `stop_conditions` e `policies.escalation`. Também hospeda o **planner do `--dry-run`** (fatia pura, sem I/O) e a **fonte única do escopo** (`buildScopeVars`) que dry-run e run vivo compartilham (AD-4). **Mecânica só** (AD-1): ordem, `always`, ações de escalação e limiares vêm de `config`; trocar comportamento é editar o yml, nunca este arquivo.
+O loop externo sobre o backlog: itera as tasks pendentes em ordem e, para cada uma, interpreta o `pipeline` do yml via registry (AD-2) usando um **Program counter (PC)** sobre `Map<id, índice>` com Desvios (`on_fail: { goto }` / `on_success: { goto }`) e guard de Visitas (`max_step_visits`, fail-closed → escalate), aplicando `always`, `stop_conditions` e `policies.escalation`. Também hospeda o **planner do `--dry-run`** (fatia pura, sem I/O — imprime arestas de desvio por Step) e a **fonte única do escopo** (`buildScopeVars`) que dry-run e run vivo compartilham (AD-4). **Mecânica só** (AD-1): ordem, desvios, `always`, ações de escalação e limiares vêm de `config`; trocar comportamento é editar o yml, nunca este arquivo.
 
 ## Entry Points & Contracts
 - `runLoop(config, tasks, deps)` → `RunLoopResult` (`{ completed, escalated, iterations, stoppedBy }`). Marca `- [x]` **só** após o pipeline inteiro passar; task que falha é **nunca** marcada, escala.
@@ -9,7 +9,7 @@ O loop externo sobre o backlog: itera as tasks pendentes em ordem e, para cada u
 - Ports (fábricas aqui): `createMarkDonePort` (reescreve+commita o mark, idempotente, sem commit vazio), `createCheckpointPort` (resume via `.loopy/state.json`). `OrchestratorDeps` é o conjunto de ports que constrói o `StepContext`.
 
 ## Usage Patterns
-- Um step roda quando o pipeline está saudável **ou** é `always:true` (ex.: `cleanup`). Após uma falha, steps não-`always` são pulados; um `always` de teardown roda — **exceto** se `keep_worktree` (preserva o worktree falho para inspeção).
+- O PC avança conforme o resultado: sucesso sem `on_success` → `PC += 1`; Desvio → `PC = stepIndex[goto]`; falha com `escalate` → terminal. Em qualquer terminal (sucesso ou escalate), Steps `always:true` (teardown) rodam em ordem declarada, sem PC/salto — desvios neles são ignorados. `keep_worktree` preserva o worktree falho para inspeção.
 - `stop_conditions` checadas no topo de cada iteração → `stop_signal_file` "encerra após a task corrente".
 - `require_clean_parent`: nunca prosseguir sobre parent sujo; checado antes de CADA task (merge/mark-done pode sujar no meio).
 - Uma sessão ACP por task (`createLazySession`), aberta **lazy** no 1º uso do step agent (depois do `create-worktree`) — task sem step agent nunca abre sessão.
