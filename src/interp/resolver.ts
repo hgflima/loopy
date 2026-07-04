@@ -94,6 +94,10 @@ export interface ScopeVars {
     readonly parent_branch: string;
     readonly worktrees_dir: string;
   };
+  readonly change: {
+    readonly id: string;
+    readonly dir: string;
+  };
 }
 
 /**

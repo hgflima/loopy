@@ -115,3 +115,9 @@ logging:
   dir: ".loopy/logs"
   per_task: true
   capture_acp_traffic: true
+
+# Opt-in metrics collection (C-0005). Absence = feature off (zero regression).
+# When present, the engine collects per-step timing + ACP tokens (best-effort).
+metrics:
+  report:
+    index: "${change.dir}/../index.md"   # where the Change report is persisted

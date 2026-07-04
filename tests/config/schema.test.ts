@@ -310,3 +310,60 @@ describe("configs válidas com e sem goto", () => {
     expect(config.stop_conditions.max_step_visits).toBe(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-001 — bloco `metrics` opt-in (C-0005)
+// ---------------------------------------------------------------------------
+
+describe("metrics — bloco opt-in (C-0005 T-001)", () => {
+  it("aceita config sem bloco metrics (regressão zero)", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    expect(config.metrics).toBeUndefined();
+  });
+
+  it("aceita metrics vazio (sem report)", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = {};
+    });
+    const config = parseConfig(yaml);
+    expect(config.metrics).toBeDefined();
+    expect(config.metrics!.report).toBeUndefined();
+  });
+
+  it("aceita metrics com report.index válido", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = { report: { index: "${change.dir}/../index.md" } };
+    });
+    const config = parseConfig(yaml);
+    expect(config.metrics!.report!.index).toBe("${change.dir}/../index.md");
+  });
+
+  it("rejeita report sem index (campo obrigatório quando report presente)", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = { report: {} };
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+
+  it("rejeita report.index vazio", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = { report: { index: "" } };
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+
+  it("rejeita chave desconhecida em metrics (strict)", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = { unknown_key: true };
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+
+  it("rejeita chave desconhecida em metrics.report (strict)", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = { report: { index: "x.md", extra: "nope" } };
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+});
