@@ -49,6 +49,7 @@ import { createLogFactory } from "./logging/logger";
 import {
   createCheckpointPort,
   createMarkDonePort,
+  deriveChange,
   formatDryRunPlan,
   planDryRun,
   runLoop,
@@ -56,6 +57,12 @@ import {
   type OrchestratorDeps,
   type RunLoopResult,
 } from "./loop/orchestrator";
+import {
+  loadMetrics,
+  mergeRun,
+  renderRunReport,
+  saveMetrics,
+} from "./metrics/index";
 import {
   clearTaskIn,
   loadState,
@@ -411,7 +418,19 @@ async function runLiveFlow(
     return 1;
   }
 
-  // 4) Summary + exit code.
+  // 4) Metrics — gated by config.metrics presence.
+  if (config.metrics) {
+    const change = deriveChange(config);
+    const metricsPath = resolvePath(root, ".loopy/metrics.json");
+    const existing = loadMetrics(metricsPath);
+    const merged = mergeRun(existing, result.metrics, change);
+    saveMetrics(metricsPath, merged);
+
+    // Run report → stderr (after the TUI stopped in defaultRunLive's finally).
+    io.err(renderRunReport(result.metrics, merged).join("\n") + "\n");
+  }
+
+  // 5) Summary + exit code.
   io.out(
     `loopy: fim — ${result.completed.length} concluída(s), ` +
       `${result.escalated.length} escalada(s); parada: ${result.stoppedBy}.\n`,

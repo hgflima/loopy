@@ -20,3 +20,5 @@ export {
   formatCost,
   formatUsage,
 } from "./format.js";
+
+export { renderRunReport } from "./report.js";

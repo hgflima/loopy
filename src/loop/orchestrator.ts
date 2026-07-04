@@ -105,7 +105,7 @@ export function worktreePathFor(config: LoopyConfig, task: Task): string {
  * Fallback: when the backlog lives at the repo root (`dirname` is `"."`
  * or empty), `change.id` falls back to `config.name`.
  */
-function deriveChange(config: LoopyConfig): { readonly id: string; readonly dir: string } {
+export function deriveChange(config: LoopyConfig): { readonly id: string; readonly dir: string } {
   const dir = dirname(config.inputs.todo);
   if (dir === "." || dir === "") return { id: config.name, dir: "." };
   return { id: basename(dir), dir };
