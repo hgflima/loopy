@@ -37,6 +37,7 @@ import {
 } from "./backlog/todo";
 import { runChecks } from "./checks/runner";
 import { ConfigError, loadConfig } from "./config/load";
+import { collectPipelineWarnings, formatWarnings } from "./config/warnings";
 import {
   createGit,
   initGitRepo,
@@ -506,6 +507,12 @@ async function execute(
     : resolvePath(dir, "loopy.yml");
   // Config is loaded first, so an invalid config aborts before any effect.
   const config = loadConfig(configPath);
+
+  // Non-blocking warnings (cycles, always+goto) — printed to stderr, never fatal.
+  const warnings = collectPipelineWarnings(config.pipeline);
+  if (warnings.length > 0) {
+    io.err(`loopy: ${formatWarnings(warnings, configPath)}\n`);
+  }
 
   const todoPath = resolvePath(dir, config.inputs.todo);
   const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
