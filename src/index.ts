@@ -20,7 +20,7 @@
  * and live-run infra faults become a clear message + non-zero exit, never a
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -495,6 +495,15 @@ async function cleanFlow(
   return 0;
 }
 
+/** `true` iff `path` exists and is a regular file (missing path → `false`). */
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /** Load config + backlog for `dir` and dispatch on the flags. */
 async function execute(
   dir: string,
@@ -505,6 +514,16 @@ async function execute(
   const configPath = flags.config
     ? resolvePath(flags.config)
     : resolvePath(dir, "loopy.yml");
+  // The positional arg is the target DIRECTORY (we look for `<dir>/loopy.yml`).
+  // A common slip is passing the config file itself, which turns the join into
+  // `<file>/loopy.yml` and fails with a cryptic ENOTDIR — catch it with a hint.
+  if (!flags.config && isFile(resolvePath(dir))) {
+    throw new ConfigError(
+      `"${dir}" é um arquivo, mas o argumento posicional é o diretório do ` +
+        `projeto-alvo (procuro "<dir>/loopy.yml"). Para apontar um config ` +
+        `específico, use --config ${dir}.`,
+    );
+  }
   // Config is loaded first, so an invalid config aborts before any effect.
   const config = loadConfig(configPath);
 
