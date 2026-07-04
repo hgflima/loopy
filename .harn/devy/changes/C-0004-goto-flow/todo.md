@@ -129,7 +129,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
 
 ## Phase 3 — Migração do resume + config/doc
 
-- [ ] T-008: resume — migrar checkpoint p/ PC + visits + carry
+- [x] T-008: resume — migrar checkpoint p/ PC + visits + carry
     O checkpoint atual assume execução-única por step (`completedSteps: string[]`); com
     loops, um step roda N vezes. Migrar `TaskCheckpoint` para `pc` (id do step, robusto/
     legível — pipelineHash já invalida se muda), `visits: Record<id,number>`, `checksReport`
