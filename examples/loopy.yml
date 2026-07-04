@@ -44,6 +44,7 @@ pipeline:
     prompt: |
       /devy:build Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
       ${task.body}
+      ${checks.report}
       **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
     retry_prompt: |
       A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
@@ -73,7 +74,7 @@ pipeline:
       ${worktree.diff}
       Respond a na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
     expect: "REVIEW: PASS"
-    on_fail: escalate
+    on_fail: { goto: implement }
 
   - id: commit
     type: shell
@@ -97,6 +98,7 @@ pipeline:
 
 stop_conditions:
   max_iterations: 25
+  max_step_visits: 10
   stop_signal_file: ".loopy.stop"
 
 concurrency: 1

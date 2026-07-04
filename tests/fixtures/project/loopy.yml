@@ -63,6 +63,7 @@ pipeline:
       - git -C "${workspace.root}" worktree remove --force "${worktree.path}"
 stop_conditions:
   max_iterations: 10
+  max_step_visits: 10
   stop_signal_file: ".loopy.stop"
 concurrency: 1
 policies:
