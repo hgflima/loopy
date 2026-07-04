@@ -3,6 +3,16 @@
   "version": "0.1.0",
   "description": "Motor de loop agentico config-driven via ACP",
   "type": "module",
+  "license": "MIT",
+  "author": "Henrique Lima <hgflima@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hgflima/loopy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hgflima/loopy/issues"
+  },
+  "homepage": "https://github.com/hgflima/loopy#readme",
   "bin": {
     "loopy": "./dist/index.js"
   },
@@ -13,7 +23,8 @@
     "node": ">=20"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "build": "tsup",
