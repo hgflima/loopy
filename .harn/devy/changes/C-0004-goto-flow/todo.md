@@ -20,7 +20,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
     Verify: hooks da skill adr_management passam; `git status` mostra só o ADR + índice.
     Deps: nenhuma. Files: `docs/adrs/0002-*.md`, índice de ADRs. Scope: S.
 
-- [ ] T-002: types.ts — contrato aditivo do goto
+- [x] T-002: types.ts — contrato aditivo do goto
     Ampliar o contrato congelado sem quebrar consumidores (aditivo; reshape do
     TaskCheckpoint fica para T-008). Declaration-only, corretude por `tsc`.
     Mudanças: `GotoAction = { readonly goto: string }`; `OnFailAction = "escalate" |
