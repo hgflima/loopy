@@ -5,7 +5,7 @@
 
 ## Fase 1 — Foundation (T-001 ∥ T-002 ∥ T-003)
 
-- [ ] T-001: Config `metrics` (schema zod + `LoopyConfig`) + interpolação `${change.*}`
+- [x] T-001: Config `metrics` (schema zod + `LoopyConfig`) + interpolação `${change.*}`
     Bloco `metrics` opt-in: `report` opcional; se presente, `report.index` string não-vazia; `.strict()`. Espelhar em `LoopyConfig` (`readonly metrics?: MetricsConfig`). `buildScopeVars` + `ScopeVars` ganham `change.{id,dir}` derivado de `dirname(inputs.todo)`/`basename` (fallback `config.name` na raiz). Documentar em `examples/loopy.yml`.
     Aceite: config válido parseia; `report` sem `index` rejeitado; `${change.id}`/`${change.dir}` resolvem; var desconhecida fail-fast; ausência de `metrics` continua válida.
     Verificação: `npm test -- config` && `npm test -- interp` && `npm run typecheck`.
