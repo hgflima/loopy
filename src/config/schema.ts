@@ -161,6 +161,29 @@ const stepSchema = z.discriminatedUnion("type", [
   approvalStepSchema,
 ]);
 
+/** OQ-7: `on_fail` num step `agent` exige `verify` ou `expect`. */
+const pipelineSchema = z
+  .array(stepSchema)
+  .min(1)
+  .superRefine((steps, ctx) => {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]!;
+      if (
+        step.type === "agent" &&
+        step.on_fail &&
+        !step.verify &&
+        !step.expect
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            "'on_fail' exige 'verify' ou 'expect' — sem nenhum dos dois não há modo de falha para governar.",
+          path: [i, "on_fail"],
+        });
+      }
+    }
+  });
+
 // ---------------------------------------------------------------------------
 // stop_conditions / policies / logging
 // ---------------------------------------------------------------------------
@@ -213,7 +236,7 @@ export const loopyConfigSchema = z
     acp: acpSchema,
     inputs: inputsSchema,
     checks: checksSchema,
-    pipeline: z.array(stepSchema).min(1),
+    pipeline: pipelineSchema,
     stop_conditions: stopConditionsSchema,
     concurrency: z.number().int().min(1).default(1),
     policies: policiesSchema,
