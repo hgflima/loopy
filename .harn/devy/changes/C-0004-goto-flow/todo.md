@@ -5,7 +5,7 @@ pequena e verificável; ordem = bottom-up pelo grafo. Não pular checkpoints.
 
 ## Phase 1 — Linguagem de config, validação e dry-run
 
-- [ ] T-001: ADR-0002 — estende ADR-0001 com goto/on_success/max_step_visits
+- [x] T-001: ADR-0002 — estende ADR-0001 com goto/on_success/max_step_visits
     Registrar a decisão que amplia a linguagem ubíqua antes do código (disciplina ADR),
     para não deixar a linguagem órfã. Usar a skill adr_management (`/adrs:create`).
     ADR-0002, status accepted, `supersedes: []` (estende, não revoga — cita ADR-0001 no
