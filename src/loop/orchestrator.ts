@@ -34,6 +34,7 @@ import {
   selectPrompt,
   type ScopeVars,
 } from "../interp/resolver";
+import { foldSamples } from "../metrics/folds.js";
 import {
   clearTaskIn,
   loadState,
@@ -57,11 +58,16 @@ import type {
   OnFailAction,
   PipelineOutcome,
   RunFlags,
+  RunMetrics,
+  Sample,
   StepConfig,
   StepContext,
+  StepCost,
+  StepMetrics,
   StepResult,
   StepType,
   Task,
+  TaskMetrics,
   UiPort,
 } from "../types";
 
@@ -567,6 +573,11 @@ export interface OrchestratorDeps {
    * pruning uses only the `tasks` passed to `runLoop`.
    */
   readonly knownTaskIds?: readonly string[];
+  /**
+   * Injectable clock for timing measurements (default `Date.now`).
+   * Returns milliseconds since epoch. Tests inject for determinism.
+   */
+  readonly now?: () => number;
 }
 
 /**
@@ -613,6 +624,12 @@ function buildTaskStepContext(
 
 export type { PipelineOutcome };
 
+/** Internal result from `runTaskPipeline` — outcome + collected metrics. */
+interface PipelineRunResult {
+  readonly outcome: PipelineOutcome;
+  readonly taskMetrics: TaskMetrics;
+}
+
 /**
  * Run one task's pipeline via a **program counter (PC)** over
  * `stepIndex: Map<id, index>` (T-006). On each PC entry: increment
@@ -634,10 +651,25 @@ async function runTaskPipeline(
   iteration: number,
   deps: OrchestratorDeps,
   resumePoint?: ResumePoint,
-): Promise<PipelineOutcome> {
+): Promise<PipelineRunResult> {
   const { pipeline, stop_conditions, policies } = config;
   const maxStepVisits = stop_conditions.max_step_visits;
   const worktreePath = worktreePathFor(config, task);
+  const clock = deps.now ?? Date.now;
+
+  // --- Sample accumulator (C-0005 T-004) ---
+  const stepSamples = new Map<string, { type: StepType; samples: Sample[] }>();
+  let lastCost: StepCost | null = null;
+  const recordSample = (stepId: string, type: StepType, sample: Sample): void => {
+    let entry = stepSamples.get(stepId);
+    if (!entry) {
+      entry = { type, samples: [] };
+      stepSamples.set(stepId, entry);
+    }
+    entry.samples.push(sample);
+    if (sample.cost !== null) lastCost = sample.cost;
+  };
+
   // On a failed task, `keep_worktree` preserves the worktree for inspection —
   // which means the teardown (`always`) steps that would remove it must be
   // suppressed. Read once; it is config-driven, not engine policy (AD-1).
@@ -653,6 +685,21 @@ async function runTaskPipeline(
           sessionProvider(resolve(deps.root, worktreePath)),
         )
       : (deps.session ?? notWiredSession);
+
+  /** Execute a step, measure duration, and record a Sample in one shot. */
+  const timedExecute = async (
+    interpreter: { execute(ctx: StepContext): Promise<StepResult> },
+    ctx: StepContext,
+  ): Promise<StepResult> => {
+    const t0 = clock();
+    const result = await interpreter.execute(ctx);
+    recordSample(ctx.step.id, ctx.step.type, {
+      durationMs: clock() - t0,
+      usage: session.drainUsage(),
+      cost: session.readCost(),
+    });
+    return result;
+  };
 
   // Step index: Map<id, index> for O(1) goto resolution.
   const stepIndex = new Map<string, number>();
@@ -736,7 +783,7 @@ async function runTaskPipeline(
       deps,
       session,
     );
-    const result: StepResult = await interpreter.execute(ctx);
+    const result: StepResult = await timedExecute(interpreter, ctx);
     executedSteps.add(step.id);
 
     if (result.ok) {
@@ -813,7 +860,7 @@ async function runTaskPipeline(
           deps,
           session,
         );
-        const result = await interpreter.execute(ctx);
+        const result = await timedExecute(interpreter, ctx);
         executedSteps.add(step.id);
 
         if (result.ok) {
@@ -831,7 +878,14 @@ async function runTaskPipeline(
     }
   }
 
-  return terminal;
+  // --- Build TaskMetrics from accumulated samples (C-0005 T-004) ---
+  const steps: Record<string, StepMetrics> = {};
+  for (const [stepId, { type, samples }] of stepSamples) {
+    steps[stepId] = foldSamples(type, samples);
+  }
+  const taskMetrics: TaskMetrics = { steps, cost: lastCost };
+
+  return { outcome: terminal, taskMetrics };
 }
 
 // ---------------------------------------------------------------------------
@@ -870,6 +924,12 @@ export interface RunLoopResult {
   readonly iterations: number;
   /** Which stop condition ended the loop. */
   readonly stoppedBy: LoopStopReason;
+  /** Per-task metrics collected during this run (timing + usage + cost). */
+  readonly metrics: RunMetrics;
+  /** ISO timestamp of when the run started. */
+  readonly startedAt: string;
+  /** ISO timestamp of when the run finished. */
+  readonly finishedAt: string;
 }
 
 /**
@@ -888,8 +948,11 @@ export async function runLoop(
   tasks: readonly Task[],
   deps: OrchestratorDeps,
 ): Promise<RunLoopResult> {
+  const clock = deps.now ?? Date.now;
+  const startedAt = new Date(clock()).toISOString();
   const completed: string[] = [];
   const escalated: string[] = [];
+  const tasksMetrics: Record<string, TaskMetrics> = {};
   // `--max-iterations N` overrides the yml ceiling when provided (T-018).
   const maxIterations =
     deps.flags.maxIterations ?? config.stop_conditions.max_iterations;
@@ -900,12 +963,24 @@ export async function runLoop(
   const requireCleanParent = config.policies.git.require_clean_parent;
   let iterations = 0;
   // Every exit returns the same accumulators; only the stop reason differs.
-  const finish = (stoppedBy: LoopStopReason): RunLoopResult => ({
-    completed,
-    escalated,
-    iterations,
-    stoppedBy,
-  });
+  const finish = (stoppedBy: LoopStopReason): RunLoopResult => {
+    const finishedAt = new Date(clock()).toISOString();
+    return {
+      completed,
+      escalated,
+      iterations,
+      stoppedBy,
+      metrics: {
+        index: 0,
+        startedAt,
+        finishedAt,
+        stoppedBy,
+        tasks: tasksMetrics,
+      },
+      startedAt,
+      finishedAt,
+    };
+  };
 
   // --- Resume reconciliation (C-0002 / C-0004 PC-based) ---
   const { checkpoint } = deps;
@@ -978,13 +1053,14 @@ export async function runLoop(
     );
     checkpoint?.setStatus(task.id, "running");
     const resumePoint = resumeMap?.get(task.id);
-    const outcome = await runTaskPipeline(
+    const { outcome, taskMetrics } = await runTaskPipeline(
       config,
       task,
       iterations,
       deps,
       resumePoint,
     );
+    tasksMetrics[task.id] = taskMetrics;
 
     if (outcome.ok) {
       await deps.markDone.markDone(task.id);
