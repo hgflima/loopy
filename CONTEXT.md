@@ -47,7 +47,7 @@ O arquivo (`todo.md`) que materializa o Backlog em checkboxes. Marcar `- [x]` é
 ## Pipeline e steps
 
 **Pipeline**:
-A lista ordenada de Steps aplicada a cada Task. É "o loop em si", inteiramente definido na Configuração.
+A lista ordenada de Steps aplicada a cada Task. É "o loop em si", inteiramente definido na Configuração. A ordem declarada é o fluxo **default**; **Desvios** (`on_fail`/`on_success` com `{ goto }`) sobrepõem-na, navegando o Pipeline como grafo dirigido via Program counter.
 
 **Step**:
 Uma unidade do Pipeline, de um dos quatro tipos primitivos: Step de Agente, Step de Shell, Step de Checks e Step de Aprovação.
@@ -143,7 +143,7 @@ O contador do Loop interno (uma re-prompta do Verify), limitado por `max_attempt
 _Avoid_: try, retry, iteração. (A TUI mostra "try k/max", mas o termo canônico é Tentativa.)
 
 **Stop condition**:
-Uma condição que encerra o Loop externo: Backlog vazio, teto de Iterações, falha persistente, ou o Stop signal.
+Uma condição que encerra o Loop externo ou escala uma Task: Backlog vazio, teto de Iterações, `max_step_visits` excedido (ver _Visita_), falha persistente, ou o Stop signal.
 _Avoid_: critério de parada, término
 
 **Stop signal** (`.loopy.stop`):
@@ -159,12 +159,28 @@ Um Gate humano: o operador confirma antes de o motor prosseguir (ex.: o Merge). 
 _Avoid_: confirmação, ok
 
 **Ação em falha** (`on_fail`):
-A ação declarada num Step para quando ele falha, qualquer que seja o modo de falha do seu tipo (Shell: exit ≠ 0; Agente: Verify esgotado ou Expect não satisfeito; Aprovação: conflito de Merge). Uma única chave por Step.
+A ação declarada num Step para quando ele falha, qualquer que seja o modo de falha do seu tipo (Shell: exit ≠ 0; Agente: Verify esgotado ou Expect não satisfeito; Aprovação: conflito de Merge). Uma única chave por Step. Valor: `escalate` (default, dispara Escalonamento) **ou** `{ goto: <step-id> }` (Desvio — salta para o alvo em vez de escalar). Em Step `agent`, `on_fail` (seja `escalate` ou `{ goto }`) exige `verify` ou `expect` (senão a falha é inobservável — guard do ADR-0001 generalizado pelo ADR-0002).
 _Avoid_: `on_expect_fail`, `on_conflict`, `verify.on_fail` (nomes antigos do mesmo conceito, unificados em `on_fail`)
 
+**Ação em sucesso** (`on_success`):
+A ação declarada num Step para quando ele tem sucesso. Valor: `{ goto: <step-id> }` — salta para o alvo em vez de seguir ao próximo Step. Omitir = sequencial (próximo Step). Mora em `StepBase` (universal a todo tipo de Step; sucesso é sempre bem-definido). Chave nova, adicionada pelo ADR-0002.
+_Avoid_: next, redirect
+
+**Desvio** (_goto_):
+Um salto do fluxo do Pipeline para um Step identificado por `id`, disparado por `on_fail: { goto }` ou `on_success: { goto }`. Permite fluxo não-linear — ciclos intencionais (fix-loop) e saltos para frente. Validação estática rejeita alvo inexistente ou `id` duplicado; ciclos são limitados por `max_step_visits` (ver _Visita_).
+_Avoid_: jump, branch, redirect
+
+**Visita**:
+Cada vez que o Program counter entra num Step, conta uma Visita. O total de Visitas por Step por Task é limitado por `max_step_visits` (fail-closed: exceder → escalate sem executar). É o guard de runtime contra loops infinitos.
+_Avoid_: execução (ambíguo com Run), iteração (é o contador do Loop externo)
+
 **Escalonamento** (_escalation_):
-A política aplicada quando a Ação em falha de um Step é `escalate`: `pause`, `skip_task` ou `abort_loop`, tipicamente preservando o Worktree. `escalate` é o sinal que o Step levanta; Escalonamento é o que a política faz com ele.
+A política aplicada quando a Ação em falha de um Step é `escalate` (ou quando `max_step_visits` é excedido): `pause`, `skip_task` ou `abort_loop`, tipicamente preservando o Worktree. `escalate` é o sinal que o Step levanta; Escalonamento é o que a política faz com ele.
 _Avoid_: falha, erro (para a política)
+
+**Program counter** (PC):
+O índice corrente no Pipeline durante a execução de uma Task. O motor mantém um `Map<id, índice>` e avança o PC conforme o resultado de cada Step: sucesso sem `on_success` → `PC += 1`; Desvio → `PC = stepIndex[goto]`; `PC` além do último Step → terminal sucesso; falha com `escalate` → terminal escalate. Substituiu o `for...of` linear (ADR-0002).
+_Avoid_: cursor, ponteiro
 
 **Concorrência** (_concurrency_):
 O grau de paralelismo entre Tasks. `1` (sequencial) no v1; o modelo de dados já é _parallel-ready_.
