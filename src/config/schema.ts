@@ -21,8 +21,11 @@ import { z } from "zod";
 /** A required, non-empty string — the default for ids, paths, and commands. */
 const nonEmptyString = z.string().min(1);
 
+/** Target of a goto jump — `id` must reference an existing pipeline step. */
+const gotoSchema = z.object({ goto: nonEmptyString }).strict();
+
 /** The signal a step raises on failure; the orchestrator maps it to a policy. */
-const onFailSchema = z.literal("escalate");
+const onFailSchema = z.union([z.literal("escalate"), gotoSchema]);
 
 /** An ACP autonomy mode (`acceptEdits`/`plan`/…); open-ended by design. */
 const modeSchema = nonEmptyString;
@@ -99,6 +102,8 @@ const stepBaseShape = {
   id: nonEmptyString,
   /** Runs even after a previous step failed (e.g. `cleanup`). */
   always: z.boolean().optional(),
+  /** Override sequential flow on success: jump to the target step. */
+  on_success: gotoSchema.optional(),
 };
 
 /** An ordered, non-empty list of shell commands (`shell`/`approval` `run`). */
@@ -161,13 +166,67 @@ const stepSchema = z.discriminatedUnion("type", [
   approvalStepSchema,
 ]);
 
-/** OQ-7: `on_fail` num step `agent` exige `verify` ou `expect`. */
+/**
+ * Pipeline-level refinements (superRefine ×3):
+ *   1. `id` único no pipeline (alvo de salto exige unicidade).
+ *   2. Todo `on_fail.goto`/`on_success.goto` referencia id existente.
+ *   3. Guard do agente generalizado (OQ-7 + goto): `on_fail` em `agent`
+ *      (escalate ou goto) exige `verify` ou `expect`.
+ */
 const pipelineSchema = z
   .array(stepSchema)
   .min(1)
   .superRefine((steps, ctx) => {
+    // --- (1) id único no pipeline ----------------------------------------
+    const idIndices = new Map<string, number[]>();
+    for (let i = 0; i < steps.length; i++) {
+      const id = steps[i]!.id;
+      const indices = idIndices.get(id);
+      if (indices) indices.push(i);
+      else idIndices.set(id, [i]);
+    }
+    for (const [id, indices] of idIndices) {
+      if (indices.length > 1) {
+        for (const idx of indices) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `'id' duplicado no pipeline: "${id}" aparece ${indices.length} vezes.`,
+            path: [idx, "id"],
+          });
+        }
+      }
+    }
+
+    // Set de ids válidos para checagem de alvos de goto
+    const validIds = new Set(steps.map((s) => s.id));
+
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i]!;
+
+      // --- (2) goto targets must reference existing ids ------------------
+      if (step.on_success) {
+        const target = step.on_success.goto;
+        if (!validIds.has(target)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `step "${step.id}": 'on_success.goto' referencia "${target}", que não existe no pipeline.`,
+            path: [i, "on_success", "goto"],
+          });
+        }
+      }
+
+      if (step.on_fail && typeof step.on_fail === "object") {
+        const target = step.on_fail.goto;
+        if (!validIds.has(target)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `step "${step.id}": 'on_fail.goto' referencia "${target}", que não existe no pipeline.`,
+            path: [i, "on_fail", "goto"],
+          });
+        }
+      }
+
+      // --- (3) guard do agente generalizado (OQ-7 + goto) ---------------
       if (
         step.type === "agent" &&
         step.on_fail &&
