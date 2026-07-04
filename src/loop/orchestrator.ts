@@ -184,7 +184,7 @@ const prompt = (label: string, value: string): ResolvedField => ({
   value,
 });
 const command = (value: string): ResolvedField => ({ kind: "command", value });
-const formatOnFail = (a: OnFailAction): string =>
+export const formatOnFail = (a: OnFailAction): string =>
   typeof a === "string" ? a : `goto ${a.goto}`;
 
 /**

@@ -25,6 +25,7 @@ import {
   worktreePathFor,
   type OrchestratorDeps,
 } from "../../src/loop/orchestrator";
+import { createAgentStep } from "../../src/steps/agent";
 import {
   createNonAgentRegistry,
   createStepRegistry,
@@ -852,6 +853,116 @@ describe("runLoop — program counter (goto flow)", () => {
     expect(capturedReports[0]).toBe("");
     // 2nd implement (after review failed with goto): sees review's output
     expect(capturedReports[1]).toBe("Fix bug in line 42");
+  });
+
+  it("on_fail: { goto } threads output into agent step prompt via ${checks.report} (T-007 e2e)", async () => {
+    // A scripted session recording all prompts sent to it.
+    const sentPrompts: string[] = [];
+    const sessionProvider = async (): Promise<AgentSession> => ({
+      sessionId: "sess",
+      setMode: async () => {},
+      clear: async () => {},
+      prompt: async (text) => {
+        sentPrompts.push(text);
+        return "end_turn";
+      },
+      readText: () => "",
+      cancel: async () => {},
+    });
+
+    // Review: a checks interpreter that always fails with output (no report).
+    const failingReview: Step = {
+      type: "checks",
+      async execute(): Promise<StepResult> {
+        return { ok: false, reason: "review failed", output: "Fix bug in line 42" };
+      },
+    };
+
+    const agentInterp = createAgentStep();
+    const registry = createStepRegistry([agentInterp, failingReview]);
+    const { port } = recordingMarkDone();
+
+    const config = makeConfig(
+      [
+        {
+          id: "implement",
+          type: "agent",
+          prompt: "Implement ${task.id}. Feedback: ${checks.report}",
+          retry_prompt: "Corrija.\n${checks.report}",
+        } as StepConfig,
+        {
+          id: "review",
+          type: "checks",
+          run: "ci",
+          on_fail: { goto: "implement" },
+        } as StepConfig,
+      ],
+      {
+        stop: {
+          max_iterations: 25,
+          max_step_visits: 2,
+          stop_signal_file: ".loopy.stop",
+        },
+      },
+    );
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      sessionProvider,
+    });
+
+    // 1st implement: fresh run — empty ${checks.report}.
+    expect(sentPrompts[0]).toContain("Implement T-1.");
+    expect(sentPrompts[0]).not.toContain("Fix bug");
+    // 2nd implement (re-entered via goto): sees review's output in ${checks.report}.
+    expect(sentPrompts[1]).toContain("Fix bug in line 42");
+    // Re-entry uses `prompt` (not `retry_prompt`) — retry_prompt is inner-loop only.
+    expect(sentPrompts[1]).toContain("Implement T-1.");
+    expect(sentPrompts[1]).not.toContain("Corrija");
+  });
+
+  it("normal sequential flow does NOT leak output to next step's ${checks.report} (regression zero)", async () => {
+    // An interpreter that returns output but no report.
+    const outputOnlyStep: Step = {
+      type: "shell",
+      async execute(): Promise<StepResult> {
+        return { ok: true, output: "SHOULD NOT LEAK" };
+      },
+    };
+    // An agent that captures what it sees in ${checks.report}.
+    const sentPrompts: string[] = [];
+    const sessionProvider = async (): Promise<AgentSession> => ({
+      sessionId: "sess",
+      setMode: async () => {},
+      clear: async () => {},
+      prompt: async (text) => {
+        sentPrompts.push(text);
+        return "end_turn";
+      },
+      readText: () => "",
+      cancel: async () => {},
+    });
+
+    const agentInterp = createAgentStep();
+    const registry = createStepRegistry([agentInterp, outputOnlyStep]);
+    const { port } = recordingMarkDone();
+
+    const config = makeConfig([
+      { id: "step-a", type: "shell", run: [] } as StepConfig,
+      {
+        id: "implement",
+        type: "agent",
+        prompt: "Report: [${checks.report}]",
+      } as StepConfig,
+    ]);
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      sessionProvider,
+    });
+
+    // The agent step must NOT see step-a's output in ${checks.report}.
+    expect(sentPrompts[0]).toContain("Report: []");
   });
 });
 
