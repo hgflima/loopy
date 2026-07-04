@@ -25,7 +25,7 @@
 
 ## Fase 2 — Coleta e Run report (T-004 → T-005)
 
-- [ ] T-004: Orquestrador — cronometrar os 2 sites de execute + Amostra → RunMetrics
+- [x] T-004: Orquestrador — cronometrar os 2 sites de execute + Amostra → RunMetrics
     Clock injetável em `OrchestratorDeps` (`now?: () => Date`, default `Date.now`). Envolver execute em `:723` (principal) e `:800` (teardown `always`) com `durationMs`; após execute, `drainUsage()`/`readCost()` → Amostra por Step efetivamente executado (guard de visits e no-op sem intérprete NÃO geram Amostra). Acumular → `RunMetrics` (soma por Step/Task, Visitas somadas). Estender `RunLoopResult` com `metrics`/`startedAt`/`finishedAt`.
     Aceite: `durationMs` determinístico com clock injetado; Amostra nos dois call-sites; Step pulado (visit-exceeded / sem intérprete) não gera Amostra; drain chamado após execute; `RunLoopResult.metrics` reflete o rollup.
     Verificação: `npm test -- orchestrator` && `npm run typecheck`.
