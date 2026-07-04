@@ -29,6 +29,22 @@ import type {
   StopReason,
 } from "@agentclientprotocol/sdk";
 
+/** Per-turn token usage emitted in the prompt response (C-0005). */
+export interface FakeUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cachedReadTokens?: number;
+  readonly cachedWriteTokens?: number;
+  readonly thoughtTokens?: number;
+  readonly totalTokens: number;
+}
+
+/** Cumulative cost emitted via `usage_update` (C-0005). */
+export interface FakeCost {
+  readonly amount: number;
+  readonly currency: string;
+}
+
 /** One prompt turn's scripted behavior. */
 export interface FakeTurn {
   /** Text chunks streamed as `agent_message_chunk` updates, in order. */
@@ -41,6 +57,10 @@ export interface FakeTurn {
   };
   /** Write a file mid-turn to exercise the `fs/write_text_file` handler. */
   readonly write?: { readonly path: string; readonly content: string };
+  /** Per-turn usage to include in the prompt response (C-0005). */
+  readonly usage?: FakeUsage;
+  /** Cumulative cost to emit as a `usage_update` after the turn (C-0005). */
+  readonly cost?: FakeCost;
   /** Stop reason returned by `session/prompt` (default `"end_turn"`). */
   readonly stopReason?: StopReason;
 }
@@ -150,7 +170,25 @@ async function main(): Promise<void> {
           await emitText(`permission=${optionId}`);
       }
 
-      return { stopReason: turn.stopReason ?? "end_turn" };
+      // C-0005: emit usage_update with cost if scripted.
+      if (turn.cost) {
+        await client.notify(CLIENT_METHODS.session_update, {
+          sessionId,
+          update: {
+            sessionUpdate: "usage_update",
+            used: 1000,
+            size: 200000,
+            cost: { amount: turn.cost.amount, currency: turn.cost.currency },
+          },
+        });
+      }
+
+      // C-0005: include per-turn usage in the response if scripted.
+      const response: { stopReason: StopReason; usage?: FakeUsage } = {
+        stopReason: turn.stopReason ?? "end_turn",
+      };
+      if (turn.usage) response.usage = turn.usage;
+      return response;
     })
     .onNotification(AGENT_METHODS.session_cancel, () => {
       // No-op: exercised by the session layer (T-012), harmless here.

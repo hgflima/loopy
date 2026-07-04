@@ -57,6 +57,8 @@ function scriptedSession(script: {
     },
     readText: () => texts[turn] ?? "",
     cancel: async () => {},
+    drainUsage: () => null,
+    readCost: () => null,
     clearCount: () => clears,
     modeCalls: () => modes,
     promptCalls: () => prompts,

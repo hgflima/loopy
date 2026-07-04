@@ -91,7 +91,7 @@ describe("buildSession / session pool (against the fake agent)", () => {
       cwd: PROJECT_ROOT,
       permissions: { on_request: "allow" },
     });
-    return { ctx: handle.ctx, text: handle.text };
+    return { ctx: handle.ctx, text: handle.text, cost: handle.cost };
   }
 
   /** Open the fake agent and start a single worktree-bound session. */
@@ -225,5 +225,115 @@ describe("buildSession / session pool (against the fake agent)", () => {
     expect(pool.size).toBe(1);
 
     pool.closeAll();
+  });
+
+  // -------------------------------------------------------------------------
+  // C-0005: drainUsage / readCost (integration against the fake agent)
+  // -------------------------------------------------------------------------
+
+  it("drainUsage returns null when usage is not reported", async () => {
+    const session = await startSession({
+      defaultTurn: { text: ["hi"], stopReason: "end_turn" },
+    });
+    await session.prompt("go");
+    expect(session.drainUsage()).toBeNull();
+    session.dispose();
+  });
+
+  it("drainUsage sums multi-turn usage and resets on drain", async () => {
+    const session = await startSession({
+      turns: [
+        {
+          text: ["t1"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 50, cachedReadTokens: 10, totalTokens: 160 },
+        },
+        {
+          text: ["t2"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 200, outputTokens: 80, cachedReadTokens: 20, totalTokens: 300 },
+        },
+      ],
+    });
+
+    await session.prompt("first");
+    await session.prompt("second");
+
+    const usage = session.drainUsage();
+    expect(usage).not.toBeNull();
+    expect(usage!.available).toBe(true);
+    expect(usage!.inputTokens).toBe(300);
+    expect(usage!.outputTokens).toBe(130);
+    expect(usage!.cachedReadTokens).toBe(30);
+    expect(usage!.totalTokens).toBe(460);
+
+    // After drain, accumulator is reset.
+    expect(session.drainUsage()).toBeNull();
+
+    session.dispose();
+  });
+
+  it("/clear returns zeros and is innocuous for drainUsage", async () => {
+    const session = await startSession({
+      turns: [
+        {
+          text: ["t1"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        },
+      ],
+    });
+
+    await session.prompt("go");
+    // /clear sends a special prompt that returns stopReason: end_turn with no usage
+    await session.clear();
+
+    const usage = session.drainUsage();
+    expect(usage).not.toBeNull();
+    // Only the real turn's tokens are counted; /clear adds nothing.
+    expect(usage!.inputTokens).toBe(100);
+    expect(usage!.outputTokens).toBe(50);
+
+    session.dispose();
+  });
+
+  it("readCost returns null when no usage_update with cost arrives", async () => {
+    const session = await startSession({
+      defaultTurn: { text: ["hi"], stopReason: "end_turn" },
+    });
+    await session.prompt("go");
+    expect(session.readCost()).toBeNull();
+    session.dispose();
+  });
+
+  it("readCost returns the cumulative cost snapshot from usage_update", async () => {
+    const session = await startSession({
+      turns: [
+        {
+          text: ["t1"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+          cost: { amount: 0.05, currency: "USD" },
+        },
+        {
+          text: ["t2"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+          cost: { amount: 0.12, currency: "USD" },
+        },
+      ],
+    });
+
+    await session.prompt("first");
+    await session.prompt("second");
+
+    const cost = session.readCost();
+    expect(cost).not.toBeNull();
+    expect(cost!.available).toBe(true);
+    // Cost is cumulative — the last snapshot wins.
+    expect(cost!.amount).toBe(0.12);
+    expect(cost!.currency).toBe("USD");
+
+    session.dispose();
   });
 });

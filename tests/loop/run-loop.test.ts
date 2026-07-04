@@ -389,6 +389,8 @@ describe("runLoop — agent session wiring", () => {
         prompt: async () => "end_turn",
         readText: () => "",
         cancel: async () => {},
+        drainUsage: () => null,
+        readCost: () => null,
       };
     };
 
@@ -866,6 +868,8 @@ describe("runLoop — program counter (goto flow)", () => {
       },
       readText: () => "",
       cancel: async () => {},
+      drainUsage: () => null,
+      readCost: () => null,
     });
 
     // Review: a checks interpreter that always fails with output (no report).
@@ -939,6 +943,8 @@ describe("runLoop — program counter (goto flow)", () => {
       },
       readText: () => "",
       cancel: async () => {},
+      drainUsage: () => null,
+      readCost: () => null,
     });
 
     const agentInterp = createAgentStep();
