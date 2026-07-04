@@ -6,9 +6,29 @@ import {
   buildScopeVars,
   formatDryRunPlan,
   planDryRun,
+  runLoop,
   worktreePathFor,
 } from "../../src/loop/orchestrator";
-import type { LoopyConfig, Task } from "../../src/types";
+import { createStepRegistry } from "../../src/steps/index";
+import type {
+  AgentSession,
+  LoopyConfig,
+  StepContext,
+  StepResult,
+  StepType,
+  Task,
+  TurnUsage,
+} from "../../src/types";
+import {
+  makeConfig as makeLoopConfig,
+  makeDeps,
+  makeTask,
+  recordingMarkDone,
+  shell,
+  agent,
+  scriptedRegistry,
+  type Recorder,
+} from "./support";
 
 /**
  * A compact-but-complete config exercising all four step primitives plus
@@ -257,5 +277,306 @@ describe("formatDryRunPlan", () => {
     expect(text).toContain("T-003");
     expect(text).toContain("git worktree add");
     expect(text).not.toContain("${");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Metrics instrumentation (C-0005 T-004)
+// ---------------------------------------------------------------------------
+
+describe("runLoop — metrics instrumentation", () => {
+  it("records deterministic durationMs with injected clock", async () => {
+    let tick = 1000;
+    const clock = () => tick;
+
+    // Registry where execute advances the clock by 500ms
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 500;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")]);
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      now: clock,
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    const step = result.metrics.tasks["T-1"]?.steps["s1"];
+    expect(step).toBeDefined();
+    expect(step!.durationMs).toBe(500);
+    expect(step!.visits).toBe(1);
+    expect(step!.type).toBe("shell");
+    // usage is null for non-agent steps (notWiredSession returns null)
+    expect(step!.usage).toBeNull();
+  });
+
+  it("records startedAt and finishedAt from the injected clock", async () => {
+    let tick = 1_700_000_000_000; // 2023-11-14T22:13:20.000Z
+
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")]);
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      now: () => {
+        const v = tick;
+        tick += 100;
+        return v;
+      },
+    });
+
+    expect(result.startedAt).toBe(new Date(1_700_000_000_000).toISOString());
+    expect(result.finishedAt).toBeTruthy();
+    expect(result.metrics.startedAt).toBe(result.startedAt);
+    expect(result.metrics.finishedAt).toBe(result.finishedAt);
+    expect(result.metrics.stoppedBy).toBe("backlog_empty");
+  });
+
+  it("records samples at both call-sites (main PC + teardown always)", async () => {
+    let tick = 0;
+    const clock = () => tick;
+
+    // s1 fails → escalation (skip_task). cleanup (always, not reached by PC) runs in teardown.
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          tick += ctx.step.id === "s1" ? 100 : 200;
+          return ctx.step.id === "s1" ? { ok: false, reason: "fail" } : { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig(
+      [
+        shell("s1", { on_fail: "escalate" }),
+        shell("cleanup", { always: true }),
+      ],
+      { escalation: { action: "skip_task", keep_worktree: false, notify: "stderr" } },
+    );
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      now: clock,
+    });
+
+    expect(result.escalated).toEqual(["T-1"]);
+    const tm = result.metrics.tasks["T-1"]!;
+    // s1 executed in PC loop
+    expect(tm.steps["s1"]).toBeDefined();
+    expect(tm.steps["s1"]!.durationMs).toBe(100);
+    // cleanup executed in teardown
+    expect(tm.steps["cleanup"]).toBeDefined();
+    expect(tm.steps["cleanup"]!.durationMs).toBe(200);
+  });
+
+  it("skipped step (visit-exceeded) does NOT generate a sample", async () => {
+    let tick = 0;
+    const clock = () => tick;
+
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 100;
+          return { ok: false, reason: "fail" };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    // max_step_visits = 1; s1 fails with goto→s1; 2nd visit exceeds limit
+    const config = makeLoopConfig(
+      [shell("s1", { on_fail: { goto: "s1" } })],
+      {
+        stop: {
+          max_iterations: 10,
+          stop_signal_file: ".loopy.stop",
+          max_step_visits: 1,
+        },
+        escalation: { action: "skip_task", keep_worktree: false, notify: "stderr" },
+      },
+    );
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      now: clock,
+    });
+
+    expect(result.escalated).toEqual(["T-1"]);
+    const sm = result.metrics.tasks["T-1"]!.steps["s1"]!;
+    // Only 1 sample (first visit executed); 2nd visit was visit-exceeded → no sample
+    expect(sm.visits).toBe(1);
+    expect(sm.durationMs).toBe(100);
+  });
+
+  it("skipped step (no interpreter) does NOT generate a sample", async () => {
+    let tick = 0;
+    const clock = () => tick;
+
+    // Only register shell; agent type has no interpreter
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 100;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([agent("a1"), shell("s1")]);
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      now: clock,
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    const tm = result.metrics.tasks["T-1"]!;
+    // agent step skipped → no sample
+    expect(tm.steps["a1"]).toBeUndefined();
+    // shell step executed → sample present
+    expect(tm.steps["s1"]).toBeDefined();
+    expect(tm.steps["s1"]!.durationMs).toBe(100);
+  });
+
+  it("drainUsage is called after execute and usage appears in metrics", async () => {
+    let tick = 0;
+    const clock = () => tick;
+
+    const fakeUsage: TurnUsage = {
+      inputTokens: 100,
+      outputTokens: 50,
+      totalTokens: 150,
+      available: true,
+    };
+    const fakeSession: AgentSession = {
+      sessionId: "test",
+      setMode: async () => {},
+      clear: async () => {},
+      prompt: async () => "end_turn",
+      readText: () => "",
+      cancel: async () => {},
+      drainUsage: () => fakeUsage,
+      readCost: () => ({ amount: 0.05, currency: "USD", available: true }),
+    };
+
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 300;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")]);
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      now: clock,
+      session: fakeSession,
+    });
+
+    const sm = result.metrics.tasks["T-1"]!.steps["s1"]!;
+    expect(sm.usage).toEqual(fakeUsage);
+    expect(sm.durationMs).toBe(300);
+    // cost captured at task level
+    expect(result.metrics.tasks["T-1"]!.cost).toEqual({
+      amount: 0.05,
+      currency: "USD",
+      available: true,
+    });
+  });
+
+  it("RunLoopResult.metrics has the correct structure for multi-task runs", async () => {
+    let tick = 0;
+    const clock = () => tick;
+
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 50;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1"), shell("s2")]);
+
+    const result = await runLoop(
+      config,
+      [makeTask("T-1"), makeTask("T-2")],
+      { ...makeDeps({ registry: reg, markDone: port }), now: clock },
+    );
+
+    expect(result.completed).toEqual(["T-1", "T-2"]);
+    expect(result.metrics.index).toBe(0);
+    expect(result.metrics.stoppedBy).toBe("backlog_empty");
+
+    // Both tasks have metrics
+    for (const taskId of ["T-1", "T-2"]) {
+      const tm = result.metrics.tasks[taskId]!;
+      expect(tm).toBeDefined();
+      expect(tm.steps["s1"]!.durationMs).toBe(50);
+      expect(tm.steps["s2"]!.durationMs).toBe(50);
+      expect(tm.steps["s1"]!.visits).toBe(1);
+      expect(tm.steps["s2"]!.visits).toBe(1);
+    }
+  });
+
+  it("accumulates visits in StepMetrics when goto causes re-visit", async () => {
+    let tick = 0;
+    const clock = () => tick;
+    let s1Calls = 0;
+
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          tick += 100;
+          if (ctx.step.id === "s1") {
+            s1Calls++;
+            // Fail on first call, succeed on second
+            return s1Calls === 1 ? { ok: false, reason: "retry" } : { ok: true };
+          }
+          return { ok: true };
+        },
+      },
+      {
+        type: "checks" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 50;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    // s1 fails → goto s1 → s1 succeeds → s2 (the fix-loop pattern)
+    const config = makeLoopConfig([
+      shell("s1", { on_fail: { goto: "s1" } }),
+      shell("s2"),
+    ]);
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      now: clock,
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    const sm = result.metrics.tasks["T-1"]!.steps["s1"]!;
+    // Two visits to s1 (fail + succeed), both generate samples
+    expect(sm.visits).toBe(2);
+    expect(sm.durationMs).toBe(200); // 100 + 100
   });
 });

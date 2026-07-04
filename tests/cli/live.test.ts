@@ -28,11 +28,22 @@ function capture() {
   };
 }
 
+const EMPTY_METRICS = {
+  index: 0,
+  startedAt: "1970-01-01T00:00:00.000Z",
+  finishedAt: "1970-01-01T00:00:00.000Z",
+  stoppedBy: "backlog_empty",
+  tasks: {},
+} as const;
+
 const OK_RESULT: RunLoopResult = {
   completed: [],
   escalated: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
+  metrics: EMPTY_METRICS,
+  startedAt: "1970-01-01T00:00:00.000Z",
+  finishedAt: "1970-01-01T00:00:00.000Z",
 };
 
 /** A hooks bundle that records the `runLive` args and returns a scripted result. */
@@ -129,6 +140,9 @@ describe("run — live loop (git repo already present)", () => {
         escalated: ["T-002"],
         iterations: 1,
         stoppedBy: "escalation_pause",
+        metrics: { ...EMPTY_METRICS, stoppedBy: "escalation_pause" },
+        startedAt: "1970-01-01T00:00:00.000Z",
+        finishedAt: "1970-01-01T00:00:00.000Z",
       },
     });
 
