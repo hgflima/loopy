@@ -14,7 +14,7 @@
   },
   "homepage": "https://github.com/hgflima/loopy#readme",
   "bin": {
-    "loopy": "./dist/index.js"
+    "loopy": "dist/index.js"
   },
   "files": [
     "dist"
