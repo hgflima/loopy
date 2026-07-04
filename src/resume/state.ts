@@ -1,10 +1,13 @@
 /**
- * Step-level resume state: fingerprint, pure transitions, and atomic I/O.
+ * PC-based resume state: fingerprint, pure transitions, and atomic I/O.
  *
- * Pure functions (`pipelineFingerprint`, `completedStepsFor`, `*In` transitions,
+ * Pure functions (`pipelineFingerprint`, `resumeStateFor`, `*In` transitions,
  * `emptyState`) carry all the logic; `loadState` / `saveState` add disk I/O —
  * mirroring the `parseConfig` / `loadConfig` split in `config/load.ts` and the
  * `parseBacklog` / `loadBacklog` split in `backlog/todo.ts`.
+ *
+ * C-0004 migration: `TaskCheckpoint` uses `pc` (step id) + `visits` (counters)
+ * + `checksReport` (carry) instead of `completedSteps: string[]`.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -27,20 +30,29 @@ export function pipelineFingerprint(pipeline: readonly StepConfig[]): string {
 // Pure queries
 // ---------------------------------------------------------------------------
 
+/** Resume point extracted from a checkpoint — PC position + visit counters + carry. */
+export interface ResumePoint {
+  readonly pc: string;
+  readonly visits: Readonly<Record<string, number>>;
+  readonly checksReport: string;
+}
+
 /**
- * Steps already completed for a task — empty set when the checkpoint is absent,
- * the pipeline hash diverges, or `status: "aborted"` without `allowAborted`.
+ * Extract the resume point for a task — `undefined` when the checkpoint is
+ * absent, the pipeline hash diverges, `status: "aborted"` without
+ * `allowAborted`, or the PC is empty (fresh start).
  */
-export function completedStepsFor(
+export function resumeStateFor(
   state: RunState,
   taskId: string,
   currentHash: string,
   opts: { readonly allowAborted: boolean },
-): ReadonlySet<string> {
+): ResumePoint | undefined {
   const cp = state.tasks[taskId];
-  if (cp === undefined || cp.pipelineHash !== currentHash) return new Set();
-  if (cp.status === "aborted" && !opts.allowAborted) return new Set();
-  return new Set(cp.completedSteps);
+  if (cp === undefined || cp.pipelineHash !== currentHash) return undefined;
+  if (cp.status === "aborted" && !opts.allowAborted) return undefined;
+  if (cp.pc === "") return undefined;
+  return { pc: cp.pc, visits: cp.visits, checksReport: cp.checksReport };
 }
 
 // ---------------------------------------------------------------------------
@@ -52,17 +64,21 @@ function withTask(state: RunState, taskId: string, cp: TaskCheckpoint): RunState
   return { ...state, tasks: { ...state.tasks, [taskId]: cp } };
 }
 
-/** Record a completed step for a task (appends to `completedSteps`). */
-export function recordStepIn(
+/** Save progress: update PC position, visit counters, and carry for a task. */
+export function saveProgressIn(
   state: RunState,
   taskId: string,
-  stepId: string,
+  pc: string,
+  visits: Readonly<Record<string, number>>,
+  checksReport: string,
   pipelineHash: string,
 ): RunState {
   const prev = state.tasks[taskId];
   return withTask(state, taskId, {
     pipelineHash,
-    completedSteps: prev ? [...prev.completedSteps, stepId] : [stepId],
+    pc,
+    visits,
+    checksReport,
     status: prev?.status ?? "running",
   });
 }
@@ -77,7 +93,9 @@ export function setStatusIn(
   const prev = state.tasks[taskId];
   return withTask(state, taskId, {
     pipelineHash: prev?.pipelineHash ?? pipelineHash,
-    completedSteps: prev?.completedSteps ?? [],
+    pc: prev?.pc ?? "",
+    visits: prev?.visits ?? {},
+    checksReport: prev?.checksReport ?? "",
     status,
   });
 }

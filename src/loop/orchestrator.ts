@@ -36,13 +36,14 @@ import {
 } from "../interp/resolver";
 import {
   clearTaskIn,
-  completedStepsFor,
   loadState,
   pipelineFingerprint,
   pruneOrphansIn,
-  recordStepIn,
+  resumeStateFor,
+  saveProgressIn,
   saveState,
   setStatusIn,
+  type ResumePoint,
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
 import type {
@@ -395,7 +396,7 @@ export interface CreateCheckpointPortOptions {
  * Build a {@link CheckpointPort} backed by `.loopy/state.json` on disk. State is
  * held in memory (loaded once via `loadState`); every mutation applies the pure
  * transition from `state.ts` and `saveState` atomically to disk. The
- * `pipelineHash` is stamped on `recordStep` / `setStatus` so the caller never
+ * `pipelineHash` is stamped on `saveProgress` / `setStatus` so the caller never
  * has to pass it per-call.
  */
 export function createCheckpointPort(
@@ -406,8 +407,8 @@ export function createCheckpointPort(
     read() {
       return state;
     },
-    recordStep(taskId, stepId) {
-      state = recordStepIn(state, taskId, stepId, options.pipelineHash);
+    saveProgress(taskId, pc, visits, checksReport) {
+      state = saveProgressIn(state, taskId, pc, visits, checksReport, options.pipelineHash);
       saveState(options.statePath, state);
     },
     setStatus(taskId, status) {
@@ -616,7 +617,7 @@ async function runTaskPipeline(
   task: Task,
   iteration: number,
   deps: OrchestratorDeps,
-  completedSteps: ReadonlySet<string> = new Set(),
+  resumePoint?: ResumePoint,
 ): Promise<PipelineOutcome> {
   const { pipeline, stop_conditions, policies } = config;
   const maxStepVisits = stop_conditions.max_step_visits;
@@ -661,24 +662,29 @@ async function runTaskPipeline(
   let pc = 0;
   let terminal: Terminal | undefined;
 
+  // Resume: restore PC position, visit counters, and carry from checkpoint.
+  if (resumePoint) {
+    const resumeIdx = stepIndex.get(resumePoint.pc);
+    if (resumeIdx !== undefined) {
+      pc = resumeIdx;
+      Object.assign(visits, resumePoint.visits);
+      checksReport = resumePoint.checksReport;
+      deps.logger.info(
+        `[orchestrator] resume: retomando de step "${resumePoint.pc}"`,
+      );
+    }
+  }
+
   while (pc < pipeline.length) {
     const step = pipeline[pc]!;
-
-    // Resume: skip steps already completed in a prior run (before any other
-    // skip logic — a completed step is never re-evaluated).
-    if (completedSteps.has(step.id)) {
-      deps.logger.info(
-        `[orchestrator] resume: step "${step.id}" já concluído — pulado`,
-      );
-      pc += 1;
-      continue;
-    }
 
     // Entry guard: increment visits; exceed → terminal escalate WITHOUT executing.
     visits[step.id] = (visits[step.id] ?? 0) + 1;
     if (visits[step.id]! > maxStepVisits) {
       const reason = `step "${step.id}" excedeu max_step_visits (${maxStepVisits})`;
       deps.logger.error(`[orchestrator] ${reason} — escalando`);
+      // Save progress for resume (PC stays at this step).
+      deps.checkpoint?.saveProgress(task.id, step.id, visits, checksReport);
       terminal = {
         ok: false,
         failedStepId: step.id,
@@ -720,18 +726,20 @@ async function runTaskPipeline(
     if (result.ok) {
       // Thread checks report (normal flow — only from result.report).
       if (result.report !== undefined) checksReport = result.report.text;
-      deps.checkpoint?.recordStep(task.id, step.id);
       deps.logger.debug(`[orchestrator] step "${step.id}" ok`);
 
-      // on_success: { goto } → jump; else → PC + 1.
-      if (step.on_success) {
-        const targetIdx = stepIndex.get(step.on_success.goto);
-        if (targetIdx !== undefined) {
-          pc = targetIdx;
-          continue;
-        }
+      // Resolve next PC: on_success goto or sequential.
+      const nextPc = step.on_success
+        ? (stepIndex.get(step.on_success.goto) ?? pc + 1)
+        : pc + 1;
+
+      // Save progress for resume (next step to execute).
+      const nextStep = pipeline[nextPc];
+      if (nextStep !== undefined) {
+        deps.checkpoint?.saveProgress(task.id, nextStep.id, visits, checksReport);
       }
-      pc += 1;
+
+      pc = nextPc;
       continue;
     }
 
@@ -747,12 +755,16 @@ async function runTaskPipeline(
       checksReport = result.report?.text ?? result.output ?? "";
       const targetIdx = stepIndex.get(onFail.goto);
       if (targetIdx !== undefined) {
+        // Save progress for resume (goto target + carry).
+        deps.checkpoint?.saveProgress(task.id, pipeline[targetIdx]!.id, visits, checksReport);
         pc = targetIdx;
         continue;
       }
     }
 
     // escalate: explicit "escalate", omitted on_fail, or orphan goto target.
+    // Save progress for resume (PC stays at this step).
+    deps.checkpoint?.saveProgress(task.id, step.id, visits, checksReport);
     terminal = { ok: false, failedStepId: step.id, reason: result.reason };
     break;
   }
@@ -879,9 +891,9 @@ export async function runLoop(
     stoppedBy,
   });
 
-  // --- Resume reconciliation (C-0002) ---
+  // --- Resume reconciliation (C-0002 / C-0004 PC-based) ---
   const { checkpoint } = deps;
-  let completedStepsMap: Map<string, ReadonlySet<string>> | undefined;
+  let resumeMap: Map<string, ResumePoint> | undefined;
   if (checkpoint) {
     const pipelineHash = pipelineFingerprint(config.pipeline);
     // Prune orphan checkpoints (tasks no longer in the backlog).
@@ -897,10 +909,10 @@ export async function runLoop(
     }
     checkpoint.pruneOrphans(knownIds);
 
-    // Compute completedSteps per task.
+    // Compute resume points per task.
     const state = checkpoint.read();
     const allowAborted = deps.flags.task !== undefined;
-    completedStepsMap = new Map();
+    resumeMap = new Map();
     for (const task of tasks) {
       const cp = state.tasks[task.id];
       if (cp !== undefined && cp.pipelineHash !== pipelineHash) {
@@ -908,10 +920,10 @@ export async function runLoop(
           `[orchestrator] resume: pipeline mudou desde o checkpoint de ${task.id} — recomeçando`,
         );
       }
-      completedStepsMap.set(
-        task.id,
-        completedStepsFor(state, task.id, pipelineHash, { allowAborted }),
-      );
+      const point = resumeStateFor(state, task.id, pipelineHash, { allowAborted });
+      if (point) {
+        resumeMap.set(task.id, point);
+      }
     }
   }
 
@@ -949,14 +961,13 @@ export async function runLoop(
       `[orchestrator] iteração ${iterations}: task ${task.id} — ${task.title}`,
     );
     checkpoint?.setStatus(task.id, "running");
-    const completedSteps =
-      completedStepsMap?.get(task.id) ?? new Set<string>();
+    const resumePoint = resumeMap?.get(task.id);
     const outcome = await runTaskPipeline(
       config,
       task,
       iterations,
       deps,
-      completedSteps,
+      resumePoint,
     );
 
     if (outcome.ok) {

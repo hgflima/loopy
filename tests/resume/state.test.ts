@@ -5,12 +5,12 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import type { RunState, StepConfig } from "../../src/types";
 import {
   clearTaskIn,
-  completedStepsFor,
   emptyState,
   loadState,
   pipelineFingerprint,
   pruneOrphansIn,
-  recordStepIn,
+  resumeStateFor,
+  saveProgressIn,
   saveState,
   setStatusIn,
 } from "../../src/resume/state";
@@ -70,60 +70,90 @@ describe("pipelineFingerprint", () => {
 });
 
 // ---------------------------------------------------------------------------
-// completedStepsFor
+// resumeStateFor
 // ---------------------------------------------------------------------------
 
-describe("completedStepsFor", () => {
+describe("resumeStateFor", () => {
   const hash = "sha256:abc123";
   const state: RunState = {
     version: 1,
     tasks: {
       "T-001": {
         pipelineHash: hash,
-        completedSteps: ["create-worktree", "implement"],
+        pc: "implement",
+        visits: { "create-worktree": 1, "implement": 1 },
+        checksReport: "all ok",
         status: "paused",
       },
       "T-002": {
         pipelineHash: hash,
-        completedSteps: ["create-worktree"],
+        pc: "review",
+        visits: { "create-worktree": 1 },
+        checksReport: "",
         status: "aborted",
       },
       "T-003": {
         pipelineHash: hash,
-        completedSteps: ["create-worktree"],
+        pc: "commit",
+        visits: { "create-worktree": 1 },
+        checksReport: "",
+        status: "running",
+      },
+      "T-004": {
+        pipelineHash: hash,
+        pc: "",
+        visits: {},
+        checksReport: "",
         status: "running",
       },
     },
   };
 
-  it("returns completed steps when hash matches and status is paused", () => {
-    const result = completedStepsFor(state, "T-001", hash, { allowAborted: false });
-    expect(result).toEqual(new Set(["create-worktree", "implement"]));
+  it("returns resume point when hash matches and status is paused", () => {
+    const result = resumeStateFor(state, "T-001", hash, { allowAborted: false });
+    expect(result).toEqual({
+      pc: "implement",
+      visits: { "create-worktree": 1, "implement": 1 },
+      checksReport: "all ok",
+    });
   });
 
-  it("returns completed steps when hash matches and status is running", () => {
-    const result = completedStepsFor(state, "T-003", hash, { allowAborted: false });
-    expect(result).toEqual(new Set(["create-worktree"]));
+  it("returns resume point when hash matches and status is running", () => {
+    const result = resumeStateFor(state, "T-003", hash, { allowAborted: false });
+    expect(result).toEqual({
+      pc: "commit",
+      visits: { "create-worktree": 1 },
+      checksReport: "",
+    });
   });
 
-  it("returns empty set when task is absent", () => {
-    const result = completedStepsFor(state, "T-999", hash, { allowAborted: false });
-    expect(result).toEqual(new Set());
+  it("returns undefined when task is absent", () => {
+    const result = resumeStateFor(state, "T-999", hash, { allowAborted: false });
+    expect(result).toBeUndefined();
   });
 
-  it("returns empty set when hash diverges", () => {
-    const result = completedStepsFor(state, "T-001", "sha256:different", { allowAborted: false });
-    expect(result).toEqual(new Set());
+  it("returns undefined when hash diverges", () => {
+    const result = resumeStateFor(state, "T-001", "sha256:different", { allowAborted: false });
+    expect(result).toBeUndefined();
   });
 
-  it("returns empty set for aborted without allowAborted", () => {
-    const result = completedStepsFor(state, "T-002", hash, { allowAborted: false });
-    expect(result).toEqual(new Set());
+  it("returns undefined for aborted without allowAborted", () => {
+    const result = resumeStateFor(state, "T-002", hash, { allowAborted: false });
+    expect(result).toBeUndefined();
   });
 
-  it("returns completed steps for aborted with allowAborted", () => {
-    const result = completedStepsFor(state, "T-002", hash, { allowAborted: true });
-    expect(result).toEqual(new Set(["create-worktree"]));
+  it("returns resume point for aborted with allowAborted", () => {
+    const result = resumeStateFor(state, "T-002", hash, { allowAborted: true });
+    expect(result).toEqual({
+      pc: "review",
+      visits: { "create-worktree": 1 },
+      checksReport: "",
+    });
+  });
+
+  it("returns undefined when pc is empty (fresh start)", () => {
+    const result = resumeStateFor(state, "T-004", hash, { allowAborted: false });
+    expect(result).toBeUndefined();
   });
 });
 
@@ -131,31 +161,38 @@ describe("completedStepsFor", () => {
 // Pure transitions
 // ---------------------------------------------------------------------------
 
-describe("recordStepIn", () => {
-  it("appends a step to an existing checkpoint", () => {
+describe("saveProgressIn", () => {
+  it("updates pc, visits, and checksReport on existing checkpoint", () => {
     const state: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h", completedSteps: ["a"], status: "running" },
+        "T-001": { pipelineHash: "h", pc: "a", visits: { a: 1 }, checksReport: "", status: "running" },
       },
     };
-    const next = recordStepIn(state, "T-001", "b", "h");
-    expect(next.tasks["T-001"]?.completedSteps).toEqual(["a", "b"]);
-    expect(next.tasks["T-001"]?.status).toBe("running");
+    const next = saveProgressIn(state, "T-001", "b", { a: 1, b: 1 }, "report text", "h");
+    expect(next.tasks["T-001"]).toEqual({
+      pipelineHash: "h",
+      pc: "b",
+      visits: { a: 1, b: 1 },
+      checksReport: "report text",
+      status: "running",
+    });
   });
 
   it("creates a new checkpoint when task is absent", () => {
-    const next = recordStepIn(emptyState(), "T-001", "a", "h");
+    const next = saveProgressIn(emptyState(), "T-001", "a", { a: 1 }, "", "h");
     expect(next.tasks["T-001"]).toEqual({
       pipelineHash: "h",
-      completedSteps: ["a"],
+      pc: "a",
+      visits: { a: 1 },
+      checksReport: "",
       status: "running",
     });
   });
 
   it("does not mutate the original state", () => {
     const state = emptyState();
-    const next = recordStepIn(state, "T-001", "a", "h");
+    const next = saveProgressIn(state, "T-001", "a", { a: 1 }, "", "h");
     expect(state.tasks["T-001"]).toBeUndefined();
     expect(next.tasks["T-001"]).toBeDefined();
   });
@@ -166,19 +203,23 @@ describe("setStatusIn", () => {
     const state: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h", completedSteps: ["a"], status: "running" },
+        "T-001": { pipelineHash: "h", pc: "b", visits: { a: 1 }, checksReport: "carry", status: "running" },
       },
     };
     const next = setStatusIn(state, "T-001", "paused", "h");
     expect(next.tasks["T-001"]?.status).toBe("paused");
-    expect(next.tasks["T-001"]?.completedSteps).toEqual(["a"]);
+    expect(next.tasks["T-001"]?.pc).toBe("b");
+    expect(next.tasks["T-001"]?.visits).toEqual({ a: 1 });
+    expect(next.tasks["T-001"]?.checksReport).toBe("carry");
   });
 
   it("creates a checkpoint when task is absent", () => {
     const next = setStatusIn(emptyState(), "T-001", "running", "h");
     expect(next.tasks["T-001"]).toEqual({
       pipelineHash: "h",
-      completedSteps: [],
+      pc: "",
+      visits: {},
+      checksReport: "",
       status: "running",
     });
   });
@@ -189,8 +230,8 @@ describe("clearTaskIn", () => {
     const state: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h", completedSteps: ["a"], status: "running" },
-        "T-002": { pipelineHash: "h", completedSteps: [], status: "paused" },
+        "T-001": { pipelineHash: "h", pc: "a", visits: { a: 1 }, checksReport: "", status: "running" },
+        "T-002": { pipelineHash: "h", pc: "", visits: {}, checksReport: "", status: "paused" },
       },
     };
     const next = clearTaskIn(state, "T-001");
@@ -210,9 +251,9 @@ describe("pruneOrphansIn", () => {
     const state: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h", completedSteps: [], status: "running" },
-        "T-002": { pipelineHash: "h", completedSteps: [], status: "paused" },
-        "T-003": { pipelineHash: "h", completedSteps: [], status: "aborted" },
+        "T-001": { pipelineHash: "h", pc: "", visits: {}, checksReport: "", status: "running" },
+        "T-002": { pipelineHash: "h", pc: "", visits: {}, checksReport: "", status: "paused" },
+        "T-003": { pipelineHash: "h", pc: "", visits: {}, checksReport: "", status: "aborted" },
       },
     };
     const next = pruneOrphansIn(state, ["T-001", "T-003"]);
@@ -223,7 +264,7 @@ describe("pruneOrphansIn", () => {
     const state: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h", completedSteps: [], status: "running" },
+        "T-001": { pipelineHash: "h", pc: "", visits: {}, checksReport: "", status: "running" },
       },
     };
     const next = pruneOrphansIn(state, []);
@@ -286,7 +327,9 @@ describe("loadState / saveState", () => {
       tasks: {
         "T-001": {
           pipelineHash: "sha256:abc",
-          completedSteps: ["create-worktree", "implement"],
+          pc: "implement",
+          visits: { "create-worktree": 1, "implement": 1 },
+          checksReport: "all checks passed",
           status: "paused",
         },
       },
@@ -307,13 +350,13 @@ describe("loadState / saveState", () => {
     const v1: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h1", completedSteps: ["a"], status: "running" },
+        "T-001": { pipelineHash: "h1", pc: "a", visits: { a: 1 }, checksReport: "", status: "running" },
       },
     };
     const v2: RunState = {
       version: 1,
       tasks: {
-        "T-001": { pipelineHash: "h1", completedSteps: ["a", "b"], status: "paused" },
+        "T-001": { pipelineHash: "h1", pc: "b", visits: { a: 1, b: 1 }, checksReport: "carry", status: "paused" },
       },
     };
     saveState(p, v1);

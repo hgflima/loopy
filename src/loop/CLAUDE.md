@@ -26,5 +26,5 @@ O loop externo sobre o backlog: itera as tasks pendentes em ordem e, para cada u
 ## Patterns & Pitfalls
 - **`worktreePath` do `StepContext` é o workspace ROOT, não o dir do worktree**: os comandos git que criam/derrubam o worktree endereçam-no via `${worktree.path}` e precisam rodar de um dir que sobreviva a ele. O ACP do step agent define seu próprio cwd = worktree (AD-3), independente disso.
 - Step `type` sem intérprete registrado = no-op logado (não falha) — foi o que permitiu provar o spine antes do `agent`.
-- Resume: `completedStepsFor` pula steps já concluídos; `pruneOrphans` limpa checkpoints de tasks fora do backlog; mudança de `pipelineHash` desde o checkpoint → recomeça a task.
+- Resume (PC-based, C-0004): `resumeStateFor` retorna `ResumePoint` (pc + visits + carry) para retomar de onde parou; `pruneOrphans` limpa checkpoints de tasks fora do backlog; mudança de `pipelineHash` desde o checkpoint → recomeça a task. Progresso salvo a cada transição de PC via `saveProgress`.
 - `decideEscalation`: `skip_task` → continua; `pause`/`abort_loop` → para (com `setStatus` paused/aborted).

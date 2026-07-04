@@ -12,7 +12,7 @@ import {
   emptyState,
   pipelineFingerprint,
   pruneOrphansIn,
-  recordStepIn,
+  saveProgressIn,
   setStatusIn,
 } from "../../src/resume/state";
 import type { MarkDonePort, OrchestratorDeps } from "../../src/loop/orchestrator";
@@ -202,9 +202,9 @@ export function fakeCheckpoint(
     state: () => state,
     port: {
       read: () => state,
-      recordStep(taskId, stepId) {
-        calls.push(`recordStep:${taskId}:${stepId}`);
-        state = recordStepIn(state, taskId, stepId, hash);
+      saveProgress(taskId, pc, visits, checksReport) {
+        calls.push(`saveProgress:${taskId}:${pc}`);
+        state = saveProgressIn(state, taskId, pc, visits, checksReport, hash);
       },
       setStatus(taskId, status) {
         calls.push(`setStatus:${taskId}:${status}`);
