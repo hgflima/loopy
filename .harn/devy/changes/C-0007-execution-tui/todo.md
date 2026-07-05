@@ -7,7 +7,7 @@
 
 ## Fase 1 — Foundation pura (T-001 ∥ T-002; T-003 após T-002)
 
-- [ ] T-001: Store — evento `acp_traffic` + `acpLog` ring bounded + fallback `--verbose`
+- [x] T-001: Store — evento `acp_traffic` + `acpLog` ring bounded + fallback `--verbose`
     Aditivo à união `StoreEvent` (`store.ts:105-161`): `{ type:"acp_traffic"; taskId; direction:"send"|"recv"; method?; summary }` (linha pronta p/ exibir). `StoreState` (`:89-93`) ganha `acpLog: readonly AcpLogLine[]` (ring **bounded ~200**, inicializado em `initialState` `:168-170`); o `case` no `reduce` (switch exaustivo `:247-338`) **empurra e trunca** — e, por ser **global** (vai no `acpLog`, não numa Task), NÃO passa pelo no-op guard de `updateTask` (`:177-190`): é sempre aplicado. Continua puro/parallel-ready (a linha carrega `taskId`). Fallback: `line-reporter` (que reduz pelo mesmo `reduce`) emite `→/← <method> <summary>` **só** sob `--verbose` — `createLineReporter` ganha a flag `verbose` e `start.ts` a repassa (`:112-123`); sem `--verbose` = no-op (append-only preservado). `SYMBOLS` **inalterados**.
     Aceite: `acp_traffic` empurra e trunca no teto (~200, bounded, sem vazar); linha carrega `taskId`; eventos concorrentes de Tasks paralelas não corrompem o ring; `edges_set`/status/`stream_chunk` inalterados; fallback imprime a linha só sob `--verbose`, sem quebrar o append-only.
     Verificação: `npm test -- tui` && `npm run typecheck`.
