@@ -39,7 +39,7 @@
 
 ## Fase 3 — Change report + docs (T-006 → T-007)
 
-- [ ] T-006: Change report — re-parse do `todo.md` (0 pendentes) → persistir `index.md` byte-preserving
+- [x] T-006: Change report — re-parse do `todo.md` (0 pendentes) → persistir `index.md` byte-preserving
     Renderer Markdown: `## <change.id>` + parágrafo de totais + tabela rica por Task (`| Task | Δt | in | out | cached | tokens | visits | custo |`). Após a Run, re-parsear o `todo.md`: se `pendingTasks === 0` E `report.index` setado, persistir a seção da Change byte-preserving (reescreve só a própria seção; preserva outras + preâmbulo; anexa nova ao fim; cria com título `#` se inexistente). Nunca dispara por `stoppedBy`.
     Aceite: backlog 100% `[x]` → seção escrita; re-persistir atualiza só aquela seção (outras byte-a-byte); `--task`/`skip_task` que não zeram o backlog não disparam; `report.index` ausente → sem `index.md`.
     Verificação: `npm test -- metrics` && aceite de integração && `npm run typecheck`.
