@@ -1,0 +1,161 @@
+# loopy.yml — executa o backlog da change C-0007 (Execution TUI).
+#
+# Este arquivo vive na pasta da change, mas os paths abaixo (inputs.*, workspace.root)
+# resolvem relativos à RAIZ do repo-alvo (o próprio acp-agentic-loop), não a esta pasta.
+# Invoque a partir da raiz do repo apontando o config com -c:
+#
+#     npm run dev -- . -c .harn/devy/changes/C-0007-execution-tui/loopy.yml
+#     # ou, se instalado:  loopy . -c .harn/devy/changes/C-0007-execution-tui/loopy.yml
+#
+# Paralelismo (ADR-0004): as Tasks declaram `Deps:` no todo.md, então o Scheduler
+# roda as independentes em paralelo até o teto `concurrency`. DAG desta change:
+#
+#   T-001 ┐                      (roots sem deps: T-001, T-002, T-004, T-007)
+#   T-002 ┼─► T-003 ─┐
+#   T-004 ─► T-005   │
+#         └► T-006   │
+#   T-007 ┘          │
+#   T-001,T-004,T-007 ─► T-008
+#   T-001,T-002,T-003 ─► T-009 ─► T-010
+#   (todas) ───────────────────► T-011
+#
+# Antichain máxima = 5 ({T-001, T-003, T-005, T-006, T-007}) ⇒ concurrency: 5 capta
+# toda a largura do grafo (baixe para 3–4 se a máquina sofrer com N checks simultâneos).
+
+version: "1"
+name: c0007-execution-tui
+
+workspace:
+  root: "."
+  parent_branch: "main"
+  worktrees_dir: ".worktrees"
+
+acp:
+  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  request_timeout_seconds: 1800
+  permissions:
+    default_mode: acceptEdits
+    on_request: allow
+
+inputs:
+  spec: ".harn/devy/changes/C-0007-execution-tui/spec.md"
+  plan: ".harn/devy/changes/C-0007-execution-tui/plan.md"
+  todo: ".harn/devy/changes/C-0007-execution-tui/todo.md"
+  backlog:
+    pending_marker: "- [ ]"
+    done_marker: "- [x]"
+    task_id_pattern: "T-\\d+"
+    body: indented
+    mark_done_on_success: true
+    deps_pattern: "Deps:"
+
+checks:
+  ci:
+    - { name: typecheck, run: "npm run typecheck" }
+    - { name: lint, run: "npm run lint" }
+    - { name: test, run: "npm test" }
+
+pipeline:
+  - id: create-worktree
+    type: shell
+    # Serializado (sem parallel_safe): `git worktree add` mexe em refs/locks do
+    # .git compartilhado — não é seguro rodar concorrentemente.
+    run:
+      - git worktree add -b "${task.branch}" "${worktree.path}" "${workspace.parent_branch}"
+
+  - id: install-deps
+    type: shell
+    # 100% worktree-scoped ⇒ fora do mutex: N tasks instalam deps em paralelo.
+    parallel_safe: true
+    run:
+      - npm ci --prefix "${worktree.path}"
+
+  - id: implement
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      /devy:build Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
+      ${task.body}
+      ${checks.report}
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+    retry_prompt: |
+      A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
+      ${checks.report}
+    verify: { run: ci, max_attempts: 3 }
+
+  - id: simplify
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      /devy:code-simplify Simplifique o que está no worktree sem alterar comportamento: remova
+      duplicação, clareie nomes, reduza complexidade. Não adicione dependências.
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+      Diff atual:
+      ${worktree.diff}
+    verify: { run: ci, max_attempts: 3 }
+
+  - id: review
+    type: agent
+    clear_context: true
+    mode: default
+    prompt: |
+      /devy:review Reveja a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}
+      **CRITICAL:** NUNCA EDITE NADA!
+      Diff sob revisão:
+      ${worktree.diff}
+      Responda na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
+    expect: "REVIEW: PASS"
+    on_fail: { goto: implement }
+
+  - id: commit
+    type: shell
+    # Serializado (sem parallel_safe): `git commit` escreve refs/reflog no .git
+    # compartilhado. O snapshot é rápido, então serializar não custa wall-clock.
+    run:
+      - git -C "${worktree.path}" add -A
+      - 'git -C "${worktree.path}" commit --allow-empty -m "feat(${task.id}): ${task.title}"'
+
+  - id: merge
+    type: approval
+    # Muta o parent_branch ⇒ dentro do mutex; o wait de aprovação humano fica FORA
+    # dele (outras Tasks seguem rodando/mergeando enquanto você delibera).
+    prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
+    run:
+      - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"'
+    on_fail: escalate
+
+  - id: cleanup
+    type: shell
+    always: true
+    run:
+      - git -C "${workspace.root}" worktree remove --force "${worktree.path}"
+      - git -C "${workspace.root}" branch -D "${task.branch}"
+
+stop_conditions:
+  max_iterations: 25
+  max_step_visits: 10
+  stop_signal_file: ".loopy.stop"
+
+# Largura máxima do DAG desta change = 5 (ver cabeçalho). Default é 1 (sequencial).
+concurrency: 5
+
+policies:
+  escalation:
+    action: pause
+    keep_worktree: true
+    notify: stderr
+  git:
+    require_clean_parent: true
+    on_merge_conflict: escalate   # escalate (default) | rebase (auto-rebase + retry-once dentro do mutex)
+
+logging:
+  dir: ".loopy/logs"
+  per_task: true
+  capture_acp_traffic: true
+
+# Opt-in metrics (ADR-0003). Presente ⇒ coleta timing por-step + tokens ACP (best-effort).
+metrics:
+  report:
+    index: "${change.dir}/../index.md"   # onde o Relatório de change é persistido
