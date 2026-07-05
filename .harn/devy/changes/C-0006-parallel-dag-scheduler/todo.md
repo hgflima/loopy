@@ -66,7 +66,7 @@
     Verificação: `npm test -- tui` && `npm run typecheck`.
     Deps: T-002. Files: src/tui/store.ts, src/types.ts, testes. Scope: S.
 
-- [ ] T-010: Resume multi-in-flight
+- [x] T-010: Resume multi-in-flight
     Ao retomar: reconstrói o Grafo, marca `done` as já merjadas (fonte da verdade = `[x]` do `todo.md`), recomputa ready set e `skipped` (Grafo + status; NÃO persistidos). Em-voo interrompidas/canceladas retomam do PC (`resumeStateFor` `state.ts:45-56` restaura pc/visits/carry); `paused` mantém resumível. `RunState`/`TaskCheckpoint` já são `Record` (`types.ts:399-402`) — mudança mínima; `TaskStatus` de resume (`:384`) intocado.
     Aceite: N Tasks retomam (done via `[x]`, paused resumível, skipped recomputado, em-voo do PC — não do zero); skip/ready não persistidos; N Tasks concorrentes salvam checkpoint sem perda (event loop serializa a escrita síncrona da instância única — guardrail; o teste falha se a escrita virar async ou a instância deixar de ser única por Run).
     Verificação: `npm test -- resume` && `npm test -- cli` && `npm run typecheck`.
