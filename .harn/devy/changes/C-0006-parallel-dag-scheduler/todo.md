@@ -12,7 +12,7 @@
     Verificação: `npm test -- backlog` && `npm test -- config` && `npm run typecheck`.
     Deps: nenhuma. Files: src/backlog/todo.ts, src/config/schema.ts, src/types.ts, testes. Scope: M.
 
-- [ ] T-002: Scheduler puro `src/scheduler/` + tipos `TaskGraph`/`TaskStatus`
+- [x] T-002: Scheduler puro `src/scheduler/` + tipos `TaskGraph`/`TaskStatus`
     Módulo puro (AD-6): `buildGraph(tasks)` sobre o Backlog COMPLETO (`[x]` como nodes pré-`done`) → `Result<TaskGraph>` detectando ciclo e Dep órfã (erro-valor, AD-5; reusar `detectCycles`/`buildFlowGraph` de `warnings.ts:26,53` como referência); `readySet` (só Blocked com TODAS as deps `done`; desempate ordem de backlog); `skipDescendants` (fecho transitivo, diamante A→{B,C}→D); `topoLayers` (camadas p/ dry-run). Tipos aditivos `TaskGraph` (nodes+edges `[dep,dependente]`) e `TaskStatus`.
     Aceite: nodes/edges corretos; ciclo e Dep órfã → Result de erro (lista o ciclo/órfã); `readySet` só com deps `done` e desempate por ordem de backlog; `skipDescendants` fecha o diamante; `topoLayers` determinístico; módulo puro (sem I/O).
     Verificação: `npm test -- scheduler` && `npm run typecheck`.
