@@ -3,11 +3,29 @@ import {
   attemptLabel,
   checkText,
   COLORS,
+  layoutGraph,
+  nodeLabel,
   pulseFrame,
+  renderGraph,
   streamTail,
   SYMBOLS,
 } from "../../src/tui/view";
-import type { CheckState } from "../../src/tui/store";
+import type { GraphGeometry, StyledRow, StyledSpan } from "../../src/tui/view";
+import type { CheckState, TaskStatus } from "../../src/tui/store";
+
+// ---------------------------------------------------------------------------
+// Shared test helpers
+// ---------------------------------------------------------------------------
+
+/** All-pending status map for the given ids. */
+function pendingMap(...ids: string[]): ReadonlyMap<string, TaskStatus> {
+  return new Map(ids.map((id) => [id, "pending" as TaskStatus]));
+}
+
+/** Lookup map from a geometry's node list. */
+function nodeMap(geo: GraphGeometry) {
+  return new Map(geo.nodes.map((n) => [n.id, n]));
+}
 
 // ---------------------------------------------------------------------------
 // attemptLabel — the `try k/max` display fed by the store's attempt fields
@@ -148,5 +166,307 @@ describe("pulseFrame", () => {
     expect(pulseFrame(1)).toBe("off");
     expect(pulseFrame(3)).toBe("off");
     expect(pulseFrame(99)).toBe("off");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// nodeLabel — glyph + id
+// ---------------------------------------------------------------------------
+
+describe("nodeLabel", () => {
+  it("formats glyph + space + id", () => {
+    expect(nodeLabel("T-001", "pending")).toBe("• T-001");
+    expect(nodeLabel("A", "running")).toBe("▶ A");
+    expect(nodeLabel("X", "done")).toBe("✔ X");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// layoutGraph — dagre layout → cell-snapped geometry (T-003)
+// ---------------------------------------------------------------------------
+
+describe("layoutGraph", () => {
+  it("returns empty geometry for no nodes", () => {
+    const geo = layoutGraph([], new Map(), []);
+    expect(geo.nodes).toEqual([]);
+    expect(geo.edges).toEqual([]);
+    expect(geo.width).toBe(0);
+    expect(geo.height).toBe(0);
+  });
+
+  it("places a single node at (0,0)", () => {
+    const geo = layoutGraph([], pendingMap("A"), ["A"]);
+    expect(geo.nodes).toHaveLength(1);
+    const a = geo.nodes[0]!;
+    expect(a.id).toBe("A");
+    expect(a.col).toBe(0);
+    expect(a.row).toBe(0);
+    expect(a.width).toBe(nodeLabel("A", "pending").length);
+  });
+
+  it("places linear chain A→B→C in successive layers (cols increase)", () => {
+    const geo = layoutGraph(
+      [["A", "B"], ["B", "C"]],
+      pendingMap("A", "B", "C"),
+      ["A", "B", "C"],
+    );
+    const m = nodeMap(geo);
+    expect(m.get("A")!.col).toBeLessThan(m.get("B")!.col);
+    expect(m.get("B")!.col).toBeLessThan(m.get("C")!.col);
+  });
+
+  it("places diamond A→{B,C}→D with B,C in the same layer and D last", () => {
+    const geo = layoutGraph(
+      [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"]],
+      pendingMap("A", "B", "C", "D"),
+      ["A", "B", "C", "D"],
+    );
+    const m = nodeMap(geo);
+    // A first layer
+    expect(m.get("A")!.col).toBeLessThan(m.get("B")!.col);
+    // B and C same layer (same col)
+    expect(m.get("B")!.col).toBe(m.get("C")!.col);
+    // D last layer
+    expect(m.get("B")!.col).toBeLessThan(m.get("D")!.col);
+  });
+
+  it("respects backlog order for within-rank tie-breaking (B above C)", () => {
+    const geo = layoutGraph(
+      [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"]],
+      pendingMap("A", "B", "C", "D"),
+      ["A", "B", "C", "D"],
+    );
+    const m = nodeMap(geo);
+    expect(m.get("B")!.row).toBeLessThan(m.get("C")!.row);
+  });
+
+  it("generates edge segments between nodes", () => {
+    const geo = layoutGraph(
+      [["A", "B"]],
+      pendingMap("A", "B"),
+      ["A", "B"],
+    );
+    expect(geo.edges).toHaveLength(1);
+    const edge = geo.edges[0]!;
+    expect(edge.from).toBe("A");
+    expect(edge.to).toBe("B");
+    expect(edge.segments.length).toBeGreaterThan(0);
+  });
+
+  it("produces arrowhead ▶ at the end of each edge", () => {
+    const geo = layoutGraph(
+      [["A", "B"]],
+      pendingMap("A", "B"),
+      ["A", "B"],
+    );
+    const edge = geo.edges[0]!;
+    const last = edge.segments[edge.segments.length - 1]!;
+    expect(last.char).toBe("▶");
+  });
+
+  it("edge segments do not overlap with node cells", () => {
+    const geo = layoutGraph(
+      [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"]],
+      pendingMap("A", "B", "C", "D"),
+      ["A", "B", "C", "D"],
+    );
+    for (const edge of geo.edges) {
+      for (const seg of edge.segments) {
+        for (const n of geo.nodes) {
+          const inNode =
+            seg.row === n.row && seg.col >= n.col && seg.col < n.col + n.width;
+          expect(inNode).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("node widths match the label length", () => {
+    const statuses = new Map<string, TaskStatus>([
+      ["A", "running"],
+      ["B", "done"],
+    ]);
+    const geo = layoutGraph([["A", "B"]], statuses, ["A", "B"]);
+    const m = nodeMap(geo);
+    expect(m.get("A")!.width).toBe(nodeLabel("A", "running").length);
+    expect(m.get("B")!.width).toBe(nodeLabel("B", "done").length);
+  });
+
+  it("all coordinates are non-negative integers", () => {
+    const geo = layoutGraph(
+      [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"]],
+      pendingMap("A", "B", "C", "D"),
+      ["A", "B", "C", "D"],
+    );
+    for (const n of geo.nodes) {
+      expect(n.col).toBeGreaterThanOrEqual(0);
+      expect(n.row).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(n.col)).toBe(true);
+      expect(Number.isInteger(n.row)).toBe(true);
+    }
+    for (const e of geo.edges) {
+      for (const s of e.segments) {
+        expect(s.col).toBeGreaterThanOrEqual(0);
+        expect(s.row).toBeGreaterThanOrEqual(0);
+        expect(Number.isInteger(s.col)).toBe(true);
+        expect(Number.isInteger(s.row)).toBe(true);
+      }
+    }
+  });
+
+  it("geometry dimensions bound all content", () => {
+    const geo = layoutGraph(
+      [["A", "B"], ["B", "C"]],
+      pendingMap("A", "B", "C"),
+      ["A", "B", "C"],
+    );
+    for (const n of geo.nodes) {
+      expect(n.col + n.width).toBeLessThanOrEqual(geo.width);
+      expect(n.row + 1).toBeLessThanOrEqual(geo.height);
+    }
+    for (const e of geo.edges) {
+      for (const s of e.segments) {
+        expect(s.col + 1).toBeLessThanOrEqual(geo.width);
+        expect(s.row + 1).toBeLessThanOrEqual(geo.height);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderGraph — geometry → styled rows (T-003)
+// ---------------------------------------------------------------------------
+
+describe("renderGraph", () => {
+  /** Flatten a StyledRow into a plain string. */
+  function rowText(row: StyledRow): string {
+    return row.map((s) => s.text).join("");
+  }
+
+  /** Find all spans whose text contains the given substring. */
+  function findSpans(
+    rows: StyledRow[],
+    substring: string,
+  ): StyledSpan[] {
+    const found: StyledSpan[] = [];
+    for (const row of rows) {
+      for (const span of row) {
+        if (span.text.includes(substring)) found.push(span);
+      }
+    }
+    return found;
+  }
+
+  /** Build a simple 2-node geometry for render tests. */
+  function twoNodeSetup(statusA: TaskStatus, statusB: TaskStatus) {
+    const statuses = new Map<string, TaskStatus>([
+      ["A", statusA],
+      ["B", statusB],
+    ]);
+    const geo = layoutGraph([["A", "B"]], statuses, ["A", "B"]);
+    return { geo, statuses };
+  }
+
+  it("produces rows matching geometry height (or less when clipped)", () => {
+    const { geo, statuses } = twoNodeSetup("pending", "done");
+    const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
+    expect(rows.length).toBe(geo.height);
+  });
+
+  it("colors nodes by task status", () => {
+    const { geo, statuses } = twoNodeSetup("pending", "done");
+    const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
+
+    const aParts = findSpans(rows, SYMBOLS.task.pending);
+    expect(aParts.length).toBeGreaterThan(0);
+    expect(aParts[0]!.color).toBe(COLORS.task.pending);
+
+    const bParts = findSpans(rows, SYMBOLS.task.done);
+    expect(bParts.length).toBeGreaterThan(0);
+    expect(bParts[0]!.color).toBe(COLORS.task.done);
+  });
+
+  it("applies bold on even tick for running nodes (pulse on)", () => {
+    const statuses = new Map<string, TaskStatus>([
+      ["A", "running"],
+      ["B", "pending"],
+    ]);
+    const geo = layoutGraph([["A", "B"]], statuses, ["A", "B"]);
+    const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
+
+    const runSpans = findSpans(rows, SYMBOLS.task.running);
+    expect(runSpans.length).toBeGreaterThan(0);
+    expect(runSpans[0]!.bold).toBe(true);
+    expect(runSpans[0]!.dim).toBeUndefined();
+  });
+
+  it("applies dim on odd tick for running nodes (pulse off)", () => {
+    const statuses = new Map<string, TaskStatus>([
+      ["A", "running"],
+      ["B", "pending"],
+    ]);
+    const geo = layoutGraph([["A", "B"]], statuses, ["A", "B"]);
+    const rows = renderGraph(geo, statuses, 1, { width: 80, height: 24 });
+
+    const runSpans = findSpans(rows, SYMBOLS.task.running);
+    expect(runSpans.length).toBeGreaterThan(0);
+    expect(runSpans[0]!.dim).toBe(true);
+    expect(runSpans[0]!.bold).toBeUndefined();
+  });
+
+  it("renders edges as dim spans", () => {
+    const { geo, statuses } = twoNodeSetup("pending", "pending");
+    const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
+
+    // At least one dim span should exist (the edge)
+    const dimSpans = rows.flatMap((row) => row.filter((s) => s.dim === true));
+    expect(dimSpans.length).toBeGreaterThan(0);
+  });
+
+  it("clips output to panel size", () => {
+    const { geo, statuses } = twoNodeSetup("pending", "pending");
+    const tiny = { width: 5, height: 1 };
+    const rows = renderGraph(geo, statuses, 0, tiny);
+    expect(rows.length).toBeLessThanOrEqual(tiny.height);
+    for (const row of rows) {
+      const w = row.reduce((sum, s) => sum + s.text.length, 0);
+      expect(w).toBeLessThanOrEqual(tiny.width);
+    }
+  });
+
+  it("returns empty array when panel has zero size", () => {
+    const { geo, statuses } = twoNodeSetup("pending", "pending");
+    expect(renderGraph(geo, statuses, 0, { width: 0, height: 0 })).toEqual([]);
+  });
+
+  it("renders box-drawing characters for edges in diamond graph", () => {
+    const statuses = pendingMap("A", "B", "C", "D");
+    const geo = layoutGraph(
+      [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"]],
+      statuses,
+      ["A", "B", "C", "D"],
+    );
+    const rows = renderGraph(geo, statuses, 0, {
+      width: geo.width,
+      height: geo.height,
+    });
+
+    // Flatten all text to verify box-drawing characters appear
+    const allText = rows.map(rowText).join("\n");
+    // At least one of ─│┌┐└┘▶ should appear
+    expect(/[─│┌┐└┘▶]/.test(allText)).toBe(true);
+  });
+
+  it("is pure — calling with same inputs produces identical output", () => {
+    const statuses = pendingMap("A", "B", "C");
+    const geo = layoutGraph(
+      [["A", "B"], ["B", "C"]],
+      statuses,
+      ["A", "B", "C"],
+    );
+    const panel = { width: 80, height: 24 };
+    const r1 = renderGraph(geo, statuses, 0, panel);
+    const r2 = renderGraph(geo, statuses, 0, panel);
+    expect(r1).toEqual(r2);
   });
 });
