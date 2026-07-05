@@ -22,7 +22,10 @@ export const SYMBOLS: {
   readonly step: Readonly<Record<StepStatus, string>>;
   readonly check: Readonly<Record<CheckStatus, string>>;
 } = {
-  task: { pending: "•", running: "▶", done: "✔", escalated: "✖" },
+  task: {
+    pending: "•", blocked: "◦", running: "▶", done: "✔",
+    escalated: "✖", skipped: "⊘", paused: "⏸",
+  },
   step: { pending: "·", running: "→", ok: "✓", failed: "✗" },
   check: { running: "…", passed: "✓", failed: "✗" },
 };
@@ -33,7 +36,10 @@ export const COLORS: {
   readonly step: Readonly<Record<StepStatus, string>>;
   readonly check: Readonly<Record<CheckStatus, string>>;
 } = {
-  task: { pending: "gray", running: "cyan", done: "green", escalated: "red" },
+  task: {
+    pending: "gray", blocked: "gray", running: "cyan", done: "green",
+    escalated: "red", skipped: "yellow", paused: "yellow",
+  },
   step: { pending: "gray", running: "cyan", ok: "green", failed: "red" },
   check: { running: "yellow", passed: "green", failed: "red" },
 };

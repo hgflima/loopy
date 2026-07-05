@@ -29,6 +29,14 @@ import { SYMBOLS } from "./view";
 /** Prefix marking a streamed agent-output line in the log. */
 const STREAM_PREFIX = "│";
 
+/** Human-readable labels for task_finished status values. */
+const TASK_FINISHED_LABELS: Record<string, string> = {
+  done: "concluída",
+  escalated: "escalada",
+  skipped: "pulada",
+  paused: "pausada",
+};
+
 /** Options for {@link createLineReporter}. */
 export interface LineReporterOptions {
   /** Sink for each rendered line (no trailing newline). */
@@ -122,11 +130,9 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
 
         case "task_finished": {
           flushStream(event.taskId);
-          const symbol =
-            event.status === "done"
-              ? SYMBOLS.task.done
-              : SYMBOLS.task.escalated;
-          const word = event.status === "done" ? "concluída" : "escalada";
+          const symbol = SYMBOLS.task[event.status];
+          const word =
+            TASK_FINISHED_LABELS[event.status] ?? event.status;
           const suffix = event.reason ? `: ${event.reason}` : "";
           print(`${symbol} ${event.taskId} ${word}${suffix}`);
           return;

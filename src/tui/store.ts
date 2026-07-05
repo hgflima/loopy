@@ -31,12 +31,18 @@ import type { StepType } from "../types";
 export type TaskStatus =
   /** Registered from the backlog, not yet started. */
   | "pending"
+  /** Waiting for one or more dependencies to reach `done`. */
+  | "blocked"
   /** Its pipeline is in progress. */
   | "running"
   /** Whole pipeline succeeded and the task was marked `- [x]`. */
   | "done"
   /** A step failed persistently and the task escalated (never marked done). */
-  | "escalated";
+  | "escalated"
+  /** Skipped because an ancestor task failed (skip transitivo). */
+  | "skipped"
+  /** Paused (resumable) — escalation with `pause` policy. */
+  | "paused";
 
 /** Lifecycle of one pipeline step within a task. */
 export type StepStatus = "pending" | "running" | "ok" | "failed";
@@ -79,9 +85,11 @@ export interface TaskState {
   readonly reason?: string;
 }
 
-/** The whole observable run state: tasks in backlog order. */
+/** The whole observable run state: tasks in backlog order + DAG edges. */
 export interface StoreState {
   readonly tasks: readonly TaskState[];
+  /** Dependency edges: `[dep, dependente]` — "dependente depends on dep". */
+  readonly edges: readonly [string, string][];
 }
 
 // ---------------------------------------------------------------------------
@@ -96,9 +104,15 @@ export interface StoreState {
  */
 export type StoreEvent =
   | {
+      readonly type: "edges_set";
+      readonly edges: readonly [string, string][];
+    }
+  | {
       readonly type: "task_registered";
       readonly taskId: string;
       readonly title: string;
+      /** Initial status; defaults to `"pending"` when omitted. */
+      readonly status?: "pending" | "blocked";
     }
   | { readonly type: "task_started"; readonly taskId: string }
   | {
@@ -142,7 +156,7 @@ export type StoreEvent =
   | {
       readonly type: "task_finished";
       readonly taskId: string;
-      readonly status: "done" | "escalated";
+      readonly status: "done" | "escalated" | "skipped" | "paused";
       readonly reason?: string;
     };
 
@@ -150,9 +164,9 @@ export type StoreEvent =
 // Immutable update helpers — rebuild only the touched task/step
 // ---------------------------------------------------------------------------
 
-/** The empty starting state (no tasks). */
+/** The empty starting state (no tasks, no edges). */
 export function initialState(): StoreState {
-  return { tasks: [] };
+  return { tasks: [], edges: [] };
 }
 
 /**
@@ -172,7 +186,7 @@ function updateTask(
   if (next === current) return state;
   const tasks = [...state.tasks];
   tasks[index] = next;
-  return { tasks };
+  return { ...state, tasks };
 }
 
 /**
@@ -232,15 +246,19 @@ function upsertCheck(
  */
 export function reduce(state: StoreState, event: StoreEvent): StoreState {
   switch (event.type) {
+    case "edges_set":
+      return { ...state, edges: [...event.edges] };
+
     case "task_registered": {
       if (state.tasks.some((t) => t.id === event.taskId)) return state;
       return {
+        ...state,
         tasks: [
           ...state.tasks,
           {
             id: event.taskId,
             title: event.title,
-            status: "pending",
+            status: event.status ?? "pending",
             steps: [],
             stream: "",
           },
@@ -317,6 +335,43 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         currentStepId: undefined,
       }));
   }
+}
+
+// ---------------------------------------------------------------------------
+// Derived selectors — pure functions over the state (AD-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Tasks whose dependencies (per `edges`) are **all** `done` and that are either
+ * `pending` (no deps) or `blocked` (deps just cleared). A task with no inbound
+ * edges in `state.edges` is ready as soon as it is `pending`.
+ */
+export function readyTasks(state: StoreState): readonly TaskState[] {
+  return state.tasks.filter((t) => {
+    if (t.status === "pending") return true;
+    if (t.status !== "blocked") return false;
+    // Blocked → ready only when every dep is done.
+    return state.edges
+      .filter(([, dependent]) => dependent === t.id)
+      .every(
+        ([dep]) => state.tasks.find((d) => d.id === dep)?.status === "done",
+      );
+  });
+}
+
+/** Tasks currently executing their pipeline. */
+export function runningTasks(state: StoreState): readonly TaskState[] {
+  return state.tasks.filter((t) => t.status === "running");
+}
+
+/** Tasks waiting for at least one dependency that is not yet `done`. */
+export function blockedTasks(state: StoreState): readonly TaskState[] {
+  return state.tasks.filter((t) => t.status === "blocked");
+}
+
+/** Tasks skipped because an ancestor failed. */
+export function skippedTasks(state: StoreState): readonly TaskState[] {
+  return state.tasks.filter((t) => t.status === "skipped");
 }
 
 // ---------------------------------------------------------------------------
