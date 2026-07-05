@@ -74,6 +74,7 @@ import {
   pipelineFingerprint,
   saveState,
 } from "./resume/state";
+import { createMutex } from "./loop/mutex";
 import { createFullRegistry } from "./steps/index";
 import { startUi } from "./tui/start";
 import type {
@@ -335,10 +336,13 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   const statePath = resolvePath(root, ".loopy/state.json");
   const pipelineHash = pipelineFingerprint(config.pipeline);
 
+  // T-004: one mutex per Run serializes all parent-branch mutations.
+  const parentMutex = createMutex();
+
   const deps: OrchestratorDeps = {
     root,
     flags,
-    registry: createFullRegistry(),
+    registry: createFullRegistry({ parentMutex }),
     checks,
     ui: ui.ui,
     logger,
@@ -352,6 +356,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     sessionProvider: (cwd) => pool.session(cwd),
     checkpoint: createCheckpointPort({ statePath, pipelineHash }),
     knownTaskIds,
+    parentMutex,
   };
 
   try {

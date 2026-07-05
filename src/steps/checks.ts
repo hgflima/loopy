@@ -19,14 +19,29 @@
  * `type` is likewise an engine bug, not normal flow.
  */
 import type { Step, StepContext, StepResult } from "../types";
+import type { Mutex } from "../loop/mutex";
+import { guarded } from "../loop/mutex";
 import { assertStepType } from "./guards";
+
+/** Options for {@link createChecksStep}. */
+export interface CreateChecksStepOptions {
+  /**
+   * Parent mutex (T-004). When present and the step is NOT `parallel_safe`,
+   * the checks execution runs inside the critical section. Standalone checks
+   * that run against the parent (e.g. lint at root) are serialized; checks
+   * with `parallel_safe: true` (e.g. per-worktree tests) bypass it.
+   */
+  readonly parentMutex?: Mutex;
+}
 
 /**
  * Build the `checks` {@link Step} interpreter. Reads the current step from
  * `ctx.step`, the named list from `ctx.config.checks`, and runs it via
  * `ctx.checks` in the task's worktree (`ctx.worktreePath`).
  */
-export function createChecksStep(): Step {
+export function createChecksStep(options: CreateChecksStepOptions = {}): Step {
+  const parentMutex = options.parentMutex;
+
   return {
     type: "checks",
     async execute(ctx: StepContext): Promise<StepResult> {
@@ -42,20 +57,25 @@ export function createChecksStep(): Step {
         );
       }
 
-      const report = await ctx.checks.run(list, { cwd: ctx.worktreePath });
-      ctx.logger.info(
-        `[checks:${step.id}] lista "${listName}": ${report.ok ? "verde" : "vermelho"}`,
-      );
+      // Mutex (T-004): checks against the parent run inside; `parallel_safe` bypasses.
+      const mutex = (step.parallel_safe ?? false) ? undefined : parentMutex;
 
-      if (report.ok) {
-        return { ok: true, report, output: report.text };
-      }
-      return {
-        ok: false,
-        reason: `[checks:${step.id}] a lista "${listName}" falhou.`,
-        report,
-        output: report.text,
-      };
+      return guarded(mutex, async () => {
+        const report = await ctx.checks.run(list, { cwd: ctx.worktreePath });
+        ctx.logger.info(
+          `[checks:${step.id}] lista "${listName}": ${report.ok ? "verde" : "vermelho"}`,
+        );
+
+        if (report.ok) {
+          return { ok: true, report, output: report.text };
+        }
+        return {
+          ok: false,
+          reason: `[checks:${step.id}] a lista "${listName}" falhou.`,
+          report,
+          output: report.text,
+        };
+      });
     },
   };
 }

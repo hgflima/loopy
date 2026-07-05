@@ -46,6 +46,8 @@ import {
   type ShellCommandResult,
 } from "./shell";
 import { tokenizeCommand } from "./tokenize";
+import type { Mutex } from "../loop/mutex";
+import { guarded } from "../loop/mutex";
 
 /** Options for {@link createApprovalStep}. */
 export interface CreateApprovalStepOptions {
@@ -53,6 +55,12 @@ export interface CreateApprovalStepOptions {
   readonly runCommand?: RunShellCommand;
   /** Optional per-command timeout in ms (no timeout by default). */
   readonly timeoutMs?: number;
+  /**
+   * Parent mutex (T-004). When present, the human wait runs OUTSIDE the mutex
+   * and only the command execution (the merge/action) runs INSIDE. When absent
+   * (tests, or `parallel_safe` steps), commands run without serialization.
+   */
+  readonly parentMutex?: Mutex;
 }
 
 /**
@@ -65,6 +73,7 @@ export function createApprovalStep(
 ): Step {
   const runCommand = options.runCommand ?? runShellCommandWithExeca;
   const timeoutMs = options.timeoutMs;
+  const parentMutex = options.parentMutex;
 
   return {
     type: "approval",
@@ -83,6 +92,8 @@ export function createApprovalStep(
       );
 
       // Decide: --yes short-circuits the gate; otherwise ask via the port.
+      // The human wait runs OUTSIDE the mutex (T-004): deliberation does not
+      // block the critical section, so other tasks can start/merge meanwhile.
       let approved: boolean;
       if (ctx.flags.yes) {
         ctx.logger.info(`[approval:${step.id}] auto-aprovado (--yes)`);
@@ -98,43 +109,45 @@ export function createApprovalStep(
         return { ok: false, reason };
       }
 
-      // Approved — run the action commands in order, stopping at the first
-      // failure (a failed merge leaves nothing useful for later commands).
-      const ran: ShellCommandResult[] = [];
-      let failure: ShellCommandResult | undefined;
+      // Mutex (T-004): only command execution runs inside the critical section;
+      // the human deliberation above stays outside. `parallel_safe` bypasses.
+      const mutex = (step.parallel_safe ?? false) ? undefined : parentMutex;
 
-      for (const argv of commands) {
-        const result = await runCommand(argv, {
-          cwd: ctx.worktreePath,
-          timeoutMs,
-        });
-        ran.push(result);
-        if (result.ok) {
-          ctx.logger.debug(`[approval:${step.id}] ok: ${result.command}`);
-          continue;
+      return guarded(mutex, async () => {
+        const ran: ShellCommandResult[] = [];
+        let failure: ShellCommandResult | undefined;
+
+        for (const argv of commands) {
+          const result = await runCommand(argv, {
+            cwd: ctx.worktreePath,
+            timeoutMs,
+          });
+          ran.push(result);
+          if (result.ok) {
+            ctx.logger.debug(`[approval:${step.id}] ok: ${result.command}`);
+            continue;
+          }
+          failure = result;
+          break;
         }
-        failure = result;
-        break;
-      }
 
-      const output = ran
-        .map(commandText)
-        .filter((s) => s !== "")
-        .join("\n");
+        const output = ran
+          .map(commandText)
+          .filter((s) => s !== "")
+          .join("\n");
 
-      if (failure !== undefined) {
-        // A failed action is treated as a conflict: report it with the
-        // configured on_fail action so escalation is attributable (Q5).
-        const onFail = step.on_fail ?? "escalate";
-        const head =
-          `[approval:${step.id}] a ação falhou (exit ${failure.exitCode}): ` +
-          `${failure.command}. on_fail: ${onFail}.`;
-        const reason = withCommandDetail(head, failure);
-        ctx.logger.error(reason);
-        return { ok: false, reason, output };
-      }
+        if (failure !== undefined) {
+          const onFail = step.on_fail ?? "escalate";
+          const head =
+            `[approval:${step.id}] a ação falhou (exit ${failure.exitCode}): ` +
+            `${failure.command}. on_fail: ${onFail}.`;
+          const reason = withCommandDetail(head, failure);
+          ctx.logger.error(reason);
+          return { ok: false, reason, output };
+        }
 
-      return { ok: true, output };
+        return { ok: true, output };
+      });
     },
   };
 }

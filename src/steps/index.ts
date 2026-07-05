@@ -16,6 +16,7 @@
  * steps there are all come from `loopy.yml`.
  */
 import type { Step, StepType } from "../types";
+import type { Mutex } from "../loop/mutex";
 import { createAgentStep } from "./agent";
 import { createApprovalStep } from "./approval";
 import { createChecksStep } from "./checks";
@@ -49,6 +50,12 @@ export interface NonAgentRegistryOptions {
   readonly runCommand?: RunShellCommand;
   /** Optional per-command timeout in ms (no timeout by default). */
   readonly timeoutMs?: number;
+  /**
+   * Parent mutex (T-004). When provided, non-`parallel_safe` shell/approval/checks
+   * steps acquire it before running commands against the parent. Agent steps
+   * (worktree-scoped) never acquire it.
+   */
+  readonly parentMutex?: Mutex;
 }
 
 /**
@@ -61,7 +68,7 @@ export function createNonAgentRegistry(
 ): StepRegistry {
   return createStepRegistry([
     createShellStep(options),
-    createChecksStep(),
+    createChecksStep({ parentMutex: options.parentMutex }),
     createApprovalStep(options),
   ]);
 }
@@ -79,7 +86,7 @@ export function createFullRegistry(
 ): StepRegistry {
   return createStepRegistry([
     createShellStep(options),
-    createChecksStep(),
+    createChecksStep({ parentMutex: options.parentMutex }),
     createApprovalStep(options),
     createAgentStep(),
   ]);
