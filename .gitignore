@@ -6,3 +6,6 @@ dist/
 *.log
 .DS_Store
 tasks/handoff.md
+
+# Binário de exemplos do OpenTUI (referência local do C-0007; ~95MB, não versionar)
+opentui-examples
