@@ -11,9 +11,15 @@
  * the knob to `false` restores teardown — mechanics only, driven by config (AD-1).
  */
 import { describe, expect, it } from "vitest";
-import { runLoop, type OrchestratorDeps } from "../../src/loop/orchestrator";
+import {
+  CANCEL_TIMEOUT_MS,
+  runLoop,
+  type AbortPort,
+  type OrchestratorDeps,
+} from "../../src/loop/orchestrator";
 import { createStepRegistry } from "../../src/steps/index";
 import type {
+  AgentSession,
   EscalationPolicy,
   RunFlags,
   Step,
@@ -175,5 +181,243 @@ describe("escalation — notify sink", () => {
     );
 
     expect(notified).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-007 — abort_loop hard stop + session cancellation
+// ---------------------------------------------------------------------------
+
+const abortPolicy = (keep: boolean): EscalationPolicy => ({
+  action: "abort_loop",
+  keep_worktree: keep,
+  notify: "stderr",
+});
+
+/** A fake AbortPort recording cancel and kill calls. */
+function fakeAbortPort(): {
+  readonly port: AbortPort;
+  readonly cancelledCwds: string[];
+  readonly killed: boolean[];
+} {
+  const cancelledCwds: string[] = [];
+  const killed: boolean[] = [];
+  return {
+    cancelledCwds,
+    killed,
+    port: {
+      async cancelSession(cwd) { cancelledCwds.push(cwd); },
+      killAgent() { killed.push(true); },
+    },
+  };
+}
+
+/**
+ * Registry where specific `task:step` keys fail or block. Unmatched steps
+ * succeed immediately. Used for abort_loop tests with concurrent tasks.
+ *
+ * `script` maps `"task:step"` or just `"step"` to a function returning a
+ * StepResult (may be async / block). Default: `{ ok: true }`.
+ */
+function concurrentScriptedRegistry(
+  order: string[],
+  script: Record<string, (ctx: StepContext) => Promise<StepResult> | StepResult> = {},
+): ReturnType<typeof createStepRegistry> {
+  const make = (type: StepType): Step => ({
+    type,
+    async execute(ctx: StepContext): Promise<StepResult> {
+      const key = `${ctx.task.id}:${ctx.step.id}`;
+      order.push(key);
+      const handler = script[key] ?? script[ctx.step.id];
+      if (handler) return handler(ctx);
+      return { ok: true };
+    },
+  });
+  return createStepRegistry([make("shell"), make("checks"), make("approval"), make("agent")]);
+}
+
+describe("escalation — abort_loop hard stop (T-007)", () => {
+  /**
+   * Build a cancellable session provider backed by a shared latch. Prompts
+   * block until the latch opens; `cancel()` opens it (cooperative). The
+   * latch survives timing races: even if `cancel()` is called before the
+   * prompt reaches its `await`, the resolved promise is still picked up.
+   */
+  function cancellableSessionProvider(opts?: {
+    /** When true, cancel does NOT unblock prompts (uncooperative agent). */
+    uncooperative?: boolean;
+  }): {
+    readonly provider: (cwd: string) => Promise<AgentSession>;
+    readonly cancelledIds: string[];
+    /** Force-resolve all blocked prompts (simulates killAgent / process death). */
+    forceUnblock(): void;
+  } {
+    const cancelledIds: string[] = [];
+    // Shared latch: once resolved, every `await latch` passes immediately.
+    let latchResolver: (() => void) | undefined;
+    const latch = new Promise<void>((r) => { latchResolver = r; });
+    const open = () => latchResolver?.();
+
+    return {
+      cancelledIds,
+      forceUnblock: open,
+      provider: async (cwd: string): Promise<AgentSession> => ({
+        sessionId: `sess:${cwd}`,
+        setMode: async () => {},
+        clear: async () => {},
+        prompt: async () => {
+          await latch;
+          return "cancelled";
+        },
+        readText: () => "",
+        cancel: async () => {
+          cancelledIds.push(cwd);
+          if (!opts?.uncooperative) open();
+        },
+        drainUsage: () => null,
+        readCost: () => null,
+      }),
+    };
+  }
+
+  /** Step handler that blocks on a session prompt until cancelled. */
+  const blockOnSession = async (ctx: StepContext): Promise<StepResult> => {
+    await ctx.session.setMode("acceptEdits");
+    const stop = await ctx.session.prompt("do work");
+    return stop === "cancelled"
+      ? { ok: false, reason: "cancelled" }
+      : { ok: true };
+  };
+
+  /** T-A fails immediately, T-B blocks on a session prompt. */
+  function abortTestScript(order: string[]) {
+    return concurrentScriptedRegistry(order, {
+      "T-A:work": () => ({ ok: false, reason: "boom" }),
+      "T-B:work": blockOnSession,
+    });
+  }
+
+  /** Config with a single "work" step, abort_loop policy, concurrency 2. */
+  function abortTestConfig() {
+    const config = makeConfig([shell("work")], abortPolicy(true));
+    config.concurrency = 2;
+    return config;
+  }
+
+  it("abort_loop cancels in-flight sibling sessions via session.cancel()", async () => {
+    const order: string[] = [];
+    const sessions = cancellableSessionProvider();
+
+    const cancelledCwds: string[] = [];
+    const killed: boolean[] = [];
+    const abortPort: AbortPort = {
+      async cancelSession(cwd) {
+        cancelledCwds.push(cwd);
+        const s = await sessions.provider(cwd);
+        await s.cancel();
+      },
+      killAgent() { killed.push(true); },
+    };
+
+    const result = await runLoop(
+      abortTestConfig(),
+      [makeTask("T-A"), makeTask("T-B")],
+      {
+        ...baseDeps(abortTestScript(order), { notify: () => {} }),
+        sessionProvider: sessions.provider,
+        abort: abortPort,
+      },
+    );
+
+    expect(result.escalated).toContain("T-A");
+    expect(result.stoppedBy).toBe("escalation_abort");
+    expect(cancelledCwds.length).toBeGreaterThan(0);
+    expect(killed).toEqual([]);
+  });
+
+  it("timeout on cooperative cancel triggers killAgent()", async () => {
+    const order: string[] = [];
+    const sessions = cancellableSessionProvider({ uncooperative: true });
+
+    const cancelledCwds: string[] = [];
+    const killed: boolean[] = [];
+    const abortPort: AbortPort = {
+      async cancelSession(cwd) { cancelledCwds.push(cwd); },
+      killAgent() {
+        killed.push(true);
+        sessions.forceUnblock();
+      },
+    };
+
+    const result = await runLoop(
+      abortTestConfig(),
+      [makeTask("T-A"), makeTask("T-B")],
+      {
+        ...baseDeps(abortTestScript(order), { notify: () => {} }),
+        sessionProvider: sessions.provider,
+        abort: abortPort,
+      },
+    );
+
+    expect(result.stoppedBy).toBe("escalation_abort");
+    expect(cancelledCwds.length).toBeGreaterThan(0);
+    expect(killed).toEqual([true]);
+  }, CANCEL_TIMEOUT_MS + 5_000);
+
+  it("cancelled tasks have checkpoint preserved (resumable, OQ13)", async () => {
+    const order: string[] = [];
+    const sessions = cancellableSessionProvider();
+
+    const abortPort: AbortPort = {
+      async cancelSession(cwd) {
+        const s = await sessions.provider(cwd);
+        await s.cancel();
+      },
+      killAgent() {},
+    };
+
+    const cpCalls: string[] = [];
+    const checkpoint = {
+      read: () => ({ version: 1 as const, tasks: {} }),
+      saveProgress(taskId: string, pc: string) { cpCalls.push(`saveProgress:${taskId}:${pc}`); },
+      setStatus(taskId: string, status: string) { cpCalls.push(`setStatus:${taskId}:${status}`); },
+      clearTask(taskId: string) { cpCalls.push(`clearTask:${taskId}`); },
+      pruneOrphans() {},
+    };
+
+    await runLoop(
+      abortTestConfig(),
+      [makeTask("T-A"), makeTask("T-B")],
+      {
+        ...baseDeps(abortTestScript(order), { notify: () => {} }),
+        sessionProvider: sessions.provider,
+        abort: abortPort,
+        checkpoint,
+      },
+    );
+
+    expect(cpCalls).toContain("setStatus:T-A:aborted");
+    expect(cpCalls.filter((c) => c === "setStatus:T-B:aborted")).toEqual([]);
+    expect(cpCalls.filter((c) => c === "clearTask:T-B")).toEqual([]);
+  });
+
+  it("killAgent() is never called for aborting a single task (no siblings)", async () => {
+    const order: string[] = [];
+    const registry = scriptedRegistry(order, "work");
+    const abort = fakeAbortPort();
+
+    // Only one task, fails with abort_loop — no siblings to cancel.
+    const config = makeConfig([shell("work")], abortPolicy(false));
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...baseDeps(registry, { notify: () => {} }),
+      abort: abort.port,
+    });
+
+    expect(result.stoppedBy).toBe("escalation_abort");
+    expect(result.escalated).toEqual(["T-1"]);
+    // No siblings → no cancel, no kill.
+    expect(abort.cancelledCwds).toEqual([]);
+    expect(abort.killed).toEqual([]);
   });
 });
