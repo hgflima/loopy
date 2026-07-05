@@ -28,7 +28,7 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { markDoneInFile, type BacklogOptions } from "../backlog/todo";
-import { buildGraph, readySet, skipDescendants } from "../scheduler/index";
+import { buildGraph, readySet, skipDescendants, topoLayers } from "../scheduler/index";
 import type { SchedulerTaskStatus, TaskGraph } from "../scheduler/types";
 import {
   createResolver,
@@ -153,6 +153,27 @@ export function buildScopeVars(
 }
 
 // ---------------------------------------------------------------------------
+// DAG helpers (shared by dry-run + live loop)
+// ---------------------------------------------------------------------------
+
+/**
+ * Strip deps that are already satisfied (done tasks in `knownTaskIds` but
+ * not in `tasks`). Deps referencing unknown ids are kept so `buildGraph`
+ * catches them as orphans (fail-fast).
+ */
+function stripDoneDeps(
+  tasks: readonly Task[],
+  knownTaskIds?: readonly string[],
+): readonly Task[] {
+  const pendingIds = new Set(tasks.map((t) => t.id));
+  const knownIdSet = new Set(knownTaskIds ?? tasks.map((t) => t.id));
+  return tasks.map((t) => {
+    const liveDeps = t.deps.filter((d) => pendingIds.has(d) || !knownIdSet.has(d));
+    return liveDeps.length === t.deps.length ? t : { ...t, deps: liveDeps };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Resolved-plan data model (what `--dry-run` prints)
 // ---------------------------------------------------------------------------
 
@@ -182,9 +203,15 @@ export interface ResolvedTaskPlan {
   readonly steps: readonly ResolvedStep[];
 }
 
-/** The full `--dry-run` result: every task with its resolved pipeline. */
+/** The full `--dry-run` result: every task with its resolved pipeline + DAG. */
 export interface DryRunPlan {
   readonly tasks: readonly ResolvedTaskPlan[];
+  /** Topological layers of the DAG (each layer can run in parallel). */
+  readonly layers: readonly (readonly string[])[];
+  /** Effective concurrency for this run. */
+  readonly concurrency: number;
+  /** Predicted merge order (flattened topo layers, backlog order within). */
+  readonly mergeOrder: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -263,19 +290,41 @@ function resolveStep(
   };
 }
 
+/** Options for {@link planDryRun}. */
+export interface PlanDryRunOptions {
+  /** All known task ids (pending + done) for stripping already-satisfied deps. */
+  readonly knownTaskIds?: readonly string[];
+  /** Effective concurrency (`flags.concurrency ?? config.concurrency`). */
+  readonly concurrency?: number;
+}
+
 /**
  * Build the `--dry-run` plan: for each task (in the given order), resolve the
  * whole pipeline against that task's scope. Purely functional — no I/O, no git,
  * no ACP (Success Criterion #8). Fails fast with an `InterpolationError` if any
  * template references an unknown variable (OQ1), before returning any output.
  *
- * `tasks` is the already-selected list (the caller filters pending / `--task`);
- * `iteration` is that list's 1-based position.
+ * Also builds the task DAG (T-011): topological layers, effective concurrency,
+ * and predicted merge order — same graph logic as `runLoop`, so dry-run and
+ * live run see the same DAG. `${iteration}` = stable 1-based backlog index
+ * (AD-4), identical between dry-run and live run.
  */
 export function planDryRun(
   config: LoopyConfig,
   tasks: readonly Task[],
+  options?: PlanDryRunOptions,
 ): DryRunPlan {
+  const concurrency = options?.concurrency ?? config.concurrency;
+
+  // --- DAG construction (shared logic with runLoop, AD-4) ---
+  const graphResult = buildGraph(stripDoneDeps(tasks, options?.knownTaskIds));
+  if (!graphResult.ok) {
+    throw new Error(graphResult.error);
+  }
+  const layers = topoLayers(graphResult.value);
+  const mergeOrder = layers.flat();
+
+  // --- Per-task resolved pipeline ---
   const plans = tasks.map((task, index): ResolvedTaskPlan => {
     const iteration = index + 1;
     const worktreePath = worktreePathFor(config, task);
@@ -294,7 +343,7 @@ export function planDryRun(
     return { task, iteration, worktreePath, steps };
   });
 
-  return { tasks: plans };
+  return { tasks: plans, layers, concurrency, mergeOrder };
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +392,20 @@ function renderTaskPlan(plan: ResolvedTaskPlan): string {
   return lines.join("\n");
 }
 
+/** Render the DAG summary section (T-011). */
+function renderDag(plan: DryRunPlan): string {
+  const lines = [
+    "--- DAG ---",
+    `  concorrência efetiva: ${plan.concurrency}`,
+    "  camadas topológicas:",
+  ];
+  for (let i = 0; i < plan.layers.length; i++) {
+    lines.push(`    camada ${i + 1}: ${plan.layers[i]!.join(", ")}`);
+  }
+  lines.push(`  ordem de merge prevista: ${plan.mergeOrder.join(" → ")}`);
+  return lines.join("\n");
+}
+
 /**
  * Render the whole dry-run plan as human-readable, deterministic text — the
  * exact output `--dry-run` prints. Contains only config/backlog-derived values
@@ -351,7 +414,9 @@ function renderTaskPlan(plan: ResolvedTaskPlan): string {
  */
 export function formatDryRunPlan(plan: DryRunPlan): string {
   if (plan.tasks.length === 0) return "";
-  return plan.tasks.map(renderTaskPlan).join("\n\n");
+  const dag = renderDag(plan);
+  const tasks = plan.tasks.map(renderTaskPlan).join("\n\n");
+  return `${dag}\n\n${tasks}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1162,18 +1227,7 @@ export async function runLoop(
   };
 
   // --- DAG construction (fail-fast before any task runs) ---
-  // Deps referencing done tasks (in `knownTaskIds` but not in `tasks`) are
-  // pre-satisfied (already merged per `[x]` in todo.md — the source of truth).
-  // Strip them before building the graph so `buildGraph` sees only live edges.
-  // Deps referencing unknown ids (not in `knownTaskIds` at all) are kept so
-  // `buildGraph` catches them as orphans (fail-fast, T-010).
-  const pendingIds = new Set(tasks.map((t) => t.id));
-  const knownIdSet = new Set(deps.knownTaskIds ?? tasks.map((t) => t.id));
-  const tasksForGraph = tasks.map((t) => {
-    const liveDeps = t.deps.filter((d) => pendingIds.has(d) || !knownIdSet.has(d));
-    return liveDeps.length === t.deps.length ? t : { ...t, deps: liveDeps };
-  });
-  const graphResult = buildGraph(tasksForGraph);
+  const graphResult = buildGraph(stripDoneDeps(tasks, deps.knownTaskIds));
   if (!graphResult.ok) {
     throw new Error(`[orchestrator] ${graphResult.error}`);
   }
