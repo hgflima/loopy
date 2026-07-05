@@ -32,7 +32,7 @@
     Verificação: `npm test -- orchestrator` && `npm test -- steps` && `npm run typecheck`.
     Deps: T-003. Files: src/loop/orchestrator.ts, src/steps/shell.ts, src/steps/approval.ts, src/steps/checks.ts, src/git/worktree.ts, testes. Scope: L. RISCO ALTO.
 
-- [ ] T-005: Pool de N Sessões dirigido pelo scheduler (substitui o `for...of`)
+- [x] T-005: Pool de N Sessões dirigido pelo scheduler (substitui o `for...of`)
     Trocar `for (const task of tasks)` (`orchestrator.ts:1021`) por um pool: `Set<Promise>` de em-voo; enche até `concurrency` com Prontas (`readySet`, ordem de backlog); a cada conclusão (`Promise.race`) reavalia o ready set. `buildGraph` no boundary de carga (fail-fast antes de qualquer Task rodar). `concurrency` passa a ser LIDO; `--concurrency N` sobrescreve (`flags.X ?? config.Y` `:957-958`). `${iteration}` vira índice estável do backlog (idêntico ao dry-run — AD-4); `max_iterations` vira contador separado ("Tasks iniciadas"; `skipped` não conta).
     Aceite: DAG A→C, B (indep), `concurrency 2` → A e B iniciam juntas, C espera A `done`; pool nunca excede N; desempate por ordem de backlog; ciclo/Dep órfã ⇒ fail-fast; `${iteration}` idêntico dry-run×run vivo; `concurrency: 1` sem `Deps:` = sequência byte-idêntica.
     Verificação: `npm test -- orchestrator` && `npm test -- cli` && `npm run typecheck`.
