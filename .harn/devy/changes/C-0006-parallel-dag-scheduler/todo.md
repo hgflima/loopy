@@ -72,7 +72,7 @@
     Verificação: `npm test -- resume` && `npm test -- cli` && `npm run typecheck`.
     Deps: T-005. Files: src/resume/state.ts, src/loop/orchestrator.ts, testes. Scope: M.
 
-- [ ] T-011: Dry-run do DAG + `--task` avisa Deps
+- [x] T-011: Dry-run do DAG + `--task` avisa Deps
     `--dry-run` imprime o DAG resolvido: camadas topológicas (`topoLayers`), Concorrência efetiva, ordem de Merge prevista + Pipeline interpolado por Task — zero escrita; `${iteration}` = índice estável ⇒ dry-run×run vivo idêntico (AD-4). Opera sobre o Backlog completo (ignora `--task`, como hoje). `--task <id>` força `concurrency = 1` e avisa se a Task tiver Deps não-`done` (análogo ao aviso existente em `src/index.ts`) — roda mesmo assim.
     Aceite: dry-run mostra camadas + concorrência efetiva + ordem de merge, zero escrita; `${iteration}` idêntico dry-run×run vivo; `--task` com Deps não-`done` avisa e roda isolada.
     Verificação: `npm test -- cli` && `npm test -- interp` && `npm run typecheck`.
