@@ -176,7 +176,6 @@ describe("parseConfig — migration pre-scan (T-026)", () => {
     const err = parseMigration(yaml);
     expect(err.message).toMatch(/on_expect_fail/);
     expect(err.message).toMatch(/on_fail/);
-    expect(err.message).toMatch(/MIGRATION\.md/);
     expect(err.message).toMatch(/step "implement"/);
   });
 
@@ -193,7 +192,6 @@ describe("parseConfig — migration pre-scan (T-026)", () => {
     const err = parseMigration(yaml);
     expect(err.message).toMatch(/on_conflict/);
     expect(err.message).toMatch(/on_fail/);
-    expect(err.message).toMatch(/MIGRATION\.md/);
     expect(err.message).toMatch(/step "merge"/);
   });
 
@@ -209,7 +207,6 @@ describe("parseConfig — migration pre-scan (T-026)", () => {
     const err = parseMigration(yaml);
     expect(err.message).toMatch(/verify\.on_fail/);
     expect(err.message).toMatch(/mova para 'on_fail' no nível do step/);
-    expect(err.message).toMatch(/MIGRATION\.md/);
   });
 
   it("collects multiple legacy keys in a single report (OQ-3)", () => {

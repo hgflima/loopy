@@ -79,7 +79,7 @@ function scanRemovedKeys(raw: unknown, sourcePath?: string): void {
     for (const key of ["on_expect_fail", "on_conflict"] as const) {
       if (key in s) {
         issues.push(
-          `  - ${stepLabel}: '${key}' foi removido (ADR-0001) — use 'on_fail'. Ver docs/MIGRATION.md`,
+          `  - ${stepLabel}: '${key}' foi removido (ADR-0001) — use 'on_fail'.`,
         );
       }
     }
@@ -90,7 +90,7 @@ function scanRemovedKeys(raw: unknown, sourcePath?: string): void {
       "on_fail" in (s.verify as Record<string, unknown>)
     ) {
       issues.push(
-        `  - ${stepLabel}: 'verify.on_fail' foi removido (ADR-0001) — mova para 'on_fail' no nível do step. Ver docs/MIGRATION.md`,
+        `  - ${stepLabel}: 'verify.on_fail' foi removido (ADR-0001) — mova para 'on_fail' no nível do step.`,
       );
     }
   }

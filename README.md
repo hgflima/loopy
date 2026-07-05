@@ -17,6 +17,10 @@ declarado no yml — tipicamente cria um worktree isolado, faz o agente implemen
 até os checks passarem, simplifica, audita (read-only), commita, faz merge (com
 aprovação humana) e limpa — mostrando tudo numa **TUI ao vivo (Ink)**.
 
+> **Novo por aqui?** Comece pelo tutorial
+> [Meu primeiro loop](docs/tutorials/meu-primeiro-loop.md) — 15 minutos, do zero
+> a um loop inteiro rodando.
+
 ---
 
 ## Instalação
@@ -77,7 +81,11 @@ touch .loopy.stop
 ## Configuração (`loopy.yml`)
 
 Todo o comportamento do loop vive no `loopy.yml` (veja o exemplo comentado na
-raiz do repo). Blocos:
+raiz do repo). O resumo abaixo é um mapa; a **referência completa** de cada bloco,
+chave, tipo e default está em [`docs/reference/`](docs/reference/README.md). Para
+um passo a passo de como pôr o `loopy` para rodar num projeto existente (inclusive
+com concorrência N), veja o guia
+[Configurar um projeto-alvo](docs/how-to/configurar-projeto-alvo.md). Blocos:
 
 - **`workspace`** — `root`, `parent_branch` (destino do merge), `worktrees_dir`.
 - **`acp`** — mecânica do subprocesso ACP (`command`, timeout, `permissions`).
