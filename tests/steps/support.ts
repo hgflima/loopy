@@ -147,7 +147,7 @@ export interface StepContextOverrides {
   readonly ui?: UiPort;
   /** The ACP session (agent step); defaults to an inert, always-`end_turn` stub. */
   readonly session?: AgentSession;
-  /** Event sink for TUI progress (T-005); defaults to absent. */
+  /** Event sink for TUI progress (check, attempt_started, stream_chunk events); defaults to absent. */
   readonly emit?: (event: StoreEvent) => void;
 }
 

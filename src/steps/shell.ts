@@ -68,6 +68,13 @@ export type RunShellCommand = (
     readonly timeoutMs?: number;
     /** Abort signal for hard-stop cancellation (T-007). */
     readonly cancelSignal?: AbortSignal;
+    /**
+     * Additive streaming callback — invoked with each chunk of stdout/stderr as
+     * the subprocess produces it. Best-effort (never throws to the caller). The
+     * aggregated {@link ShellCommandResult} stays byte-identical whether or not
+     * this callback is provided (T-006).
+     */
+    readonly onChunk?: (text: string) => void;
   },
 ) => Promise<ShellCommandResult>;
 
@@ -97,13 +104,25 @@ export const runShellCommandWithExeca: RunShellCommand = async (argv, ctx) => {
     };
   }
 
-  const result = await execa(file, args, {
+  const subprocess = execa(file, args, {
     cwd: ctx.cwd,
     reject: false,
     stripFinalNewline: true,
     timeout: ctx.timeoutMs,
     cancelSignal: ctx.cancelSignal,
   });
+
+  // Stream chunks as the subprocess produces them (T-006). Best-effort: a
+  // failing onChunk must never break the subprocess or the aggregated result.
+  if (ctx.onChunk) {
+    const forward = (data: Buffer) => {
+      try { ctx.onChunk!(data.toString()); } catch { /* best-effort */ }
+    };
+    subprocess.stdout?.on("data", forward);
+    subprocess.stderr?.on("data", forward);
+  }
+
+  const result = await subprocess;
 
   const ok = !result.failed;
   const fallbackExit = ok ? 0 : -1;
@@ -201,6 +220,13 @@ export function createShellStep(options: CreateShellStepOptions = {}): Step {
       // section; `parallel_safe: true` steps bypass it.
       const mutex = (step.parallel_safe ?? false) ? undefined : parentMutex;
 
+      // Wire onChunk → ctx.emit(stream_chunk) when the TUI is mounted (T-006).
+      // Without emit the callback is undefined and the runner skips streaming.
+      const onChunk = ctx.emit
+        ? (text: string) =>
+            ctx.emit!({ type: "stream_chunk", taskId: ctx.task.id, text })
+        : undefined;
+
       return guarded(mutex, async () => {
         const ran: ShellCommandResult[] = [];
         let firstFailure: ShellCommandResult | undefined;
@@ -210,6 +236,7 @@ export function createShellStep(options: CreateShellStepOptions = {}): Step {
             cwd: ctx.worktreePath,
             timeoutMs,
             cancelSignal,
+            onChunk,
           });
           ran.push(result);
 
