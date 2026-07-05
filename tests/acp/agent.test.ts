@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 import { openAgent, type AgentHandle } from "../../src/acp/agent";
+import type { AcpTrafficEntry } from "../../src/logging/logger";
 import type { FakeScenario } from "../fixtures/fake-agent";
 
 const FAKE_AGENT = fileURLToPath(
@@ -169,6 +170,80 @@ describe("openAgent (against the fake agent)", () => {
     const session = await handle.ctx.buildSession(PROJECT_ROOT).start();
     const response = await session.prompt("go");
     expect(response.stopReason).toBe("refusal");
+    session.dispose();
+  });
+
+  it("onTraffic captures recv for session/update during a prompt turn (T-007)", async () => {
+    const scenario: FakeScenario = {
+      defaultTurn: {
+        text: ["Hello."],
+        stopReason: "end_turn",
+      },
+    };
+    const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
+    handle = await openAgent({
+      command: fakeCommand(scenario),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+      onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
+    });
+
+    const session = await handle.ctx.buildSession(PROJECT_ROOT).start();
+    await session.prompt("go");
+
+    // Wait for all async notifications to be dispatched.
+    await expect
+      .poll(() => handle?.text.read(session.sessionId))
+      .toBe("Hello.");
+
+    // onTraffic should have captured recv entries for session/update.
+    const recvUpdates = traffic.filter(
+      (t) => t.entry.direction === "recv" && t.entry.method === "session/update",
+    );
+    expect(recvUpdates.length).toBeGreaterThan(0);
+    // Every recv carries the correct sessionId.
+    for (const t of recvUpdates) {
+      expect(t.sessionId).toBe(session.sessionId);
+    }
+
+    session.dispose();
+  });
+
+  it("onTraffic captures recv for permission requests (T-007)", async () => {
+    const scenario: FakeScenario = {
+      defaultTurn: {
+        permission: {
+          options: [
+            { optionId: "opt-allow-once", name: "Allow", kind: "allow_once" },
+          ],
+        },
+        stopReason: "end_turn",
+      },
+    };
+    const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
+    handle = await openAgent({
+      command: fakeCommand(scenario),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+      onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
+    });
+
+    const session = await handle.ctx.buildSession(PROJECT_ROOT).start();
+    await session.prompt("do something");
+
+    await expect
+      .poll(() => handle?.text.read(session.sessionId))
+      .toContain("permission=opt-allow-once");
+
+    // onTraffic should have captured the permission request as recv.
+    const permRecv = traffic.filter(
+      (t) =>
+        t.entry.direction === "recv" &&
+        t.entry.method === "session/request_permission",
+    );
+    expect(permRecv.length).toBeGreaterThan(0);
+    expect(permRecv[0]!.sessionId).toBe(session.sessionId);
+
     session.dispose();
   });
 

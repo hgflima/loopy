@@ -57,6 +57,7 @@ import type {
   WaitForTerminalExitRequest,
   WaitForTerminalExitResponse,
 } from "@agentclientprotocol/sdk";
+import type { AcpTrafficEntry } from "../logging/logger";
 import type { LoggerPort, PermissionOnRequest } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -465,6 +466,8 @@ export interface ClientAppOptions {
   readonly permissionResolver?: PermissionResolver;
   /** Called for every `session/update` (stream to TUI/logs). */
   readonly onUpdate?: (notification: SessionNotification) => void;
+  /** Called for every ACP JSON-RPC message (send/recv); pure observation (AD-1). */
+  readonly onTraffic?: (entry: AcpTrafficEntry, sessionId: string) => void;
   /** Turn buffer (OQ3) to feed; a fresh one is created when omitted. */
   readonly textBuffer?: TurnTextBuffer;
   /** Cost buffer (C-0005) to feed; a fresh one is created when omitted. */
@@ -503,11 +506,18 @@ export function createClientApp(
     options.permissionResolver ??
     createPermissionResolver(options.onRequest ?? "allow");
   const logger = options.logger;
+  const onTraffic = options.onTraffic;
+
+  /** Fire-and-forget recv traffic entry (observation only — AD-1). */
+  const recv = (method: string, sessionId: string, payload?: unknown): void => {
+    onTraffic?.({ direction: "recv", method, payload }, sessionId);
+  };
 
   const app = client({ name: options.name ?? "loopy" })
     .onRequest(
       CLIENT_METHODS.session_request_permission,
       async ({ params }) => {
+        recv("session/request_permission", params.sessionId, params);
         const decision = await resolvePermission(params);
         const response = resolvePermissionOutcome(params.options, decision);
         logger?.debug(
@@ -517,6 +527,7 @@ export function createClientApp(
       },
     )
     .onRequest(CLIENT_METHODS.fs_read_text_file, async ({ params }) => {
+      recv("fs/read_text_file", params.sessionId, params);
       const content = await fs.readTextFile(params.path, {
         line: params.line,
         limit: params.limit,
@@ -524,27 +535,34 @@ export function createClientApp(
       return { content };
     })
     .onRequest(CLIENT_METHODS.fs_write_text_file, async ({ params }) => {
+      recv("fs/write_text_file", params.sessionId, params);
       await fs.writeTextFile(params.path, params.content);
       return {};
     })
-    .onRequest(CLIENT_METHODS.terminal_create, ({ params }) =>
-      terminals.create(params),
-    )
-    .onRequest(CLIENT_METHODS.terminal_output, ({ params }) =>
-      terminals.output(params),
-    )
-    .onRequest(CLIENT_METHODS.terminal_wait_for_exit, ({ params }) =>
-      terminals.waitForExit(params),
-    )
+    .onRequest(CLIENT_METHODS.terminal_create, ({ params }) => {
+      recv("terminal/create", params.sessionId, params);
+      return terminals.create(params);
+    })
+    .onRequest(CLIENT_METHODS.terminal_output, ({ params }) => {
+      recv("terminal/output", params.sessionId, params);
+      return terminals.output(params);
+    })
+    .onRequest(CLIENT_METHODS.terminal_wait_for_exit, ({ params }) => {
+      recv("terminal/wait_for_exit", params.sessionId, params);
+      return terminals.waitForExit(params);
+    })
     .onRequest(CLIENT_METHODS.terminal_release, ({ params }) => {
+      recv("terminal/release", params.sessionId, params);
       terminals.release(params);
       return {};
     })
     .onRequest(CLIENT_METHODS.terminal_kill, ({ params }) => {
+      recv("terminal/kill", params.sessionId, params);
       terminals.kill(params);
       return {};
     })
     .onNotification(CLIENT_METHODS.session_update, ({ params }) => {
+      recv("session/update", params.sessionId, params);
       options.onUpdate?.(params);
       const text = agentChunkText(params.update);
       if (text !== undefined) textBuffer.append(params.sessionId, text);

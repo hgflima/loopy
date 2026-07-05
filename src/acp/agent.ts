@@ -35,6 +35,7 @@ import type {
   InitializeResponse,
   SessionNotification,
 } from "@agentclientprotocol/sdk";
+import type { AcpTrafficEntry } from "../logging/logger";
 import type { LoggerPort, PermissionOnRequest } from "../types";
 import {
   createClientApp,
@@ -76,6 +77,8 @@ export interface OpenAgentOptions {
   readonly permissionResolver?: PermissionResolver;
   /** Called for every `session/update` (stream to TUI/logs). */
   readonly onUpdate?: (notification: SessionNotification) => void;
+  /** Called for every ACP JSON-RPC message (send/recv); pure observation (AD-1). */
+  readonly onTraffic?: (entry: AcpTrafficEntry, sessionId: string) => void;
   /** Filesystem behind the `fs/*` handlers (node fs by default). */
   readonly fs?: FileSystemPort;
   /** Terminal manager behind the `terminal/*` handlers. */
@@ -176,6 +179,7 @@ export async function openAgent(
     onRequest: options.permissions.on_request,
     permissionResolver: options.permissionResolver,
     onUpdate: options.onUpdate,
+    onTraffic: options.onTraffic,
     fs: options.fs,
     terminals: options.terminals,
     logger: options.logger,
