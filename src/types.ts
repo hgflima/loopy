@@ -509,6 +509,17 @@ export interface GitPort {
   ): Promise<MergeResult>;
   /** `true` when the parent branch working tree is clean. */
   isParentClean(): Promise<boolean>;
+  /** `true` when a merge is in progress (`MERGE_HEAD` present on the parent). */
+  isMergeInProgress(): Promise<boolean>;
+  /**
+   * Rebase the branch checked out in `worktreePath` onto `parentBranch`.
+   * Aborts any in-progress merge on the parent first. On rebase conflict,
+   * aborts the rebase and returns `{ ok: false, conflict: true }`.
+   */
+  rebaseOnto(
+    worktreePath: string,
+    parentBranch: string,
+  ): Promise<MergeResult>;
 }
 
 /** Runs check commands and aggregates a `ChecksReport`. */

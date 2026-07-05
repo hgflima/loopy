@@ -192,6 +192,151 @@ describe("createGit — merge", () => {
 });
 
 // ---------------------------------------------------------------------------
+// rebaseOnto — merge-conflict recovery (T-008)
+// ---------------------------------------------------------------------------
+
+describe("createGit — rebaseOnto", () => {
+  it("rebases a non-conflicting task branch onto an advanced parent", async () => {
+    const g = createGit({ root });
+    const path = worktreePath(root, "T-030");
+    await g.addWorktree(path, "loopy/T-030", "main");
+
+    // Task edits a new file.
+    await writeFile(join(path, "feature.txt"), "task work\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "task commit"]);
+
+    // Parent advances with a non-overlapping change.
+    await writeFile(join(root, "other.txt"), "parent advance\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "parent advance"]);
+
+    const result = await g.rebaseOnto(path, "main");
+
+    expect(result.ok).toBe(true);
+    expect(result.conflict).toBe(false);
+    // Task branch now has the parent's advance as ancestor.
+    const log = await git(path, ["log", "--oneline"]);
+    expect(log).toContain("task commit");
+    expect(log).toContain("parent advance");
+  });
+
+  it("aborts merge in progress on parent before rebasing", async () => {
+    const g = createGit({ root });
+    const path = worktreePath(root, "T-031");
+    await g.addWorktree(path, "loopy/T-031", "main");
+
+    // Create a conflict scenario: both sides edit file.txt.
+    await writeFile(join(path, "file.txt"), "task side\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "task change"]);
+    await writeFile(join(root, "file.txt"), "parent side\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "parent change"]);
+
+    // Attempt a merge that conflicts (raw git, not Git.merge — which auto-aborts).
+    await execa("git", ["merge", "--no-ff", "loopy/T-031", "-m", "will-conflict"], {
+      cwd: root,
+      reject: false,
+    });
+    // MERGE_HEAD is present — the parent is mid-conflict.
+    expect(await g.isMergeInProgress()).toBe(true);
+
+    // rebaseOnto should abort the merge first, then rebase.
+    // Here the rebase will also conflict (same file), so it aborts the rebase too.
+    const result = await g.rebaseOnto(path, "main");
+
+    // The merge is no longer in progress.
+    expect(await g.isMergeInProgress()).toBe(false);
+    // Rebase conflicted (same file), so it signals failure.
+    expect(result.ok).toBe(false);
+    expect(result.conflict).toBe(true);
+    // Parent is clean (merge was aborted).
+    expect(await g.isParentClean()).toBe(true);
+  });
+
+  it("recovers a conflict via rebase when changes don't overlap", async () => {
+    const g = createGit({ root });
+    const path = worktreePath(root, "T-032");
+    await g.addWorktree(path, "loopy/T-032", "main");
+
+    // Task adds a new file.
+    await writeFile(join(path, "feature.txt"), "task work\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "add feature"]);
+
+    // Parent advances file.txt (no overlap with task).
+    await writeFile(join(root, "file.txt"), "parent advanced\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "parent advance"]);
+
+    const result = await g.rebaseOnto(path, "main");
+
+    expect(result.ok).toBe(true);
+    expect(result.conflict).toBe(false);
+    // After rebase, the task branch has both changes.
+    expect(await readFile(join(path, "feature.txt"), "utf8")).toBe("task work\n");
+    expect(await readFile(join(path, "file.txt"), "utf8")).toBe("parent advanced\n");
+  });
+
+  it("aborts a conflicting rebase and returns conflict:true", async () => {
+    const g = createGit({ root });
+    const path = worktreePath(root, "T-033");
+    await g.addWorktree(path, "loopy/T-033", "main");
+
+    // Both edit the same file → rebase conflict.
+    await writeFile(join(path, "file.txt"), "task version\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "task edit"]);
+    await writeFile(join(root, "file.txt"), "parent version\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "parent edit"]);
+
+    const result = await g.rebaseOnto(path, "main");
+
+    expect(result.ok).toBe(false);
+    expect(result.conflict).toBe(true);
+    // Rebase was aborted — task branch still has its original content.
+    expect(await readFile(join(path, "file.txt"), "utf8")).toBe("task version\n");
+    // Parent is unaffected.
+    expect(await readFile(join(root, "file.txt"), "utf8")).toBe("parent version\n");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isMergeInProgress
+// ---------------------------------------------------------------------------
+
+describe("createGit — isMergeInProgress", () => {
+  it("returns false on a clean repo", async () => {
+    const g = createGit({ root });
+    expect(await g.isMergeInProgress()).toBe(false);
+  });
+
+  it("returns true when MERGE_HEAD is present", async () => {
+    const g = createGit({ root });
+    const path = worktreePath(root, "T-040");
+    await g.addWorktree(path, "loopy/T-040", "main");
+
+    // Create conflict.
+    await writeFile(join(path, "file.txt"), "conflict\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "conflict"]);
+    await writeFile(join(root, "file.txt"), "other\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "other"]);
+
+    // Raw merge that leaves MERGE_HEAD.
+    await execa("git", ["merge", "--no-ff", "loopy/T-040"], {
+      cwd: root,
+      reject: false,
+    });
+
+    expect(await g.isMergeInProgress()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // commitPaths — the engine's mark-done bookkeeping commit
 // ---------------------------------------------------------------------------
 
