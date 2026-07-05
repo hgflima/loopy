@@ -69,7 +69,7 @@
 
 ## Fase 4 — Dashboard (consumidor; T-010 após T-009)
 
-- [ ] T-009: Panes — `GraphPane` + `AcpLogPane` + `TaskListPane` (+`ink-testing-library`)
+- [x] T-009: Panes — `GraphPane` + `AcpLogPane` + `TaskListPane` (+`ink-testing-library`)
     Adicionar dev-dep `ink-testing-library`. `components/GraphPane.tsx` (NOVO): wrapper fino de `renderGraph(...)` → imprime `StyledRow[]` como spans `<Text>` coloridos. `components/AcpLogPane.tsx` (NOVO): tail de `StoreState.acpLog` (direction/method/summary), prefixado por `taskId` quando >1 Task ativa. `components/TaskListPane.tsx` (NOVO): o frame de Tasks (crit. 4) — 1 linha/Task em ordem de backlog, glyph+cor por status (verde+`✔` executada; vermelho+`✖` falhou), com step atual/`try k/max`/checks quando `running` (reusa `TaskRow`/`attemptLabel`/`CheckStatus`). `StreamPane.tsx` inalterado. Testes pequenos com `ink-testing-library` (`lastFrame()`), lógica dura fica pura em `view.ts`.
     Aceite: `GraphPane` desenha o grafo colorido (usa `renderGraph`); `AcpLogPane` faz tail do `acpLog` bounded e prefixa `taskId` sob concorrência; `TaskListPane` lista todas em ordem de backlog com glyph/cor por status + step/try/checks quando running; snapshots via `ink-testing-library` verdes.
     Verificação: `npm test -- tui` && `npm run typecheck`.
