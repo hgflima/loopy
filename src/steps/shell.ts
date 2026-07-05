@@ -42,6 +42,8 @@
  */
 import { execa } from "execa";
 import type { Step, StepContext, StepResult } from "../types";
+import type { Mutex } from "../loop/mutex";
+import { guarded } from "../loop/mutex";
 import { assertStepType } from "./guards";
 import { displayCommand, tokenizeCommand } from "./tokenize";
 
@@ -123,6 +125,13 @@ export interface CreateShellStepOptions {
   readonly runCommand?: RunShellCommand;
   /** Optional per-command timeout in ms (no timeout by default). */
   readonly timeoutMs?: number;
+  /**
+   * Parent mutex (T-004). When present and the step is NOT `parallel_safe`,
+   * the entire command sequence runs inside the critical section. Steps with
+   * `parallel_safe: true` bypass the mutex (their commands target a worktree,
+   * not the shared parent).
+   */
+  readonly parentMutex?: Mutex;
 }
 
 /** Non-empty stdout+stderr of one command, for the aggregated step `output`. */
@@ -159,6 +168,7 @@ function failureReason(stepId: string, failure: ShellCommandResult): string {
 export function createShellStep(options: CreateShellStepOptions = {}): Step {
   const runCommand = options.runCommand ?? runShellCommandWithExeca;
   const timeoutMs = options.timeoutMs;
+  const parentMutex = options.parentMutex;
 
   return {
     type: "shell",
@@ -175,40 +185,45 @@ export function createShellStep(options: CreateShellStepOptions = {}): Step {
         tokenizeCommand(raw).map((token) => ctx.resolve(token)),
       );
 
-      const ran: ShellCommandResult[] = [];
-      let firstFailure: ShellCommandResult | undefined;
+      // Mutex (T-004): steps that mutate the parent run inside the critical
+      // section; `parallel_safe: true` steps bypass it.
+      const mutex = (step.parallel_safe ?? false) ? undefined : parentMutex;
 
-      for (const argv of commands) {
-        const result = await runCommand(argv, {
-          cwd: ctx.worktreePath,
-          timeoutMs,
-        });
-        ran.push(result);
+      return guarded(mutex, async () => {
+        const ran: ShellCommandResult[] = [];
+        let firstFailure: ShellCommandResult | undefined;
 
-        if (result.ok) {
-          ctx.logger.debug(`[shell:${step.id}] ok: ${result.command}`);
-          continue;
+        for (const argv of commands) {
+          const result = await runCommand(argv, {
+            cwd: ctx.worktreePath,
+            timeoutMs,
+          });
+          ran.push(result);
+
+          if (result.ok) {
+            ctx.logger.debug(`[shell:${step.id}] ok: ${result.command}`);
+            continue;
+          }
+
+          ctx.logger.error(failureReason(step.id, result));
+          if (firstFailure === undefined) firstFailure = result;
+          if (!always) break;
         }
 
-        ctx.logger.error(failureReason(step.id, result));
-        if (firstFailure === undefined) firstFailure = result;
-        // Stop at the first failure unless the step is best-effort (`always`).
-        if (!always) break;
-      }
+        const output = ran
+          .map(commandText)
+          .filter((s) => s !== "")
+          .join("\n");
 
-      const output = ran
-        .map(commandText)
-        .filter((s) => s !== "")
-        .join("\n");
-
-      if (firstFailure !== undefined) {
-        return {
-          ok: false,
-          reason: failureReason(step.id, firstFailure),
-          output,
-        };
-      }
-      return { ok: true, output };
+        if (firstFailure !== undefined) {
+          return {
+            ok: false,
+            reason: failureReason(step.id, firstFailure),
+            output,
+          };
+        }
+        return { ok: true, output };
+      });
     },
   };
 }

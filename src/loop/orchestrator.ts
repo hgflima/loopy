@@ -47,6 +47,8 @@ import {
   type ResumePoint,
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
+import type { Mutex } from "./mutex";
+import { guarded } from "./mutex";
 import type {
   AgentSession,
   CheckpointPort,
@@ -578,6 +580,12 @@ export interface OrchestratorDeps {
    * Returns milliseconds since epoch. Tests inject for determinism.
    */
   readonly now?: () => number;
+  /**
+   * Parent mutex (T-004). Serializes all parent-branch mutations (non-agent
+   * step commands, commitPaths, isParentClean) behind a single FIFO lock.
+   * When absent (tests without parallelism), no serialization occurs.
+   */
+  readonly parentMutex?: Mutex;
 }
 
 /**
@@ -937,6 +945,38 @@ export interface RunLoopResult {
 }
 
 /**
+ * Mark a task done inside the parent mutex (T-004). Acquires the mutex (when
+ * present), re-evaluates `require_clean_parent` inside the critical section,
+ * then calls `markDone`. Returns `"dirty_parent"` to signal the loop should
+ * halt, or `"ok"` on success.
+ */
+async function markDoneWithMutex(
+  taskId: string,
+  config: LoopyConfig,
+  deps: OrchestratorDeps,
+  requireCleanParent: boolean,
+): Promise<"ok" | "dirty_parent"> {
+  return guarded(deps.parentMutex, async () => {
+    // `require_clean_parent` evaluated INSIDE the mutex (T-004): serialized
+    // with merges so no TOCTOU between the check and the commit.
+    if (
+      requireCleanParent &&
+      deps.git !== undefined &&
+      !(await deps.git.isParentClean())
+    ) {
+      const message =
+        `[require_clean_parent] parent "${config.workspace.parent_branch}" está sujo — ` +
+        `interrompendo antes do mark-done de ${taskId} (commite ou limpe o working tree)`;
+      deps.logger.error(message);
+      deps.notify?.(message);
+      return "dirty_parent";
+    }
+    await deps.markDone.markDone(taskId);
+    return "ok";
+  });
+}
+
+/**
  * The live outer loop (T-010). Iterate `tasks` (the already-selected pending
  * list, in order) and for each: check stop conditions, run its pipeline, and
  * either mark it done (pipeline ok) or escalate (pipeline failed — the task is
@@ -1038,9 +1078,9 @@ export async function runLoop(
       );
       return finish("max_iterations");
     }
-    // `require_clean_parent`: never proceed onto a dirty parent working tree.
-    // Checked before EACH task (a merge/mark-done could dirty it mid-run), and
-    // only when a git handle is wired — the CLI always wires one.
+    // `require_clean_parent`: early-out before wasting time running a pipeline
+    // on a dirty parent. Under parallelism (T-005), this is a best-effort hint;
+    // the authoritative check lives inside the mutex (markDoneWithMutex below).
     if (
       requireCleanParent &&
       deps.git !== undefined &&
@@ -1070,7 +1110,19 @@ export async function runLoop(
     tasksMetrics[task.id] = taskMetrics;
 
     if (outcome.ok) {
-      await deps.markDone.markDone(task.id);
+      // Mark done inside the parent mutex (T-004): `require_clean_parent` is
+      // re-evaluated here (not as a pre-task gate) so it serializes correctly
+      // with concurrent merges. The mutex guarantees only one task's mark-done
+      // / merge runs at a time. Checkpoint writes stay OUTSIDE (already safe).
+      const markDoneResult = await markDoneWithMutex(
+        task.id,
+        config,
+        deps,
+        requireCleanParent,
+      );
+      if (markDoneResult === "dirty_parent") {
+        return finish("dirty_parent");
+      }
       checkpoint?.clearTask(task.id);
       completed.push(task.id);
       deps.logger.info(
