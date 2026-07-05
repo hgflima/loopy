@@ -200,5 +200,37 @@ O modo que resolve e imprime o Pipeline interpolado sem nenhuma escrita, commit 
 _Avoid_: simulação, preview
 
 **Interpolação** (`${…}`):
-A substituição de variáveis conhecidas (`task.*`, `worktree.*`, `iteration`, `attempt`, `checks.report`, `inputs.*`, `workspace.*`) nos textos da Configuração, resolvida uma vez por Task/Tentativa. Variável desconhecida aborta (fail-fast).
+A substituição de variáveis conhecidas (`task.*`, `worktree.*`, `iteration`, `attempt`, `checks.report`, `inputs.*`, `workspace.*`, `change.*`) nos textos da Configuração, resolvida uma vez por Task/Tentativa. Variável desconhecida aborta (fail-fast).
 _Avoid_: template, variável de ambiente
+
+## Métricas (ADR-0003)
+
+Instrumentação opt-in de tempo, tokens e custo por Step, acumulados em quatro níveis. Ativada pela presença do bloco `metrics` no `loopy.yml`; ausência = feature desligada (regressão zero). Não confundir estes termos com os do cluster de verificação (Report de checks, Verify, Tentativa).
+
+**Amostra** (_Sample_):
+A medição de **uma Visita** efetivamente executada a um Step: `{ durationMs, usage?, cost? }`. Unidade mínima de coleta. Steps não executados (visit-exceeded, sem intérprete) não geram Amostra. Um Step visitado N vezes numa Task gera N Amostras — todas somadas no rollup.
+_Avoid_: medição (genérico), ponto de dados
+
+**Uso** (_Usage_):
+Tokens de **um turno ACP** (`input/output/cachedRead/cachedWrite/thought/total`), emitido **por-turno** pelo agente. Best-effort: pode ser `null` (⇒ `n/d`). Somado ao longo dos turnos de uma Visita → Uso por-Step. Só Steps de **Agente** têm Uso; Shell/Checks/Aprovação → `n/a`.
+_Avoid_: consumo, tokens (sozinho — ambíguo com input/output/cached)
+
+**Custo** (_Cost_):
+Valor monetário **cumulativo da Sessão** (`amount` + `currency`), obtido via `usage_update` do ACP. Best-effort: pode ser `null` (⇒ `n/d`). Reportado a nível de **Task/Run/Change** (nunca por-Step — cumulativo impede rateio confiável). O rollup por Task toma o último snapshot não-nulo.
+_Avoid_: preço, gasto; não confundir com Uso (tokens ≠ custo)
+
+**Agregado** (_Rollup_):
+Soma de Amostras num nível de contenção: **por Step** (Amostras de um `id` numa Task) → **por Task** (Σ Steps) → **por Run** (Σ Tasks da execução) → **por Change** (Σ Runs). Cada nível é um fold puro sobre o anterior.
+_Avoid_: resumo, acumulado (quando não qualificado)
+
+**Relatório de execução** (_Run report_):
+Saída emitida ao fim de **cada Run** (stderr): breakdown por Step, subtotal por Task, total da Run e linha "Change até agora" (acumulado cross-run). Distinto do Report de checks (que é a saída de uma Lista de checks devolvida ao Agente).
+_Avoid_: relatório (sozinho — colide com Report de checks), log
+
+**Relatório de change** (_Change report_):
+Artefato Markdown persistido no `index.md` (configurável via `metrics.report.index`) ao **finalizar a Change** — ou seja, quando o `todo.md` fica com 0 pendentes após a Run. Uma seção por Change (`## <change.id>`) com totais + tabela rica por Task. Reescrita byte-preserving (atualiza só a própria seção). Disparado por re-parse do todo.md, **nunca** por `stoppedBy`.
+_Avoid_: index (sozinho — o index.md é o arquivo, não o conceito)
+
+**Change**:
+Termo do **devy**, adotado no motor **apenas** como par de valores de config derivados: `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. O motor não tem lógica de change além de (a) interpolar `${change.*}` e (b) escrever onde o yml mandar. Quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`. (Cf. AD-1.)
+_Avoid_: usar "change" como conceito do motor — é puramente derivado do path
