@@ -195,17 +195,18 @@ describe("stream bound", () => {
     const { lastFrame } = setup(...runningWithStreams(5));
     const frame = lastFrame()!;
 
-    // At the default (fallback) terminal size the fixed streams region fits two
-    // panes — the two most recently started running tasks' streams.
+    // At the default (fallback) terminal size the fixed streams region fits
+    // three panes — the three most recently started running tasks' streams.
+    expect(frame).toContain("stream-3");
     expect(frame).toContain("stream-4");
     expect(frame).toContain("stream-5");
 
     // Older streams are folded away (not popping in/out and reflowing).
     expect(frame).not.toContain("stream-1");
-    expect(frame).not.toContain("stream-3");
+    expect(frame).not.toContain("stream-2");
 
     // Overflow indicator for the folded streams.
-    expect(frame).toContain("+3");
+    expect(frame).toContain("+2");
   });
 
   it("shows every running stream when they all fit (no overflow note)", () => {

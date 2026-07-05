@@ -3,10 +3,10 @@
  * terminal rectangle:
  *
  *   header (1 row)
- *   graph  (graphH ≈ 70%)           ← DAG, fixed height, clipped
+ *   graph  (graphH ≈ 60%)           ← DAG, fixed height, clipped
  *   body   (bodyH): tasks | streams ← fixed-width columns, clipped
  *
- * The graph takes ~70% of the terminal so the DAG fits without the bottom ranks
+ * The graph takes ~60% of the terminal so the DAG fits without the bottom ranks
  * being clipped; the body (task list | agent streams) gets the rest. There is no
  * ACP pane — the JSON-RPC traffic seam feeds the file log and the verbose line
  * fallback, not the dashboard.
@@ -90,10 +90,10 @@ export function App({
 
   // ---- Fixed geometry (derived once per render from the terminal size) -----
   const headerH = 1;
-  // Graph gets ~70% of the terminal (the DAG was being clipped at ~40%); the
+  // Graph gets ~60% of the terminal (the DAG was being clipped at ~40%); the
   // body (tasks | streams) gets the rest, floored so both stay visible.
   const graphH = clamp(
-    Math.round(rows * 0.7),
+    Math.round(rows * 0.6),
     6,
     Math.max(6, rows - headerH - 5),
   );
