@@ -6,7 +6,7 @@
 
 ## Fase 1 — Foundation: DAG puro + contratos aditivos (T-001 ∥ T-003; T-002 após T-001)
 
-- [ ] T-001: Parser `Deps:` + `inputs.backlog.deps_pattern` → `Task.deps`
+- [x] T-001: Parser `Deps:` + `inputs.backlog.deps_pattern` → `Task.deps`
     Reconhecer a linha canônica `Deps: T-001, T-002` no corpo indentado da Task (pattern configurável via `inputs.backlog.deps_pattern`, default `Deps:` case-insensitive, espelhando `task_id_pattern` em `resolveOptions` `todo.ts:73-82`). Materializar `task.deps: readonly string[]` (aditivo em `Task` `types.ts:25-38`), validando o formato dos ids contra `task_id_pattern`; a linha permanece íntegra no `task.body`. `Deps: nenhuma`/ausente ⇒ `[]`.
     Aceite: vírgulas/espaços/case tolerados; `nenhuma`/ausente → `[]`; `deps_pattern` custom respeitado; id fora do `task_id_pattern` sinalizado; `body` byte-a-byte íntegro.
     Verificação: `npm test -- backlog` && `npm test -- config` && `npm run typecheck`.
