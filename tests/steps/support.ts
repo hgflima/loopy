@@ -23,6 +23,7 @@ import type {
   Task,
   UiPort,
 } from "../../src/types";
+import type { StoreEvent } from "../../src/tui/store";
 
 /** A capturing logger so a test can assert on emitted lines when it wants to. */
 export interface CapturingLogger extends LoggerPort {
@@ -146,6 +147,8 @@ export interface StepContextOverrides {
   readonly ui?: UiPort;
   /** The ACP session (agent step); defaults to an inert, always-`end_turn` stub. */
   readonly session?: AgentSession;
+  /** Event sink for TUI progress (T-006 stream_chunk). */
+  readonly emit?: (event: StoreEvent) => void;
 }
 
 /** Assemble a {@link StepContext} for a step interpreter under test. */
@@ -164,5 +167,6 @@ export function makeStepContext(overrides: StepContextOverrides): StepContext {
     checks: overrides.checks ?? inertChecks,
     ui: overrides.ui ?? inertUi,
     logger: overrides.logger ?? makeLogger(),
+    emit: overrides.emit,
   };
 }

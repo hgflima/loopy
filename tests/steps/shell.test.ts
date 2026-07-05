@@ -4,12 +4,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createShellStep,
+  runShellCommandWithExeca,
   type RunShellCommand,
   type ShellCommandResult,
 } from "../../src/steps/shell";
+import type { StoreEvent } from "../../src/tui/store";
 import { InterpolationError } from "../../src/interp/resolver";
 import type { ShellStep } from "../../src/types";
-import { makeLogger, makeStepContext } from "./support";
+import { makeLogger, makeStepContext, SAMPLE_TASK } from "./support";
 
 /** Build a `shell` step config with sane defaults. */
 function shellStep(overrides: Partial<ShellStep> = {}): ShellStep {
@@ -33,26 +35,34 @@ function recordingRunner(
   ran: string[];
   argvs: string[][];
   cwds: string[];
+  onChunks: Array<((text: string) => void) | undefined>;
 } {
   const ran: string[] = [];
   const argvs: string[][] = [];
   const cwds: string[] = [];
+  const onChunks: Array<((text: string) => void) | undefined> = [];
   const runner: RunShellCommand = async (argv, ctx) => {
     const command = argv.join(" ");
     ran.push(command);
     argvs.push([...argv]);
     cwds.push(ctx.cwd);
+    onChunks.push(ctx.onChunk);
     const partial = outcome(command);
     const ok = partial.ok ?? true;
+    // If onChunk is provided, simulate streaming the output.
+    const stdout = partial.stdout ?? "";
+    const stderr = partial.stderr ?? "";
+    if (ctx.onChunk && stdout) ctx.onChunk(stdout);
+    if (ctx.onChunk && stderr) ctx.onChunk(stderr);
     return {
       command,
       exitCode: partial.exitCode ?? (ok ? 0 : 1),
       ok,
-      stdout: partial.stdout ?? "",
-      stderr: partial.stderr ?? "",
+      stdout,
+      stderr,
     };
   };
-  return { runner, ran, argvs, cwds };
+  return { runner, ran, argvs, cwds, onChunks };
 }
 
 describe("createShellStep — execute", () => {
@@ -329,5 +339,155 @@ describe("createShellStep — execa (real subprocess, argv)", () => {
     });
     const result = await createShellStep().execute(ctx);
     expect(result.output).toContain(dir);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-006: onChunk streaming — shell step emits stream_chunk as execa produces
+// ---------------------------------------------------------------------------
+
+describe("createShellStep — onChunk streaming (T-006)", () => {
+  it("passes onChunk to the runner when ctx.emit is present", async () => {
+    const { runner, onChunks } = recordingRunner(() => ({
+      stdout: "hello",
+    }));
+    const events: StoreEvent[] = [];
+    const ctx = makeStepContext({
+      step: shellStep({ run: ["echo hello"] }),
+      emit: (e) => events.push(e),
+    });
+
+    await createShellStep({ runCommand: runner }).execute(ctx);
+
+    // The runner received an onChunk callback.
+    expect(onChunks[0]).toBeTypeOf("function");
+  });
+
+  it("does NOT pass onChunk when ctx.emit is absent", async () => {
+    const { runner, onChunks } = recordingRunner();
+    const ctx = makeStepContext({
+      step: shellStep({ run: ["echo hello"] }),
+      // No emit → no onChunk
+    });
+
+    await createShellStep({ runCommand: runner }).execute(ctx);
+
+    expect(onChunks[0]).toBeUndefined();
+  });
+
+  it("emits stream_chunk events with the correct taskId and text", async () => {
+    const { runner } = recordingRunner(() => ({
+      stdout: "line1",
+      stderr: "err1",
+    }));
+    const events: StoreEvent[] = [];
+    const ctx = makeStepContext({
+      step: shellStep({ run: ["cmd1"] }),
+      emit: (e) => events.push(e),
+      task: { ...SAMPLE_TASK, id: "T-042" },
+    });
+
+    await createShellStep({ runCommand: runner }).execute(ctx);
+
+    const chunks = events.filter((e) => e.type === "stream_chunk");
+    expect(chunks).toEqual([
+      { type: "stream_chunk", taskId: "T-042", text: "line1" },
+      { type: "stream_chunk", taskId: "T-042", text: "err1" },
+    ]);
+  });
+
+  it("aggregated StepResult is byte-identical with or without emit", async () => {
+    const outcome = () => ({ stdout: "out", stderr: "err" });
+    const { runner: r1 } = recordingRunner(outcome);
+    const { runner: r2 } = recordingRunner(outcome);
+
+    const ctxWithEmit = makeStepContext({
+      step: shellStep({ run: ["a", "b"] }),
+      emit: () => {},
+    });
+    const ctxWithout = makeStepContext({
+      step: shellStep({ run: ["a", "b"] }),
+    });
+
+    const resultWith = await createShellStep({ runCommand: r1 }).execute(
+      ctxWithEmit,
+    );
+    const resultWithout = await createShellStep({ runCommand: r2 }).execute(
+      ctxWithout,
+    );
+
+    expect(resultWith).toEqual(resultWithout);
+  });
+
+  it("emits stream_chunk for each command in a multi-command step", async () => {
+    const { runner } = recordingRunner((cmd) => ({
+      stdout: `out-${cmd}`,
+    }));
+    const events: StoreEvent[] = [];
+    const ctx = makeStepContext({
+      step: shellStep({ run: ["a", "b", "c"] }),
+      emit: (e) => events.push(e),
+    });
+
+    await createShellStep({ runCommand: runner }).execute(ctx);
+
+    const chunks = events.filter((e) => e.type === "stream_chunk");
+    expect(chunks).toHaveLength(3);
+    expect(
+      chunks.map((c) => (c.type === "stream_chunk" ? c.text : "")),
+    ).toEqual(["out-a", "out-b", "out-c"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-006: runShellCommandWithExeca — real subprocess streaming via onChunk
+// ---------------------------------------------------------------------------
+
+describe("runShellCommandWithExeca — onChunk streaming (T-006)", () => {
+  it("invokes onChunk with subprocess output as it streams", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "loopy-shell-")));
+    const chunks: string[] = [];
+    const result = await runShellCommandWithExeca(
+      ["node", "-e", 'process.stdout.write("hello"); process.stderr.write("world")'],
+      {
+        cwd: dir,
+        onChunk: (text) => chunks.push(text),
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    // The chunks together contain the full output.
+    const joined = chunks.join("");
+    expect(joined).toContain("hello");
+    expect(joined).toContain("world");
+    // The aggregated result is unchanged.
+    expect(result.stdout).toBe("hello");
+    expect(result.stderr).toBe("world");
+  });
+
+  it("produces byte-identical result with and without onChunk", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "loopy-shell-")));
+    const argv = ["node", "-e", 'process.stdout.write("data")'];
+
+    const withChunk = await runShellCommandWithExeca(argv, {
+      cwd: dir,
+      onChunk: () => {},
+    });
+    const without = await runShellCommandWithExeca(argv, { cwd: dir });
+
+    expect(withChunk.stdout).toBe(without.stdout);
+    expect(withChunk.stderr).toBe(without.stderr);
+    expect(withChunk.exitCode).toBe(without.exitCode);
+    expect(withChunk.ok).toBe(without.ok);
+  });
+
+  it("does not break when onChunk is not provided", async () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "loopy-shell-")));
+    const result = await runShellCommandWithExeca(
+      ["node", "-e", 'process.stdout.write("ok")'],
+      { cwd: dir },
+    );
+    expect(result.ok).toBe(true);
+    expect(result.stdout).toBe("ok");
   });
 });
