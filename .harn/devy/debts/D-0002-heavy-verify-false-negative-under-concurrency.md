@@ -1,6 +1,6 @@
 # D-0002 — Verify de checks pesados (suíte completa) sob `concurrency > 1` dá falso-negativo: Tasks pausam com código verde
 
-> **Status:** aberto · **Severidade:** alta · **Área:** `.harn/devy/changes/*/loopy.yml` (lista `ci`) · `vitest.config.ts` · testes de integração `tests/git/*` e `tests/e2e/*`
+> **Status:** reconhecido — fix #1 (`testTimeout`) aplicado em `vitest.config.ts` (C-0007); #2/#3 (Verify escopado) seguem abertos · **Severidade:** alta · **Área:** `.harn/devy/changes/*/loopy.yml` (lista `ci`) · `vitest.config.ts` · testes de integração `tests/git/*` e `tests/e2e/*`
 > **Descoberto em:** 2026-07-05 · **Origem:** C-0007 (T-005 e T-006 pausaram no `verify` apesar de estarem **verdes**)
 
 ## Sintoma
@@ -66,10 +66,11 @@ npm test & npm test & wait
 
 Camadas (defesa em profundidade — a #1 e a #2 atacam a causa raiz):
 
-1. **Folga para os testes de integração:** definir `testTimeout` maior no
-   `vitest.config.ts` (ex. `testTimeout: 20000`) e/ou limitar a concorrência **interna**
-   do vitest (`poolOptions.threads.maxThreads`, ou `--no-file-parallelism` para os testes
-   `git`/`e2e`). Corrige a causa proximal e endurece o CI também.
+1. **Folga para os testes de integração:** ✅ **aplicado (C-0007)** — `vitest.config.ts`
+   agora define `testTimeout`/`hookTimeout: 20000`, matando o flake do `initGitRepo` local
+   e no CI. Resta (opcional) limitar a concorrência **interna** do vitest
+   (`poolOptions.threads.maxThreads`, ou `--no-file-parallelism` para `git`/`e2e`) se a
+   contenção voltar a apertar. Corrige a causa **proximal**, não a de fundo (ver #2).
 2. **Verify escopado, não a suíte inteira:** o Verify de cada Task não precisa rodar ~800
    testes — cada Task já declara a sua `Verificação` estreita (T-005 →
    `npm test -- checks steps`). Usar uma **lista de checks leve** no `verify` (por-step) e

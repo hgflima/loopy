@@ -64,4 +64,4 @@ histórico.
 | ID | Título | Área | Sev. | Status |
 |----|--------|------|------|--------|
 | [D-0001](D-0001-parsedeps-drops-trailing-dep.md) | `parseDeps` descarta a última dep quando a linha `Deps:` tem texto após os ids | `src/backlog/todo.ts` | média | aberto |
-| [D-0002](D-0002-heavy-verify-false-negative-under-concurrency.md) | Verify de suíte completa sob `concurrency > 1` dá falso-negativo (Tasks verdes pausam) | `loopy.yml` (`ci`) · `vitest.config.ts` | alta | aberto |
+| [D-0002](D-0002-heavy-verify-false-negative-under-concurrency.md) | Verify de suíte completa sob `concurrency > 1` dá falso-negativo (Tasks verdes pausam) | `loopy.yml` (`ci`) · `vitest.config.ts` | alta | reconhecido (fix #1 aplicado) |
