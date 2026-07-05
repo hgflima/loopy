@@ -1,51 +1,67 @@
 /**
  * Thin wrapper that renders the DAG graph produced by {@link renderGraph} as
  * colored Ink `<Text>` spans. All layout and styling logic lives in pure
- * `view.ts` (AD-6); this component only drives the pulse tick and maps
- * {@link StyledRow}[] → JSX.
+ * `view.ts` (AD-6); this component only maps {@link StyledRow}[] → JSX.
+ *
+ * The pulse `tick` and the panel dimensions are **owned by the parent**
+ * ({@link ../App}) so the whole dashboard shares one timer and one fixed
+ * geometry — the pane clips to `height` with `overflow="hidden"` and always
+ * renders its titled frame (fixed presence), so nothing below it ever shifts.
+ * When mounted standalone (tests) it falls back to the terminal width and the
+ * graph's natural height.
  */
 import { Box, Text, useStdout } from "ink";
-import { useEffect, useState } from "react";
 import type { StoreState, TaskStatus } from "../store";
-import { renderGraph, layoutGraph } from "../view";
+import { layoutGraph, renderGraph } from "../view";
 
-const PULSE_MS = 500;
-
-export function GraphPane({ state }: { readonly state: StoreState }) {
-  const [tick, setTick] = useState(0);
+export function GraphPane({
+  state,
+  width,
+  height,
+  tick = 0,
+}: {
+  readonly state: StoreState;
+  /** Fixed panel width in columns (border + padding + content). */
+  readonly width?: number;
+  /** Fixed panel height in rows (border + title + content). Omit to size to content. */
+  readonly height?: number;
+  /** Pulse phase from the parent's single timer. */
+  readonly tick?: number;
+}) {
   const { stdout } = useStdout();
 
-  // Pulse animation for running tasks
-  useEffect(() => {
-    const hasRunning = state.tasks.some((t) => t.status === "running");
-    if (!hasRunning) return;
-    const id = setInterval(() => setTick((t) => t + 1), PULSE_MS);
-    return () => clearInterval(id);
-  }, [state.tasks]);
-
-  // Build status map
   const statusById = new Map<string, TaskStatus>(
     state.tasks.map((t) => [t.id, t.status]),
   );
-
-  // Backlog order = registration order in the store
+  // Backlog order = registration order in the store.
   const order = state.tasks.map((t) => t.id);
-
-  // Layout + render
   const geometry = layoutGraph(state.edges, statusById, order);
-  const panelWidth = stdout?.columns ?? 80;
+
+  // Content area excludes the round border (2) + horizontal padding (2), and the
+  // title row (1) vertically.
+  const outerWidth = width ?? stdout?.columns ?? 80;
+  const innerWidth = Math.max(1, outerWidth - 4);
+  const innerHeight =
+    height !== undefined ? Math.max(0, height - 3) : geometry.height;
+
   const rows = renderGraph(geometry, statusById, tick, {
-    width: panelWidth,
-    height: geometry.height,
+    width: innerWidth,
+    height: innerHeight,
   });
 
-  if (rows.length === 0) return null;
-
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="gray" paddingX={1}>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor="gray"
+      paddingX={1}
+      width={width}
+      height={height}
+      overflow="hidden"
+    >
       <Text dimColor>graph</Text>
       {rows.map((row, ri) => (
-        <Text key={ri}>
+        <Text key={ri} wrap="truncate-end">
           {row.map((span, si) => (
             <Text
               key={si}

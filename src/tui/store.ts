@@ -94,6 +94,13 @@ export interface AcpLogLine {
   readonly direction: AcpDirection;
   readonly method?: string;
   readonly summary: string;
+  /**
+   * How many identical entries this line stands for. Absent (≡ 1) for a single
+   * event; set to N when N consecutive identical events were collapsed into one
+   * (`session/update` floods dozens of identical chunks per turn — the pane
+   * shows `×N` instead of a wall of repeats). See {@link reduce}'s `acp_traffic`.
+   */
+  readonly count?: number;
 }
 
 /** Maximum entries kept in {@link StoreState.acpLog} (ring bounded). */
@@ -365,6 +372,23 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         method: event.method,
         summary: event.summary,
       };
+      // Collapse a run of identical events into a single line with a `count`, so
+      // the flood of `session/update` chunks reads as `agent_message_chunk ×N`
+      // rather than N indistinguishable rows.
+      const last = state.acpLog[state.acpLog.length - 1];
+      if (
+        last &&
+        last.taskId === line.taskId &&
+        last.direction === line.direction &&
+        last.method === line.method &&
+        last.summary === line.summary
+      ) {
+        const merged: AcpLogLine = { ...last, count: (last.count ?? 1) + 1 };
+        return {
+          ...state,
+          acpLog: [...state.acpLog.slice(0, -1), merged],
+        };
+      }
       const log = [...state.acpLog, line];
       return {
         ...state,

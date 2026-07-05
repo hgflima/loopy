@@ -873,6 +873,50 @@ describe("reduce · acp_traffic", () => {
     expect(state.tasks).toBe(tasksBefore);
     expect(state.edges).toBe(edgesBefore);
   });
+
+  it("collapses consecutive identical entries into one line with a count", () => {
+    const evt = {
+      type: "acp_traffic" as const,
+      taskId: "T-001",
+      direction: "recv" as const,
+      method: "session/update",
+      summary: "agent_message_chunk",
+    };
+    const state = play(evt, evt, evt);
+    // Three identical events → a single line carrying ×3, not three rows.
+    expect(state.acpLog).toHaveLength(1);
+    expect(state.acpLog[0]?.count).toBe(3);
+    expect(state.acpLog[0]?.summary).toBe("agent_message_chunk");
+  });
+
+  it("does not collapse when any field differs (summary/method/direction/taskId)", () => {
+    const base = {
+      type: "acp_traffic" as const,
+      taskId: "T-001",
+      direction: "recv" as const,
+      method: "session/update",
+      summary: "agent_message_chunk",
+    };
+    const state = play(
+      base,
+      { ...base, summary: "tool_call" }, // different sub-kind → new line
+      { ...base, summary: "tool_call" }, // identical to previous → collapses
+    );
+    expect(state.acpLog).toHaveLength(2);
+    expect(state.acpLog[0]?.count).toBeUndefined();
+    expect(state.acpLog[1]?.summary).toBe("tool_call");
+    expect(state.acpLog[1]?.count).toBe(2);
+  });
+
+  it("leaves count unset for a lone entry (backward-compatible shape)", () => {
+    const state = reduce(initialState(), {
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      summary: "solo",
+    });
+    expect(state.acpLog[0]?.count).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

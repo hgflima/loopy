@@ -253,7 +253,7 @@ describe("layoutGraph", () => {
     expect(edge.segments.length).toBeGreaterThan(0);
   });
 
-  it("produces arrowhead ▶ at the end of each edge", () => {
+  it("produces a direction-aware arrowhead (▸) at the end of a rightward edge", () => {
     const geo = layoutGraph(
       [["A", "B"]],
       pendingMap("A", "B"),
@@ -261,7 +261,19 @@ describe("layoutGraph", () => {
     );
     const edge = geo.edges[0]!;
     const last = edge.segments[edge.segments.length - 1]!;
-    expect(last.char).toBe("▶");
+    // Small triangle — distinct from the node's own running glyph (▶) so an
+    // edge arriving at a running node never reads as a double arrow.
+    expect(last.char).toBe("▸");
+  });
+
+  it("leaves a blank gap between the arrowhead and the target node", () => {
+    const geo = layoutGraph([["A", "B"]], pendingMap("A", "B"), ["A", "B"]);
+    const b = nodeMap(geo).get("B")!;
+    const edge = geo.edges[0]!;
+    const last = edge.segments[edge.segments.length - 1]!;
+    // The arrowhead sits at least one cell to the left of the node (not flush).
+    expect(last.col).toBeLessThan(b.col - 1);
+    expect(last.row).toBe(b.row);
   });
 
   it("edge segments do not overlap with node cells", () => {

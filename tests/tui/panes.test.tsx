@@ -30,10 +30,11 @@ function buildState(...events: StoreEvent[]) {
 // ---------------------------------------------------------------------------
 
 describe("GraphPane", () => {
-  it("renders nothing when there are no tasks", () => {
+  it("renders its titled frame (fixed presence) even with no tasks", () => {
     const state = buildState();
     const { lastFrame } = render(<GraphPane state={state} />);
-    expect(lastFrame()).toBe("");
+    // Always present now — the empty graph still shows its frame/title.
+    expect(lastFrame()).toContain("graph");
   });
 
   it("renders a graph with task nodes colored by status", () => {
@@ -72,10 +73,13 @@ describe("GraphPane", () => {
 // ---------------------------------------------------------------------------
 
 describe("AcpLogPane", () => {
-  it("renders nothing when the ACP log is empty", () => {
+  it("renders its titled frame (fixed presence) when the ACP log is empty", () => {
     const state = buildState();
     const { lastFrame } = render(<AcpLogPane state={state} />);
-    expect(lastFrame()).toBe("");
+    const frame = lastFrame()!;
+    // Always present now — shows the title + an empty-state placeholder.
+    expect(frame).toContain("acp");
+    expect(frame).toContain("sem tráfego");
   });
 
   it("renders ACP traffic lines with direction glyphs", () => {
@@ -194,10 +198,12 @@ describe("AcpLogPane", () => {
 // ---------------------------------------------------------------------------
 
 describe("TaskListPane", () => {
-  it("renders nothing when there are no tasks", () => {
+  it("renders its titled frame (fixed presence) when there are no tasks", () => {
     const state = buildState();
     const { lastFrame } = render(<TaskListPane state={state} />);
-    expect(lastFrame()).toBe("");
+    const frame = lastFrame()!;
+    expect(frame).toContain("tasks");
+    expect(frame).toContain("sem tasks");
   });
 
   it("renders all tasks in backlog order with status glyphs", () => {

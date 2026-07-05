@@ -27,7 +27,7 @@ import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { openAgent } from "./acp/agent";
-import { agentChunkText } from "./acp/client";
+import { acpTrafficSummary, agentChunkText } from "./acp/client";
 import { createSessionPool } from "./acp/session";
 import {
   BacklogError,
@@ -380,7 +380,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     },
     onTraffic: captureAcp
       ? (entry, sessionId) => {
-          logTraffic(taskFor(sessionId), entry, entry.method ?? entry.direction);
+          logTraffic(taskFor(sessionId), entry, acpTrafficSummary(entry));
         }
       : undefined,
   });

@@ -161,6 +161,34 @@ function dirBetween(
   return dr > 0 ? "down" : "up";
 }
 
+/**
+ * Direction-aware arrowhead glyphs. Deliberately the *small* triangles
+ * (`▸◂▴▾`), visually distinct from the node's own running glyph `▶`
+ * ({@link SYMBOLS}.task.running) — so an edge arriving at a running node never
+ * reads as a confusing double arrow (`▶▶`). Consistent with the send/recv
+ * glyphs in the ACP pane.
+ */
+const ARROWHEADS: Record<Dir, string> = {
+  right: "▸",
+  left: "◂",
+  up: "▴",
+  down: "▾",
+};
+
+/** True when `cell` sits exactly one step orthogonally outside the node's box. */
+function adjacentToNode(
+  cell: { readonly col: number; readonly row: number },
+  n: NodeCell,
+): boolean {
+  const onRow = cell.row === n.row;
+  const inCols = cell.col >= n.col && cell.col < n.col + n.width;
+  // Flush against the node's left/right on its row, or directly above/below it.
+  if (onRow && (cell.col === n.col - 1 || cell.col === n.col + n.width)) {
+    return true;
+  }
+  return inCols && (cell.row === n.row - 1 || cell.row === n.row + 1);
+}
+
 /** Box-drawing character for a cell with given incoming/outgoing directions. */
 const BOX_CHAR: Record<string, string> = {
   "right-right": "─",
@@ -359,6 +387,7 @@ export function layoutGraph(
     );
 
   // Build edge paths
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const edgePaths: GraphEdgePath[] = [];
   for (const e of g.edges()) {
     const edge = g.edge(e);
@@ -375,10 +404,33 @@ export function layoutGraph(
     const allSegs = pathToSegments(cellPath);
     const segs = allSegs.filter((s) => !overlapsNode(s.col, s.row, nodes));
 
-    // Place arrowhead at the last remaining segment
+    // Reserve a blank cell between the edge and its target so the arrowhead is
+    // never flush against the node ("seta rente"): drop the last segment when it
+    // is orthogonally adjacent to the target, as long as another remains to
+    // carry the arrowhead. Keep the dropped cell — it is the final step *into*
+    // the node, so it names the arrowhead's direction.
+    const target = nodeById.get(e.w);
+    let entryCell: { readonly col: number; readonly row: number } | undefined;
+    if (
+      segs.length > 1 &&
+      target &&
+      adjacentToNode(segs[segs.length - 1]!, target)
+    ) {
+      entryCell = segs.pop();
+    }
+
+    // Place a direction-aware arrowhead on the (new) last segment — a small
+    // triangle distinct from the node's own glyph. Point it toward the node: at
+    // the reserved entry cell when we made a gap (robust for L-shaped
+    // approaches), else at the target's anchor.
     if (segs.length > 0) {
       const last = segs[segs.length - 1]!;
-      segs[segs.length - 1] = { ...last, char: "▶" };
+      const dir = entryCell
+        ? dirBetween(last, entryCell)
+        : target
+          ? dirBetween(last, { col: target.col, row: target.row })
+          : "right";
+      segs[segs.length - 1] = { ...last, char: ARROWHEADS[dir] };
     }
 
     edgePaths.push({ from: e.v, to: e.w, segments: segs });

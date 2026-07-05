@@ -1,12 +1,23 @@
 /**
- * Dashboard fixo do run (T-010). Layout vertical:
- *   header → GraphPane → split (TaskListPane | StreamPane(s) + AcpLogPane)
+ * Fixed run dashboard (T-010). A full-screen, non-scrolling layout pinned to the
+ * terminal rectangle:
  *
- * O pulso (`tick`) anima tasks running via `setInterval(500ms)` — a fase vem de
- * `pulseFrame(tick)` (pura, AD-6). StreamPanes são bounded: no máximo ~3 mais
- * recentes + contador `+K`. Nenhum `useInput` além do `ApprovalPrompt` (AD-1).
+ *   header (1 row)
+ *   graph  (graphH)                       ← DAG, fixed height, clipped
+ *   body   (bodyH): tasks | streams + acp ← fixed-width columns, clipped
+ *
+ * Every region has an **explicit height** and `overflow="hidden"`, and the root
+ * box is pinned to `cols × rows` — so the frame occupies one stable rectangle
+ * and never grows/scrolls as tasks come and go (fixed size + fixed presence).
+ * Terminal resizes update the geometry via a `resize` listener. `mount.tsx`
+ * switches the terminal to the alternate screen so this reads as a real
+ * dashboard, not append-only output.
+ *
+ * A single `tick` timer (500ms, only while tasks run) drives the running-task
+ * pulse; it is threaded into {@link GraphPane} so the whole tree shares one
+ * timer. No `useInput` outside the {@link ApprovalPrompt} (AD-1).
  */
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { useEffect, useState } from "react";
 import type { ApprovalController } from "./approval";
 import { AcpLogPane } from "./components/AcpLogPane";
@@ -19,7 +30,35 @@ import type { Store } from "./store";
 import { pulseFrame } from "./view";
 
 const PULSE_MS = 500;
+/** Most concurrent stream panes to render; the rest fold into a `+K` note. */
 const MAX_STREAMS = 3;
+/** Minimum rows a stream pane needs to show a line of content (border+title+1). */
+const MIN_STREAM_H = 5;
+/** Fallback terminal size when stdout has no dimensions (non-TTY / tests). */
+const FALLBACK_COLS = 100;
+const FALLBACK_ROWS = 40;
+
+const clamp = (v: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, v));
+
+/** Live terminal dimensions, tracked across `resize` events. */
+function useTerminalSize(): { readonly cols: number; readonly rows: number } {
+  const { stdout } = useStdout();
+  const read = () => ({
+    cols: stdout?.columns ?? FALLBACK_COLS,
+    rows: stdout?.rows ?? FALLBACK_ROWS,
+  });
+  const [size, setSize] = useState(read);
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => setSize(read());
+    stdout.on("resize", onResize);
+    return () => {
+      stdout.off?.("resize", onResize);
+    };
+  }, [stdout]);
+  return size;
+}
 
 export function App({
   store,
@@ -29,13 +68,14 @@ export function App({
   readonly approval: ApprovalController;
 }) {
   const state = useStore(store);
+  const { cols, rows } = useTerminalSize();
   const [tick, setTick] = useState(0);
 
   const running = state.tasks.filter((t) => t.status === "running");
   const doneCount = state.tasks.filter((t) => t.status === "done").length;
   const total = state.tasks.length;
 
-  // Pulse timer — only active while there are running tasks
+  // Single pulse timer — only active while there are running tasks.
   useEffect(() => {
     if (running.length === 0) return;
     const id = setInterval(() => setTick((t) => t + 1), PULSE_MS);
@@ -44,44 +84,77 @@ export function App({
 
   const pulsing = pulseFrame(tick) === "on";
 
-  // Bounded stream panes: show the ~3 most recent running tasks
-  const visibleStreams = running.slice(-MAX_STREAMS);
+  // ---- Fixed geometry (derived once per render from the terminal size) -----
+  const headerH = 1;
+  const graphH = clamp(Math.round(rows * 0.42), 6, Math.max(6, rows - 10));
+  const bodyH = Math.max(6, rows - headerH - graphH);
+  const leftW = clamp(Math.round(cols * 0.44), 24, Math.max(24, cols - 30));
+  const rightW = cols - leftW;
+  const acpH = clamp(Math.round(bodyH * 0.5), 5, Math.max(5, bodyH - 5));
+  const streamsH = Math.max(5, bodyH - acpH);
+
+  // ---- Streams: fill the fixed streams region, tiled; overflow → +K note ----
+  const maxFit = clamp(Math.floor(streamsH / MIN_STREAM_H), 1, MAX_STREAMS);
+  const visibleStreams = running.slice(-maxFit);
   const hiddenCount = running.length - visibleStreams.length;
+  const noteRows = hiddenCount > 0 ? 1 : 0;
+  const paneCount = Math.max(1, visibleStreams.length);
+  const paneH = Math.max(4, Math.floor((streamsH - noteRows) / paneCount));
 
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" width={cols} height={rows} overflow="hidden">
       {/* Header */}
-      <Box gap={1}>
+      <Box height={headerH} gap={1}>
         <Text bold={pulsing} dimColor={!pulsing}>
           loopy
         </Text>
         <Text dimColor>·</Text>
         <Text>run</Text>
         <Text dimColor>·</Text>
-        <Text color="green">{doneCount}/{total} done</Text>
+        <Text color="green">
+          {doneCount}/{total} done
+        </Text>
         <Text dimColor>·</Text>
         <Text color="cyan">{running.length} running</Text>
       </Box>
 
-      {/* Graph pane */}
-      <GraphPane state={state} />
+      {/* Graph pane — full width, fixed height */}
+      <GraphPane state={state} width={cols} height={graphH} tick={tick} />
 
-      {/* Split: TaskList (left) | Streams + AcpLog (right) */}
-      <Box>
+      {/* Body: Tasks (left) | Streams + AcpLog (right) */}
+      <Box height={bodyH}>
         {/* Left column */}
-        <Box flexDirection="column" flexGrow={1}>
-          <TaskListPane state={state} />
-        </Box>
+        <TaskListPane state={state} width={leftW} height={bodyH} />
 
         {/* Right column */}
-        <Box flexDirection="column" flexGrow={1}>
-          {hiddenCount > 0 && (
-            <Text dimColor>+{hiddenCount} more streams</Text>
-          )}
-          {visibleStreams.map((task) => (
-            <StreamPane key={task.id} title={task.id} stream={task.stream} />
-          ))}
-          <AcpLogPane state={state} />
+        <Box flexDirection="column" width={rightW} height={bodyH}>
+          {/* Streams region — fixed height, tiled panes */}
+          <Box flexDirection="column" height={streamsH} overflow="hidden">
+            {hiddenCount > 0 ? (
+              <Text dimColor>+{hiddenCount} streams ocultas</Text>
+            ) : null}
+            {visibleStreams.length === 0 ? (
+              <StreamPane
+                title="idle"
+                stream=""
+                width={rightW}
+                height={streamsH}
+              />
+            ) : (
+              visibleStreams.map((task) => (
+                <StreamPane
+                  key={task.id}
+                  title={task.id}
+                  stream={task.stream}
+                  width={rightW}
+                  height={paneH}
+                />
+              ))
+            )}
+          </Box>
+
+          {/* ACP traffic — fixed height */}
+          <AcpLogPane state={state} width={rightW} height={acpH} />
         </Box>
       </Box>
 

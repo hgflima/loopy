@@ -202,6 +202,24 @@ export function agentChunkText(update: SessionUpdate): string | undefined {
 }
 
 /**
+ * A short, meaningful label for one ACP traffic entry — what the live ACP pane
+ * shows next to the direction glyph. A bare `session/update` carries no signal
+ * (dozens fire per turn), so surface its sub-kind (`agent_message_chunk`,
+ * `tool_call`, `plan`, `usage_update`, …) instead of the redundant method name.
+ * Structural RPCs (prompt, set_mode, permission, fs, terminal) already say
+ * enough through their `method`, so this returns `""` for them and the pane
+ * falls back to the method.
+ */
+export function acpTrafficSummary(entry: AcpTrafficEntry): string {
+  if (entry.method === "session/update") {
+    const update = (entry.payload as { update?: SessionUpdate } | undefined)
+      ?.update;
+    return update?.sessionUpdate ?? "session/update";
+  }
+  return "";
+}
+
+/**
  * Extract cost from a `usage_update`, or `undefined` for any other update type
  * or when cost is absent. Feeds the {@link CostBuffer} (C-0005).
  */
