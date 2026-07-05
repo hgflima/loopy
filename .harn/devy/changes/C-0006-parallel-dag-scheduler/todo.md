@@ -40,7 +40,7 @@
 
 ## Fase 3 — Escalonamento paralelo, cancelamento e conflito (T-006 → T-007; T-008 ∥)
 
-- [ ] T-006: Skip transitivo + escalonamento drenante (`pause`/`skip_task`)
+- [x] T-006: Skip transitivo + escalonamento drenante (`pause`/`skip_task`)
     Ao falhar, `skipDescendants` marca o fecho de descendentes `skipped` e o pool continua drenando as alcançáveis. Reenquadrar o bloco de escalação (`orchestrator.ts:1076-1097`): `pause` → `paused` (checkpoint preservado → resumível), pula descendentes, segue com independentes (deixa de "parar a Run"); `skip_task` → checkpoint abandonado (`clearTask`), segue. Popular `RunLoopResult.paused`/`skipped`. Ajustar `LoopStopReason` (`:909-915`): `escalation_pause` deixa de encerrar a Run.
     Aceite: DAG A→C, B: A escala sob `pause` → C `skipped`, B conclui, Run drena; `paused` preserva o checkpoint, `skip_task` o abandona; `RunLoopResult` distingue completed/escalated/paused/skipped; descendente de Task falha nunca roda nem fica preso "blocked".
     Verificação: `npm test -- policies` && `npm test -- orchestrator` && `npm run typecheck`.
