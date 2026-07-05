@@ -76,7 +76,7 @@
     Deps: T-001, T-002, T-003
     Files: src/tui/components/GraphPane.tsx, src/tui/components/AcpLogPane.tsx, src/tui/components/TaskListPane.tsx, testes, package.json. Scope: M.
 
-- [ ] T-010: `App.tsx` → Dashboard fixo (header + Grafo + split Tasks | Stream+Logs) + pulso
+- [x] T-010: `App.tsx` → Dashboard fixo (header + Grafo + split Tasks | Stream+Logs) + pulso
     Reescrever `App.tsx` (`:18-44`) p/ o Dashboard fixo: header (`loopy · run · k/N done · M running`, contadores derivados) → `GraphPane` no topo → abaixo split `TaskListPane` (esq.) | `StreamPane(s)` + `AcpLogPane` (dir.). Um `StreamPane` por Task `running` (`runningTasks` `store.ts:363-365`), empilhando as **~3 mais recentes** + contador `+K` (bounded na altura). Efeito de **pulso**: `setInterval(~500ms)` + `useState(tick)` num `useEffect` só p/ animar (a fase é `pulseFrame`, pura). **Sem `useInput`** além do `ApprovalPrompt` já existente (passivo — AD-1). `mount.tsx` (`:16-28`) segue o **único** `render`.
     Aceite: snapshot do Dashboard composto (4 painéis) via `ink-testing-library`; o efeito de pulso avança o tick sob **fake timers** (Task `running` alterna a ênfase); o bound de empilhamento (N streams `running` → ~3 + `+K`); nenhuma tecla fora do Gate de Aprovação altera o Run.
     Verificação: `npm test -- tui` && `npm run typecheck`.
