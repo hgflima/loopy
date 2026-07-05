@@ -449,6 +449,8 @@ export interface RunFlags {
   readonly verbose: boolean;
   /** `--clean [T-XXX]`: teardown worktree+branch+checkpoint and exit. */
   readonly clean?: string | boolean;
+  /** Override `concurrency` from the yml (pool size for parallel tasks). */
+  readonly concurrency?: number;
 }
 
 // ---------------------------------------------------------------------------

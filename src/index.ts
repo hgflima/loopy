@@ -180,6 +180,11 @@ export function buildProgram(io: RunIO): Command {
       "--clean [id]",
       "teardown (worktree+branch+checkpoint) e sai; sem id usa a task com checkpoint pausado/em-progresso",
     )
+    .option(
+      "--concurrency <n>",
+      "sobrescreve o pool de tasks paralelas (default: config)",
+      parsePositiveInt,
+    )
     .option("--no-tui", "forca logs de linha (sem Ink)")
     .option("--verbose", "inclui trafego ACP no log", false)
     .allowExcessArguments(false)
@@ -208,6 +213,8 @@ function toFlags(opts: Record<string, unknown>): RunFlags {
         : opts.clean === true
           ? true
           : undefined,
+    concurrency:
+      typeof opts.concurrency === "number" ? opts.concurrency : undefined,
   };
 }
 
