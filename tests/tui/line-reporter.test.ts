@@ -10,6 +10,17 @@ function capture(...events: readonly StoreEvent[]): string[] {
   return lines;
 }
 
+/** Run events through a verbose reporter, capturing every printed line. */
+function captureVerbose(...events: readonly StoreEvent[]): string[] {
+  const lines: string[] = [];
+  const reporter = createLineReporter({
+    print: (line) => lines.push(line),
+    verbose: true,
+  });
+  for (const event of events) reporter.handle(event);
+  return lines;
+}
+
 // ---------------------------------------------------------------------------
 // The line fallback mirrors the store's transitions as ordered log lines.
 // ---------------------------------------------------------------------------
@@ -185,5 +196,77 @@ describe("createLineReporter · no-op mirroring", () => {
     );
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("Primeira");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ACP traffic — only printed under --verbose
+// ---------------------------------------------------------------------------
+
+describe("createLineReporter · acp_traffic", () => {
+  it("prints nothing for acp_traffic when verbose is off (default)", () => {
+    const lines = capture({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      method: "conversation/sendMessage",
+      summary: "implementar feature",
+    });
+    expect(lines).toEqual([]);
+  });
+
+  it("prints → line with method and summary when verbose is on and direction is send", () => {
+    const lines = captureVerbose({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      method: "conversation/sendMessage",
+      summary: "implementar feature",
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("→");
+    expect(lines[0]).toContain("conversation/sendMessage");
+    expect(lines[0]).toContain("implementar feature");
+  });
+
+  it("prints ← line when direction is recv", () => {
+    const lines = captureVerbose({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "recv",
+      summary: "resposta do agente",
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("←");
+    expect(lines[0]).toContain("resposta do agente");
+  });
+
+  it("omits method prefix when method is absent", () => {
+    const lines = captureVerbose({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      summary: "ping",
+    });
+    expect(lines[0]).toContain("→");
+    expect(lines[0]).toContain("ping");
+  });
+
+  it("does not break the append-only contract (no prior lines affected)", () => {
+    const lines = captureVerbose(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "send",
+        summary: "msg",
+      },
+      { type: "task_started", taskId: "T-001" },
+    );
+    // Registration line is first, acp_traffic second, start third.
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain("T-001");
+    expect(lines[1]).toContain("→");
+    expect(lines[2]).toContain("iniciada");
   });
 });

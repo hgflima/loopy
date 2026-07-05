@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ACP_LOG_CAP,
   blockedTasks,
   createStore,
   initialState,
@@ -752,11 +753,138 @@ describe("concurrency safety", () => {
 });
 
 // ---------------------------------------------------------------------------
-// initialState includes edges
+// reduce — acp_traffic (global ring bounded log)
+// ---------------------------------------------------------------------------
+
+describe("reduce · acp_traffic", () => {
+  it("appends a line to acpLog with taskId, direction, method and summary", () => {
+    const state = reduce(initialState(), {
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      method: "conversation/sendMessage",
+      summary: "implementar feature X",
+    });
+    expect(state.acpLog).toHaveLength(1);
+    expect(state.acpLog[0]).toEqual({
+      taskId: "T-001",
+      direction: "send",
+      method: "conversation/sendMessage",
+      summary: "implementar feature X",
+    });
+  });
+
+  it("appends without method when omitted", () => {
+    const state = reduce(initialState(), {
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "recv",
+      summary: "resposta do agente",
+    });
+    expect(state.acpLog[0]?.method).toBeUndefined();
+    expect(state.acpLog[0]?.direction).toBe("recv");
+  });
+
+  it("truncates to ACP_LOG_CAP when exceeding the bound", () => {
+    let state = initialState();
+    for (let i = 0; i < ACP_LOG_CAP + 50; i++) {
+      state = reduce(state, {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "send",
+        summary: `msg-${i}`,
+      });
+    }
+    expect(state.acpLog).toHaveLength(ACP_LOG_CAP);
+    // Oldest entries were dropped; the first entry is msg-50.
+    expect(state.acpLog[0]?.summary).toBe("msg-50");
+    expect(state.acpLog[ACP_LOG_CAP - 1]?.summary).toBe(
+      `msg-${ACP_LOG_CAP + 49}`,
+    );
+  });
+
+  it("does not exceed the cap even at exactly cap+1", () => {
+    let state = initialState();
+    for (let i = 0; i <= ACP_LOG_CAP; i++) {
+      state = reduce(state, {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "recv",
+        summary: `m-${i}`,
+      });
+    }
+    expect(state.acpLog).toHaveLength(ACP_LOG_CAP);
+    expect(state.acpLog[0]?.summary).toBe("m-1");
+  });
+
+  it("is global — does not require a registered task (bypasses updateTask)", () => {
+    // No task_registered event; the log still accepts the entry.
+    const state = reduce(initialState(), {
+      type: "acp_traffic",
+      taskId: "T-UNKNOWN",
+      direction: "send",
+      summary: "ping",
+    });
+    expect(state.acpLog).toHaveLength(1);
+  });
+
+  it("interleaves entries from concurrent tasks without corruption", () => {
+    const state = play(
+      {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "send",
+        summary: "A send",
+      },
+      {
+        type: "acp_traffic",
+        taskId: "T-002",
+        direction: "recv",
+        summary: "B recv",
+      },
+      {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "recv",
+        summary: "A recv",
+      },
+    );
+    expect(state.acpLog).toHaveLength(3);
+    expect(state.acpLog.map((l) => l.taskId)).toEqual([
+      "T-001",
+      "T-002",
+      "T-001",
+    ]);
+  });
+
+  it("does not affect tasks, edges, or other state fields", () => {
+    let state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "edges_set", edges: [["T-001", "T-002"]] },
+    );
+    const tasksBefore = state.tasks;
+    const edgesBefore = state.edges;
+    state = reduce(state, {
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      summary: "x",
+    });
+    expect(state.tasks).toBe(tasksBefore);
+    expect(state.edges).toBe(edgesBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initialState includes edges and acpLog
 // ---------------------------------------------------------------------------
 
 describe("initialState", () => {
   it("includes an empty edges array", () => {
     expect(initialState().edges).toEqual([]);
+  });
+
+  it("includes an empty acpLog array", () => {
+    expect(initialState().acpLog).toEqual([]);
   });
 });

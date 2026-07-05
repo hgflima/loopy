@@ -41,6 +41,8 @@ const TASK_FINISHED_LABELS: Record<string, string> = {
 export interface LineReporterOptions {
   /** Sink for each rendered line (no trailing newline). */
   readonly print: (line: string) => void;
+  /** When `true`, ACP traffic lines (`acp_traffic` events) are printed. */
+  readonly verbose?: boolean;
 }
 
 /** Consumes store events and prints equivalent log lines. */
@@ -51,7 +53,7 @@ export interface LineReporter {
 
 /** Build a {@link LineReporter} over a `print` sink. */
 export function createLineReporter(options: LineReporterOptions): LineReporter {
-  const { print } = options;
+  const { print, verbose = false } = options;
   let state: StoreState = initialState();
   // Partial (newline-less) stream text per task, awaiting the rest of its line.
   const streamBuffers = new Map<string, string>();
@@ -135,6 +137,14 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
             TASK_FINISHED_LABELS[event.status] ?? event.status;
           const suffix = event.reason ? `: ${event.reason}` : "";
           print(`${symbol} ${event.taskId} ${word}${suffix}`);
+          return;
+        }
+
+        case "acp_traffic": {
+          if (!verbose) return;
+          const arrow = event.direction === "send" ? "→" : "←";
+          const method = event.method ? `${event.method} ` : "";
+          print(`    ${arrow} ${method}${event.summary}`);
           return;
         }
       }
