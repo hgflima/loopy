@@ -524,6 +524,29 @@ function createLazySession(open: () => Promise<AgentSession>): AgentSession {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Abort port — hard-stop cancellation of in-flight tasks (T-007)
+// ---------------------------------------------------------------------------
+
+/** Default timeout (ms) for cooperative cancel before falling back to kill. */
+export const CANCEL_TIMEOUT_MS = 5_000;
+
+/**
+ * Port for the `abort_loop` hard stop (T-007). When a task escalates with
+ * `abort_loop`, the orchestrator calls {@link cancelSession} on each in-flight
+ * sibling's worktree cwd (cooperative, sibling-safe via `session/cancel`),
+ * then waits for them to settle within {@link CANCEL_TIMEOUT_MS}. On timeout
+ * the fallback {@link killAgent} terminates the ACP process and any shell
+ * children. `killAgent` is NEVER used to abort a single task — only as a
+ * last-resort for whole-run shutdown.
+ */
+export interface AbortPort {
+  /** Cancel a session by its worktree cwd (cooperative, no-op if not open). */
+  cancelSession(cwd: string): Promise<void>;
+  /** Kill the agent process + in-flight shell children (hard fallback). */
+  killAgent(): void;
+}
+
 /** Everything {@link runLoop} needs — the ports a {@link StepContext} is built from. */
 export interface OrchestratorDeps {
   /**
@@ -588,6 +611,14 @@ export interface OrchestratorDeps {
    * When absent (tests without parallelism), no serialization occurs.
    */
   readonly parentMutex?: Mutex;
+  /**
+   * Hard-stop port for `abort_loop` (T-007). When present and `abort_loop`
+   * fires, the orchestrator cancels in-flight sibling sessions cooperatively
+   * and, on timeout, falls back to `killAgent()`. When absent (non-agent
+   * spine / unit tests), `abort_loop` still stops the run but without
+   * cooperative cancellation (tasks settle naturally).
+   */
+  readonly abort?: AbortPort;
 }
 
 /**
@@ -977,6 +1008,53 @@ async function markDoneWithMutex(
 }
 
 /**
+ * Cancel in-flight sibling sessions, await settle with timeout, then drain
+ * (T-007). Extracted from the main loop for readability.
+ *
+ * 1. Mark every in-flight task as cancelled (so `launchTask` preserves its
+ *    checkpoint on settle).
+ * 2. If `deps.abort` is wired, call `cancelSession(cwd)` on each sibling
+ *    (cooperative, sibling-safe) and race the settle against a timeout.
+ * 3. On timeout, `killAgent()` terminates the process.
+ * 4. Drain all remaining promises (best-effort).
+ */
+async function cancelAndDrainInFlight(
+  inFlight: Map<string, Promise<{ readonly taskId: string }>>,
+  cancelledTasks: Set<string>,
+  taskById: Map<string, Task>,
+  config: LoopyConfig,
+  deps: OrchestratorDeps,
+): Promise<void> {
+  for (const taskId of inFlight.keys()) {
+    cancelledTasks.add(taskId);
+  }
+
+  if (deps.abort) {
+    const cancelPromises = [...inFlight.keys()].map((taskId) => {
+      const cwd = resolve(deps.root, worktreePathFor(config, taskById.get(taskId)!));
+      return deps.abort!.cancelSession(cwd).catch(() => {});
+    });
+    await Promise.all(cancelPromises);
+
+    const settleAll = Promise.all(inFlight.values()).then(() => "settled" as const);
+    const timeout = new Promise<"timeout">((r) =>
+      setTimeout(() => r("timeout"), CANCEL_TIMEOUT_MS),
+    );
+    if ((await Promise.race([settleAll, timeout])) === "timeout") {
+      deps.logger.error(
+        `[orchestrator] cancel cooperativo expirou (${CANCEL_TIMEOUT_MS}ms) — killAgent`,
+      );
+      deps.abort.killAgent();
+    }
+  }
+
+  for (const [taskId, promise] of [...inFlight]) {
+    try { await promise; } catch { /* killed mid-flight */ }
+    inFlight.delete(taskId);
+  }
+}
+
+/**
  * The live outer loop (T-010 + T-005 pool). Builds the task DAG at load time
  * (fail-fast on orphan deps or cycles), then runs tasks through a pool of size
  * `concurrency`. Tasks whose deps are all `done` are promoted to "ready";
@@ -1099,6 +1177,10 @@ export async function runLoop(
   type TaskSignal = { readonly taskId: string; readonly stop?: LoopStopReason };
   const inFlight = new Map<string, Promise<TaskSignal>>();
 
+  // T-007: tasks whose sessions were cancelled by an abort_loop hard stop.
+  // Checked inside launchTask to preserve checkpoint (resumable, OQ13).
+  const cancelledTasks = new Set<string>();
+
   /** Check top-level stop conditions (stop signal, dirty parent). */
   const checkStopConditions = async (): Promise<LoopStopReason | null> => {
     if (existsSync(stopSignalPath)) {
@@ -1162,6 +1244,16 @@ export async function runLoop(
         deps.logger.info(
           `[orchestrator] task ${task.id} concluída e marcada [x]`,
         );
+        return { taskId: task.id };
+      }
+
+      // T-007: if this task was cancelled by abort_loop, preserve its
+      // checkpoint for resume (OQ13) — don't escalate or modify checkpoint.
+      if (cancelledTasks.has(task.id)) {
+        deps.logger.info(
+          `[orchestrator] task ${task.id} cancelada por abort_loop — checkpoint preservado`,
+        );
+        status.set(task.id, "paused");
         return { taskId: task.id };
       }
 
@@ -1244,6 +1336,17 @@ export async function runLoop(
     const { taskId: settledId, stop } = await Promise.race(inFlight.values());
     inFlight.delete(settledId);
     if (stop) stopReason = stop;
+
+    // T-007: abort_loop hard stop — cancel siblings, await settle, drain.
+    if (stop === "escalation_abort" && inFlight.size > 0) {
+      await cancelAndDrainInFlight(
+        inFlight,
+        cancelledTasks,
+        taskById,
+        config,
+        deps,
+      );
+    }
   }
 
   return finish(stopReason ?? "backlog_empty");

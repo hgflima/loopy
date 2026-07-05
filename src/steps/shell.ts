@@ -63,7 +63,12 @@ export interface ShellCommandResult {
  */
 export type RunShellCommand = (
   argv: readonly string[],
-  ctx: { readonly cwd: string; readonly timeoutMs?: number },
+  ctx: {
+    readonly cwd: string;
+    readonly timeoutMs?: number;
+    /** Abort signal for hard-stop cancellation (T-007). */
+    readonly cancelSignal?: AbortSignal;
+  },
 ) => Promise<ShellCommandResult>;
 
 /** Coerce execa's stream field (a string under default options) to a string. */
@@ -97,6 +102,7 @@ export const runShellCommandWithExeca: RunShellCommand = async (argv, ctx) => {
     reject: false,
     stripFinalNewline: true,
     timeout: ctx.timeoutMs,
+    cancelSignal: ctx.cancelSignal,
   });
 
   const ok = !result.failed;
@@ -132,6 +138,11 @@ export interface CreateShellStepOptions {
    * not the shared parent).
    */
   readonly parentMutex?: Mutex;
+  /**
+   * Abort signal for hard-stop cancellation (T-007). When aborted, in-flight
+   * execa processes receive SIGTERM via execa's `cancelSignal` option.
+   */
+  readonly cancelSignal?: AbortSignal;
 }
 
 /** Non-empty stdout+stderr of one command, for the aggregated step `output`. */
@@ -169,6 +180,7 @@ export function createShellStep(options: CreateShellStepOptions = {}): Step {
   const runCommand = options.runCommand ?? runShellCommandWithExeca;
   const timeoutMs = options.timeoutMs;
   const parentMutex = options.parentMutex;
+  const cancelSignal = options.cancelSignal;
 
   return {
     type: "shell",
@@ -197,6 +209,7 @@ export function createShellStep(options: CreateShellStepOptions = {}): Step {
           const result = await runCommand(argv, {
             cwd: ctx.worktreePath,
             timeoutMs,
+            cancelSignal,
           });
           ran.push(result);
 
