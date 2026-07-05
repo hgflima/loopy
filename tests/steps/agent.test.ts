@@ -15,6 +15,7 @@ import type {
   ChecksRunnerPort,
   StopReason,
 } from "../../src/types";
+import type { StoreEvent } from "../../src/tui/store";
 import { makeLogger, makeStepContext } from "./support";
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,30 @@ function scriptedChecks(reports: readonly ChecksReport[]): {
     callCount: () => i,
     port: {
       run: async () => reports[i++] ?? { ok: true, results: [], text: "" },
+    },
+  };
+}
+
+/**
+ * A checks runner that replays scripted reports AND fires onCheckStart/End
+ * callbacks (T-005). Each report maps to a check named `check-N` so the
+ * callbacks carry predictable names.
+ */
+function scriptedChecksWithCallbacks(reports: readonly ChecksReport[]): {
+  readonly port: ChecksRunnerPort;
+  callCount(): number;
+} {
+  let i = 0;
+  return {
+    callCount: () => i,
+    port: {
+      run: async (_checks, opts) => {
+        const report = reports[i++] ?? { ok: true, results: [], text: "" };
+        const name = `check-${i}`;
+        opts?.onCheckStart?.(name);
+        opts?.onCheckEnd?.(name, report.ok);
+        return report;
+      },
     },
   };
 }
@@ -409,5 +434,89 @@ describe("agent step — on_fail formatting in logs", () => {
     expect(errorMsg).toBeDefined();
     expect(errorMsg).toContain("goto implement");
     expect(errorMsg).not.toContain("[object Object]");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live progress events — attempt_started + check_started/finished (T-005)
+// ---------------------------------------------------------------------------
+
+describe("agent step — live progress events (T-005)", () => {
+  it("emits attempt_started at the start of each verify attempt", async () => {
+    const events: StoreEvent[] = [];
+    const session = scriptedSession({ stopReasons: ["end_turn", "end_turn"] });
+    const checks = scriptedChecksWithCallbacks([red("erro"), GREEN]);
+    const ctx = makeStepContext({
+      step: verifyStep({ verify: { run: "ci", max_attempts: 3 } }),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      emit: (e) => events.push(e),
+    });
+
+    await createAgentStep().execute(ctx);
+
+    const attempts = events.filter((e) => e.type === "attempt_started");
+    expect(attempts).toHaveLength(2);
+    expect(attempts[0]).toEqual({
+      type: "attempt_started",
+      taskId: "T-001",
+      stepId: "implement",
+      attempt: 1,
+      maxAttempts: 3,
+    });
+    expect(attempts[1]).toEqual({
+      type: "attempt_started",
+      taskId: "T-001",
+      stepId: "implement",
+      attempt: 2,
+      maxAttempts: 3,
+    });
+  });
+
+  it("forwards check_started and check_finished from the verify checks runner", async () => {
+    const events: StoreEvent[] = [];
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const checks = scriptedChecksWithCallbacks([GREEN]);
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      emit: (e) => events.push(e),
+    });
+
+    await createAgentStep().execute(ctx);
+
+    const checkEvents = events.filter(
+      (e) => e.type === "check_started" || e.type === "check_finished",
+    );
+    expect(checkEvents).toHaveLength(2);
+    expect(checkEvents[0]).toMatchObject({
+      type: "check_started",
+      taskId: "T-001",
+      stepId: "implement",
+    });
+    expect(checkEvents[1]).toMatchObject({
+      type: "check_finished",
+      taskId: "T-001",
+      stepId: "implement",
+      ok: true,
+    });
+  });
+
+  it("does not crash when emit is absent (backward compat)", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const checks = scriptedChecks([GREEN]);
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      // no emit
+    });
+
+    const result = await createAgentStep().execute(ctx);
+    expect(result.ok).toBe(true);
   });
 });

@@ -6,6 +6,7 @@ import type {
   ChecksRunnerPort,
   ChecksStep,
 } from "../../src/types";
+import type { StoreEvent } from "../../src/tui/store";
 import { makeLogger, makeStepContext } from "./support";
 
 /** Build a `checks` step that references a named list. */
@@ -131,5 +132,58 @@ describe("createChecksStep — execute", () => {
       step: { id: "x", type: "shell", run: ["echo hi"] },
     });
     await expect(createChecksStep().execute(ctx)).rejects.toThrow(/checks/);
+  });
+
+  it("forwards check_started and check_finished events via emit (T-005)", async () => {
+    const events: StoreEvent[] = [];
+    const runner: ChecksRunnerPort = {
+      run: async (_checks, opts) => {
+        const report = passingReport();
+        opts.onCheckStart?.("typecheck");
+        opts.onCheckEnd?.("typecheck", true);
+        opts.onCheckStart?.("lint");
+        opts.onCheckEnd?.("lint", true);
+        return report;
+      },
+    };
+    const ctx = makeStepContext({
+      step: checksStep("ci"),
+      checksConfig: { ci: CI_LIST },
+      checks: runner,
+      emit: (e) => events.push(e),
+    });
+
+    await createChecksStep().execute(ctx);
+
+    const checkEvents = events.filter(
+      (e) => e.type === "check_started" || e.type === "check_finished",
+    );
+    expect(checkEvents).toHaveLength(4);
+    expect(checkEvents[0]).toEqual({
+      type: "check_started",
+      taskId: "T-001",
+      stepId: "verify",
+      name: "typecheck",
+    });
+    expect(checkEvents[1]).toEqual({
+      type: "check_finished",
+      taskId: "T-001",
+      stepId: "verify",
+      name: "typecheck",
+      ok: true,
+    });
+  });
+
+  it("does not crash when emit is absent (backward compat, T-005)", async () => {
+    const { runner } = recordingChecksRunner(passingReport());
+    const ctx = makeStepContext({
+      step: checksStep("ci"),
+      checksConfig: { ci: CI_LIST },
+      checks: runner,
+      // no emit
+    });
+
+    const result = await createChecksStep().execute(ctx);
+    expect(result.ok).toBe(true);
   });
 });

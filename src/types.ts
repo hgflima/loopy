@@ -528,7 +528,13 @@ export interface GitPort {
 export interface ChecksRunnerPort {
   run(
     checks: readonly CheckCommand[],
-    opts: { readonly cwd: string },
+    opts: {
+      readonly cwd: string;
+      /** Fired just before a single check starts (live progress). */
+      readonly onCheckStart?: (name: string) => void;
+      /** Fired right after a single check finishes (live progress). */
+      readonly onCheckEnd?: (name: string, ok: boolean) => void;
+    },
   ): Promise<ChecksReport>;
 }
 

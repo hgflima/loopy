@@ -109,7 +109,28 @@ async function runVerifyChecks(
         `que não existe em checks:.`,
     );
   }
-  return ctx.checks.run(list, { cwd });
+  return ctx.checks.run(list, {
+    cwd,
+    onCheckStart: ctx.emit
+      ? (name) =>
+          ctx.emit!({
+            type: "check_started",
+            taskId: ctx.task.id,
+            stepId: step.id,
+            name,
+          })
+      : undefined,
+    onCheckEnd: ctx.emit
+      ? (name, ok) =>
+          ctx.emit!({
+            type: "check_finished",
+            taskId: ctx.task.id,
+            stepId: step.id,
+            name,
+            ok,
+          })
+      : undefined,
+  });
 }
 
 /** Human reason for a turn that did not end in `end_turn` (AC3). */
@@ -181,6 +202,14 @@ export function createAgentStep(): Step {
       let succeeded = false;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        ctx.emit?.({
+          type: "attempt_started",
+          taskId: ctx.task.id,
+          stepId: step.id,
+          attempt,
+          maxAttempts,
+        });
+
         if (clearContext) await ctx.session.clear();
 
         const resolve = buildAttemptResolver(

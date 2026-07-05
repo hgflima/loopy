@@ -240,6 +240,43 @@ describe("runChecks (injected runner)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// runChecks — onCheckStart / onCheckEnd callbacks (T-005)
+// ---------------------------------------------------------------------------
+
+describe("runChecks — onCheckStart/onCheckEnd callbacks (T-005)", () => {
+  const checks: readonly CheckCommand[] = [
+    { name: "typecheck", run: "npm run typecheck" },
+    { name: "lint", run: "npm run lint" },
+  ];
+
+  it("fires onCheckStart before and onCheckEnd after each check, in order", async () => {
+    const events: string[] = [];
+    const report = await runChecks(checks, {
+      cwd: "/x",
+      runOne: fakeRunner({ lint: { ok: false, exitCode: 1 } }),
+      onCheckStart: (name) => events.push(`start:${name}`),
+      onCheckEnd: (name, ok) => events.push(`end:${name}:${ok}`),
+    });
+    expect(events).toEqual([
+      "start:typecheck",
+      "end:typecheck:true",
+      "start:lint",
+      "end:lint:false",
+    ]);
+    expect(report.ok).toBe(false);
+  });
+
+  it("works identically when callbacks are omitted (no crash)", async () => {
+    const report = await runChecks(checks, {
+      cwd: "/x",
+      runOne: fakeRunner({}),
+    });
+    expect(report.ok).toBe(true);
+    expect(report.results).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runChecks — real subprocesses via execa (fake commands: pass/fail/large)
 // ---------------------------------------------------------------------------
 

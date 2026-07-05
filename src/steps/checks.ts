@@ -61,7 +61,28 @@ export function createChecksStep(options: CreateChecksStepOptions = {}): Step {
       const mutex = (step.parallel_safe ?? false) ? undefined : parentMutex;
 
       return guarded(mutex, async () => {
-        const report = await ctx.checks.run(list, { cwd: ctx.worktreePath });
+        const report = await ctx.checks.run(list, {
+          cwd: ctx.worktreePath,
+          onCheckStart: ctx.emit
+            ? (name) =>
+                ctx.emit!({
+                  type: "check_started",
+                  taskId: ctx.task.id,
+                  stepId: step.id,
+                  name,
+                })
+            : undefined,
+          onCheckEnd: ctx.emit
+            ? (name, ok) =>
+                ctx.emit!({
+                  type: "check_finished",
+                  taskId: ctx.task.id,
+                  stepId: step.id,
+                  name,
+                  ok,
+                })
+            : undefined,
+        });
         ctx.logger.info(
           `[checks:${step.id}] lista "${listName}": ${report.ok ? "verde" : "vermelho"}`,
         );
