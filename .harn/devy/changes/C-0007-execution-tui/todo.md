@@ -14,7 +14,7 @@
     Deps: nenhuma
     Files: src/tui/store.ts, src/tui/line-reporter.ts, src/tui/start.ts, testes. Scope: M.
 
-- [ ] T-002: View — remap `COLORS.task` (amarelo=aguardando) + `pulseFrame`
+- [x] T-002: View — remap `COLORS.task` (amarelo=aguardando) + `pulseFrame`
     Remapear `COLORS.task` (`view.ts:39-42`) p/ a tabela da spec §3: `pending`→**yellow**, `blocked`→**yellow** (aguardando), `skipped`→**gray** (dim), `paused`→**magenta**; `running` cyan / `done` green / `escalated` red **mantidos**. `SYMBOLS.task` **inalterados** (o fallback usa só `SYMBOLS` ⇒ não muda). Adicionar `pulseFrame(tick: number): "on" | "off"` (puro; o `.tsx` mapeia p/ `bold`/`dimColor`). `attemptLabel`/`checkText`/`streamTail` intactos.
     Aceite: `COLORS.task` **exaustivo** batendo a nova tabela (teste por `TaskStatus`); amarelo=aguardando e vermelho=falhou; `pulseFrame` alterna determinístico por tick; `SYMBOLS` e formatters intactos.
     Verificação: `npm test -- tui` && `npm run typecheck`.
