@@ -53,7 +53,7 @@
 
 ## Fase 3 — Boundary ACP + wiring (T-007 ∥ cedo; T-008 sink da fase)
 
-- [ ] T-007: ACP — `onTraffic` (send+recv) + `onUpdate` seams (observação pura, AD-1)
+- [x] T-007: ACP — `onTraffic` (send+recv) + `onUpdate` seams (observação pura, AD-1)
     `OpenAgentOptions` (`agent.ts:62-86`) ganha `onTraffic?(entry: AcpTrafficEntry, sessionId: string)` (o `onUpdate?` já existe `:77-78`). No `client.ts`: no handler de `session/update` (`:547-553`) e nos requests do Agente (permission/fs/terminal `:508-546`) captar os **recv** via `onTraffic`; em `session.ts` os **send** — `setMode`/`ctx.request` (`:134-140`), `cancel`/`ctx.notify` (`:162-164`), `prompt`/`runTurn` (`:210-235`) — chamam `onTraffic("send", …)`. O mesmo `onTraffic` alimenta o `TaskLogger.acp` (`logger.ts:42-47/:107-109`, hoje **dead code**). **Não altera** o comportamento ACP (só observa).
     Aceite: `onTraffic` capta os send (`session/set_mode`/`prompt`/`cancel`) e os requests recv do Agente, com `sessionId`; `onUpdate` de um `session/update` continua entregando o `agent_message_chunk` (via `agentChunkText`); `TaskLogger.acp` passa a ser chamado; sem `onTraffic`/`onUpdate` o boundary é idêntico ao de hoje.
     Verificação: `npm test -- acp` && `npm run typecheck`.
