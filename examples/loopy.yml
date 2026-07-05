@@ -23,6 +23,7 @@ inputs:
     task_id_pattern: "T-\\d+"
     body: indented
     mark_done_on_success: true
+    deps_pattern: "Deps:"
 
 checks:
   ci:
@@ -35,6 +36,11 @@ pipeline:
     type: shell
     run:
       - git worktree add -b "${task.branch}" "${worktree.path}" "${workspace.parent_branch}"
+
+  - id: install-deps
+    type: shell
+    parallel_safe: true
+    run:
       - npm ci --prefix "${worktree.path}"
 
   - id: implement
@@ -101,7 +107,7 @@ stop_conditions:
   max_step_visits: 10
   stop_signal_file: ".loopy.stop"
 
-concurrency: 1
+# concurrency: 4   # default 1 (sequencial); com Deps: no todo.md, Tasks independentes rodam em paralelo
 
 policies:
   escalation:
@@ -110,6 +116,7 @@ policies:
     notify: stderr
   git:
     require_clean_parent: true
+    on_merge_conflict: escalate   # escalate (default) | rebase (auto-rebase + retry-once dentro do mutex)
 
 logging:
   dir: ".loopy/logs"

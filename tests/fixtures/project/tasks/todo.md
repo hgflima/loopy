@@ -7,3 +7,4 @@
       Implementar o parser do backlog conforme a spec.
 
 - [ ] T-003: Segunda task pendente
+      Deps: T-002

@@ -134,10 +134,6 @@ _Avoid_: permissão (é conceito distinto), nível
 
 ## Controle do loop
 
-**Iteração**:
-O contador do Loop externo (uma por Task processada), limitado por `max_iterations`.
-_Avoid_: ciclo, rodada; não confunda com Tentativa
-
 **Tentativa** (_attempt_):
 O contador do Loop interno (uma re-prompta do Verify), limitado por `max_attempts`.
 _Avoid_: try, retry, iteração. (A TUI mostra "try k/max", mas o termo canônico é Tentativa.)
@@ -183,7 +179,57 @@ O índice corrente no Pipeline durante a execução de uma Task. O motor mantém
 _Avoid_: cursor, ponteiro
 
 **Concorrência** (_concurrency_):
-O grau de paralelismo entre Tasks. `1` (sequencial) no v1; o modelo de dados já é _parallel-ready_.
+O teto efetivamente respeitado pelo Scheduler para o paralelismo entre Tasks. Default `1` (sequencial); sem teto superior. `--concurrency N` sobrescreve. Com `concurrency: 1` + sem `Deps:` + `on_merge_conflict: escalate`, o comportamento é **byte-idêntico** ao `for...of` sequencial (regressão zero). (ADR-0004.)
+_Avoid_: threads, workers
+
+**Iteração** — precisão dupla sob paralelismo (ADR-0004):
+- A **var `${iteration}`** = índice estável da Task na ordem de arquivo do Backlog (o que o dry-run já resolve). Determinística e **idêntica entre dry-run e run vivo** ⇒ preserva AD-4. Não é mais o contador de runtime.
+- O **teto `max_iterations`** = contador de runtime separado, "Tasks **iniciadas** nesta Run". `skipped` não conta.
+(Tentativa/Visita intra-Task intocados.)
+
+## DAG de tasks e scheduling (ADR-0004)
+
+Termos do paralelismo entre Tasks — distinto do fluxo intra-Pipeline (Desvio/`goto`/PC, que é entre Steps de **uma** Task). Introduzidos pelo ADR-0004.
+
+**Aresta de dependência** (*dependency edge*):
+"T-B depende de T-A", materializada na linha `Deps:` do `todo.md` e em `task.deps`. Semântica: **T-B só fica Ready quando T-A está Done (merjada no parent)**. Direção no grafo: `[from = dep, to = dependente]`. Pattern **configurável** via `inputs.backlog.deps_pattern` (default `Deps:` case-insensitive).
+_Avoid_: link, relação, edge (sem qualificar)
+
+**Grafo de tasks** (*task graph* / DAG):
+Grafo dirigido **acíclico**; **nodes** = Tasks do Backlog **completo** (`done` + pendentes), **edges** = Arestas de dependência. Ciclo ou Dep órfã (id ausente do Backlog inteiro) ⇒ erro fail-fast (Run não inicia). Distinto do **flow graph de `goto`** (que é intra-Pipeline, entre Steps).
+_Avoid_: pipeline graph, flow graph (esses são de Steps)
+
+**Scheduler**:
+Componente puro (AD-6) que, dado o Grafo e o mapa de status, computa o **conjunto pronto** (*ready set*) e escolhe as próximas a iniciar sob Concorrência. Desempate por ordem do Backlog (determinismo). O Scheduler **não** executa Steps (isso é do PC).
+_Avoid_: orquestrador (é o módulo do Loop externo), planner (é o do `--dry-run`)
+
+**Ready / Pronta**:
+Task cujas Deps estão **todas** `done`. Desempate entre Prontas = ordem do Backlog.
+_Avoid_: disponível, livre
+
+**Blocked / Bloqueada**:
+Task com ≥1 Dep não-`done` **e ainda alcançável** (nenhuma Dep falhou). Vira Ready quando a última Dep chega a `done`.
+_Avoid_: travada, pendente (colide com o status de checkbox)
+
+**Skipped / Pulada**:
+Task cujo fecho de Deps contém uma que **não chegou a `done`**. Nunca ficará Ready; marcada e **não executada**. Derivada do Grafo + status, **não persistida** (recomputada no resume). Resultado do skip transitivo.
+_Avoid_: ignorada, descartada
+
+**Seção crítica do parent** (*parent critical section*):
+Região serializada por um mutex único da Run que embrulha a **execução de comandos de todo Step não-Agente** (rodam contra o root) mais os ports `commitPaths`/`isParentClean`. **Não** mora no `GitPort` — vive na **camada de execução de Steps** (threaded via os seams do command-runner). O **wait de aprovação** do Merge acontece **fora** do mutex; a aquisição é só para a **execução de comandos**, com `require_clean_parent` reavaliado logo antes. O auto-rebase (quando `on_merge_conflict: rebase`) roda **dentro** dela. Step `parallel_safe: true` fica **fora**.
+_Avoid_: lock, semáforo, região crítica (sem qualificar)
+
+**`parallel_safe`**:
+Campo aditivo de Step (default `false`) — opt-out declarativo da Seção crítica: o Step **não** toca o `.git` compartilhado e pode rodar em paralelo. O motor emite **Warning estático não-fatal** se um Step `parallel_safe` tiver argv que aparente mutar o parent (`git merge`/`commit`/`worktree`/`branch`/`push`, ou `-C ${workspace.root}`).
+_Avoid_: thread-safe (conceito distinto)
+
+**`on_merge_conflict`**:
+Policy de git (`policies.git.on_merge_conflict`): `escalate` (default) | `rebase`. `rebase` = o motor faz `git rebase <parent>` + re-tenta o merge uma vez dentro do mutex antes de cair no `on_fail`. Config decide; mecânica é do motor (AD-1).
+_Avoid_: conflict resolution (sem qualificar o mecanismo)
+
+**Cancelamento** (*cancellation*):
+`session.cancel()` (ACP `session/cancel`, por `sessionId`, sibling-safe, cooperativo). Na parada dura (`abort_loop`), `child.kill()` do processo do Agente é o **fallback de timeout** (a Run inteira encerra). Distinto do **Stop signal** (`.loopy.stop`, que encerra **após** a Task corrente). `child.kill()` **nunca** para abortar uma Task isolada.
+_Avoid_: kill, interrupção (para o mecanismo cooperativo)
 
 ## Runtime
 

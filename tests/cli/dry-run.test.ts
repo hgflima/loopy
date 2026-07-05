@@ -237,7 +237,8 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
       "--- DAG ---
         concorrência efetiva: 1
         camadas topológicas:
-          camada 1: T-002, T-003
+          camada 1: T-002
+          camada 2: T-003
         ordem de merge prevista: T-002 → T-003
 
       === T-002 — Primeira task pendente ===
@@ -282,6 +283,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
             clear_context: true
             prompt:
               Implemente T-003 — Segunda task pendente conforme SPEC.md.
+              Deps: T-002
             verify: run=ci max_attempts=3
         [3] audit (agent)
             mode: plan
