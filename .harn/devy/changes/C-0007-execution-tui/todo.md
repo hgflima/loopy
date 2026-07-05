@@ -60,7 +60,7 @@
     Deps: nenhuma
     Files: src/acp/agent.ts, src/acp/client.ts, src/acp/session.ts, src/logging/logger.ts, testes. Scope: M.
 
-- [ ] T-008: Entrypoint — mount Ink + `emit=dispatch` + `sessionId→taskId` + logs arquivo-only
+- [x] T-008: Entrypoint — mount Ink + `emit=dispatch` + `sessionId→taskId` + logs arquivo-only
     `defaultRunLive` (`index.ts:321-378`): passar `mount: mountApp` a `startUi` (liga o Ink; `:331`) e injetar `emit: ui.dispatch` em `deps` (`:351-369`). `openAgent({ onUpdate, onTraffic })` (`:333-338`): `onUpdate` mapeia `session/update` → `stream_chunk` (via `agentChunkText`, texto do Agente) **e** → `acp_traffic(recv)`; `onTraffic` capta os send+recv restantes. Manter `Map<sessionId, taskId>` populado no wrapper de `sessionProvider` (`:365`, via `basename(cwd) === task.id`); as callbacks lêem o mapa p/ carimbar `taskId`. Em modo TUI (`ui.tui === true`): construir o logger **sem** o tee no stdout (arquivo-only; `teeLogger` `:298-313` corromperia o frame) e **bufferizar** o `notify` (`:364`), drenando-o ao stderr **após** `ui.stop()` (`:376`). Captura ACP gated por `--verbose`/`capture_acp_traffic`.
     Aceite: com `mount`+TTY o Dashboard monta e o `dispatch` vai à store (não imprime linhas); sem TTY/`--no-tui` cai no fallback e as linhas saem (matriz de `startUi` inalterada); `taskId` correto via `sessionId→taskId`; em modo TUI o logger é arquivo-only e o `notify` sai **após** `ui.stop()`; captura gated por `--verbose`. Nota: cwd da Sessão = `resolve(root, worktreePathFor(task))` (`orchestrator.ts:790-794`), `worktreePathFor = <dir>/<task.id>` (`:102-105`) ⇒ `basename(cwd)===task.id` — o mapa carimba por aí.
     Verificação: `npm test -- cli` && `npm run typecheck`.
