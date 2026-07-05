@@ -102,12 +102,14 @@ export function makeConfig(
     readonly checks?: LoopyConfig["checks"];
     readonly stop?: StopConditions;
     readonly escalation?: EscalationPolicy;
+    readonly concurrency?: number;
   } = {},
 ): LoopyConfig {
   const base = defaultConfig(over.checks ?? {});
   return {
     ...base,
     pipeline,
+    concurrency: over.concurrency ?? base.concurrency,
     stop_conditions: over.stop ?? base.stop_conditions,
     policies: {
       ...base.policies,

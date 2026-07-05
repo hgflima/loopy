@@ -580,3 +580,274 @@ describe("runLoop — metrics instrumentation", () => {
     expect(sm.durationMs).toBe(200); // 100 + 100
   });
 });
+
+// ---------------------------------------------------------------------------
+// DAG-driven pool scheduler (T-005)
+// ---------------------------------------------------------------------------
+
+describe("runLoop — DAG pool scheduler", () => {
+  it("DAG A→C, B (indep), concurrency 2: A and B start together, C waits for A", async () => {
+    const startOrder: string[] = [];
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          startOrder.push(ctx.task.id);
+          // Simulate async work
+          await new Promise((r) => setTimeout(r, 10));
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")], { concurrency: 2 });
+    const tasks = [
+      makeTask("A"),
+      makeTask("B"),
+      makeTask("C", { deps: ["A"] }),
+    ];
+
+    const result = await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    expect(result.completed).toContain("A");
+    expect(result.completed).toContain("B");
+    expect(result.completed).toContain("C");
+    // A and B started before C
+    const aIdx = startOrder.indexOf("A");
+    const bIdx = startOrder.indexOf("B");
+    const cIdx = startOrder.indexOf("C");
+    expect(aIdx).toBeLessThan(cIdx);
+    expect(bIdx).toBeLessThan(cIdx);
+    expect(result.stoppedBy).toBe("backlog_empty");
+  });
+
+  it("pool never exceeds concurrency N", async () => {
+    let maxConcurrent = 0;
+    let current = 0;
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          current++;
+          maxConcurrent = Math.max(maxConcurrent, current);
+          await new Promise((r) => setTimeout(r, 20));
+          current--;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")], { concurrency: 2 });
+    const tasks = [makeTask("A"), makeTask("B"), makeTask("C"), makeTask("D")];
+
+    await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    expect(maxConcurrent).toBeLessThanOrEqual(2);
+  });
+
+  it("tie-breaking: ready tasks launch in backlog order", async () => {
+    const startOrder: string[] = [];
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          startOrder.push(ctx.task.id);
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    // concurrency 1 → one at a time → order is deterministic
+    const config = makeLoopConfig([shell("s1")], { concurrency: 1 });
+    const tasks = [makeTask("A"), makeTask("B"), makeTask("C")];
+
+    await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    expect(startOrder).toEqual(["A", "B", "C"]);
+  });
+
+  it("orphan dep → throws fail-fast before any task runs", async () => {
+    const startOrder: string[] = [];
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          startOrder.push(ctx.task.id);
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")]);
+    const tasks = [makeTask("A", { deps: ["X"] })]; // X doesn't exist
+
+    await expect(runLoop(config, tasks, makeDeps({ registry: reg, markDone: port })))
+      .rejects.toThrow(/órfã.*"X"/);
+    expect(startOrder).toEqual([]); // no task started
+  });
+
+  it("cycle → throws fail-fast before any task runs", async () => {
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")]);
+    const tasks = [
+      makeTask("A", { deps: ["B"] }),
+      makeTask("B", { deps: ["A"] }),
+    ];
+
+    await expect(runLoop(config, tasks, makeDeps({ registry: reg, markDone: port })))
+      .rejects.toThrow(/[Cc]iclo/);
+  });
+
+  it("${iteration} is the stable backlog index (identical to dry-run)", async () => {
+    const iterations: Record<string, number> = {};
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          iterations[ctx.task.id] = ctx.iteration;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")], { concurrency: 2 });
+    const tasks = [
+      makeTask("A"),
+      makeTask("B"),
+      makeTask("C", { deps: ["A"] }),
+    ];
+
+    await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    // Stable 1-based position in the tasks array, regardless of execution order
+    expect(iterations["A"]).toBe(1);
+    expect(iterations["B"]).toBe(2);
+    expect(iterations["C"]).toBe(3);
+
+    // Same as dry-run
+    const plan = planDryRun(config, tasks);
+    expect(plan.tasks[0]!.iteration).toBe(1); // A
+    expect(plan.tasks[1]!.iteration).toBe(2); // B
+    expect(plan.tasks[2]!.iteration).toBe(3); // C
+  });
+
+  it("concurrency: 1 without deps = sequential byte-identical to backlog order", async () => {
+    const startOrder: string[] = [];
+    const completeOrder: string[] = [];
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          startOrder.push(ctx.task.id);
+          await new Promise((r) => setTimeout(r, 5));
+          completeOrder.push(ctx.task.id);
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")], { concurrency: 1 });
+    const tasks = [makeTask("A"), makeTask("B"), makeTask("C")];
+
+    const result = await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    expect(startOrder).toEqual(["A", "B", "C"]);
+    expect(completeOrder).toEqual(["A", "B", "C"]);
+    expect(result.completed).toEqual(["A", "B", "C"]);
+  });
+
+  it("max_iterations counts tasks started (skipped do not count)", async () => {
+    const startOrder: string[] = [];
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          startOrder.push(ctx.task.id);
+          // A fails → C is skipped (dep on A)
+          return ctx.task.id === "A" ? { ok: false, reason: "fail" } : { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")], {
+      concurrency: 1,
+      stop: { max_iterations: 2, max_step_visits: 10, stop_signal_file: ".loopy.stop" },
+      escalation: { action: "skip_task", keep_worktree: false, notify: "stderr" },
+    });
+    const tasks = [
+      makeTask("A"),
+      makeTask("B"),
+      makeTask("C", { deps: ["A"] }),
+    ];
+
+    const result = await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    // A started (failed), B started (ok) → 2 tasks started → max_iterations hit
+    // C is skipped (dep A failed) → does not count towards started
+    expect(startOrder).toEqual(["A", "B"]);
+    expect(result.skipped).toContain("C");
+    expect(result.iterations).toBe(2);
+  });
+
+  it("--concurrency flag overrides config.concurrency", async () => {
+    let maxConcurrent = 0;
+    let current = 0;
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(): Promise<StepResult> {
+          current++;
+          maxConcurrent = Math.max(maxConcurrent, current);
+          await new Promise((r) => setTimeout(r, 15));
+          current--;
+          return { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    // config says concurrency: 1, but flag overrides to 3
+    const config = makeLoopConfig([shell("s1")], { concurrency: 1 });
+    const tasks = [makeTask("A"), makeTask("B"), makeTask("C")];
+
+    await runLoop(config, tasks, {
+      ...makeDeps({ registry: reg, markDone: port }),
+      flags: { dryRun: false, yes: false, tui: false, verbose: false, concurrency: 3 },
+    });
+
+    expect(maxConcurrent).toBe(3);
+  });
+
+  it("escalation abort_loop drains in-flight before returning", async () => {
+    const completedIds: string[] = [];
+    const reg = createStepRegistry([
+      {
+        type: "shell" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          await new Promise((r) => setTimeout(r, ctx.task.id === "A" ? 5 : 20));
+          completedIds.push(ctx.task.id);
+          // A fails with escalation abort
+          return ctx.task.id === "A" ? { ok: false, reason: "fail" } : { ok: true };
+        },
+      },
+    ]);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([shell("s1")], {
+      concurrency: 2,
+      escalation: { action: "abort_loop", keep_worktree: false, notify: "stderr" },
+    });
+    const tasks = [makeTask("A"), makeTask("B")];
+
+    const result = await runLoop(config, tasks, makeDeps({ registry: reg, markDone: port }));
+
+    expect(result.stoppedBy).toBe("escalation_abort");
+    expect(result.escalated).toContain("A");
+  });
+});

@@ -28,6 +28,8 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { markDoneInFile, type BacklogOptions } from "../backlog/todo";
+import { buildGraph, readySet, skipDescendants } from "../scheduler/index";
+import type { SchedulerTaskStatus, TaskGraph } from "../scheduler/types";
 import {
   createResolver,
   createScope,
@@ -977,12 +979,18 @@ async function markDoneWithMutex(
 }
 
 /**
- * The live outer loop (T-010). Iterate `tasks` (the already-selected pending
- * list, in order) and for each: check stop conditions, run its pipeline, and
- * either mark it done (pipeline ok) or escalate (pipeline failed — the task is
- * **never** marked). Stop conditions are checked at the top of each iteration,
- * so `stop_signal_file` "encerra após a task corrente": a file created during
- * task K is seen before task K+1 starts.
+ * The live outer loop (T-010 + T-005 pool). Builds the task DAG at load time
+ * (fail-fast on orphan deps or cycles), then runs tasks through a pool of size
+ * `concurrency`. Tasks whose deps are all `done` are promoted to "ready";
+ * ready tasks fill the pool up to `concurrency` (tie-broken by backlog order).
+ * On each task completion (`Promise.race`), the ready set is re-evaluated.
+ *
+ * `${iteration}` is the stable 1-based backlog index (identical to dry-run,
+ * AD-4). `max_iterations` is a separate counter of "tasks actually started"
+ * (skipped tasks do not count).
+ *
+ * With `concurrency: 1` and no `Deps:`, the loop is byte-identical to the
+ * previous sequential `for...of` (backlog order, no reordering).
  *
  * Mechanics only (AD-1): order, `always`, escalation actions and stop thresholds
  * all come from `config`. This function encodes none of them as policy.
@@ -996,8 +1004,11 @@ export async function runLoop(
   const startedAt = new Date(clock()).toISOString();
   const completed: string[] = [];
   const escalated: string[] = [];
+  const skipped: string[] = [];
   const tasksMetrics: Record<string, TaskMetrics> = {};
-  // `--max-iterations N` overrides the yml ceiling when provided (T-018).
+  // `--concurrency N` overrides yml; `--max-iterations N` overrides yml ceiling.
+  const concurrency =
+    deps.flags.concurrency ?? config.concurrency;
   const maxIterations =
     deps.flags.maxIterations ?? config.stop_conditions.max_iterations;
   const stopSignalPath = join(
@@ -1005,17 +1016,16 @@ export async function runLoop(
     config.stop_conditions.stop_signal_file,
   );
   const requireCleanParent = config.policies.git.require_clean_parent;
-  let iterations = 0;
-  // Every exit returns the same accumulators; only the stop reason differs.
-  // `paused` / `skipped` are populated by T-006 (parallel pool); empty here.
+  let tasksStarted = 0;
+
   const finish = (stoppedBy: LoopStopReason): RunLoopResult => {
     const finishedAt = new Date(clock()).toISOString();
     return {
       completed,
       escalated,
       paused: [],
-      skipped: [],
-      iterations,
+      skipped,
+      iterations: tasksStarted,
       stoppedBy,
       metrics: {
         index: 0,
@@ -1029,12 +1039,28 @@ export async function runLoop(
     };
   };
 
+  // --- DAG construction (fail-fast before any task runs) ---
+  const graphResult = buildGraph(tasks);
+  if (!graphResult.ok) {
+    throw new Error(`[orchestrator] ${graphResult.error}`);
+  }
+  const graph: TaskGraph = graphResult.value;
+
+  // Stable iteration index per task (1-based position in the backlog, AD-4).
+  const iterationIndex = new Map<string, number>();
+  for (let i = 0; i < tasks.length; i++) {
+    iterationIndex.set(tasks[i]!.id, i + 1);
+  }
+
+  // Task lookup by id.
+  const taskById = new Map<string, Task>();
+  for (const t of tasks) taskById.set(t.id, t);
+
   // --- Resume reconciliation (C-0002 / C-0004 PC-based) ---
   const { checkpoint } = deps;
   let resumeMap: Map<string, ResumePoint> | undefined;
   if (checkpoint) {
     const pipelineHash = pipelineFingerprint(config.pipeline);
-    // Prune orphan checkpoints (tasks no longer in the backlog).
     const knownIds = deps.knownTaskIds ?? tasks.map((t) => t.id);
     const knownSet = new Set(knownIds);
     const stateBefore = checkpoint.read();
@@ -1047,7 +1073,6 @@ export async function runLoop(
     }
     checkpoint.pruneOrphans(knownIds);
 
-    // Compute resume points per task.
     const state = checkpoint.read();
     const allowAborted = deps.flags.task !== undefined;
     resumeMap = new Map();
@@ -1065,22 +1090,26 @@ export async function runLoop(
     }
   }
 
-  for (const task of tasks) {
+  // All tasks start as "blocked"; readySet evaluates deps dynamically.
+  const status = new Map<string, SchedulerTaskStatus>(
+    tasks.map((t) => [t.id, "blocked"]),
+  );
+
+  // --- Pool loop ---
+  /** Signal returned by each task's promise: settled task id + optional stop. */
+  type TaskSignal = { readonly taskId: string; readonly stop?: LoopStopReason };
+  const inFlight = new Map<string, Promise<TaskSignal>>();
+
+  /** Check top-level stop conditions (stop signal, dirty parent). */
+  const checkStopConditions = async (): Promise<LoopStopReason | null> => {
     if (existsSync(stopSignalPath)) {
       deps.logger.info(
         `[orchestrator] stop-signal "${config.stop_conditions.stop_signal_file}" presente — encerrando`,
       );
-      return finish("stop_signal");
+      return "stop_signal";
     }
-    if (iterations >= maxIterations) {
-      deps.logger.info(
-        `[orchestrator] max_iterations (${maxIterations}) atingido — encerrando`,
-      );
-      return finish("max_iterations");
-    }
-    // `require_clean_parent`: early-out before wasting time running a pipeline
-    // on a dirty parent. Under parallelism (T-005), this is a best-effort hint;
-    // the authoritative check lives inside the mutex (markDoneWithMutex below).
+    // `require_clean_parent` as best-effort hint before launching; authoritative
+    // check lives inside markDoneWithMutex (T-004).
     if (
       requireCleanParent &&
       deps.git !== undefined &&
@@ -1088,73 +1117,127 @@ export async function runLoop(
     ) {
       const message =
         `[require_clean_parent] parent "${config.workspace.parent_branch}" está sujo — ` +
-        `interrompendo antes da task ${task.id} (commite ou limpe o working tree)`;
+        `interrompendo (commite ou limpe o working tree)`;
       deps.logger.error(message);
       deps.notify?.(message);
-      return finish("dirty_parent");
+      return "dirty_parent";
     }
+    return null;
+  };
 
-    iterations += 1;
+  /** Launch one task pipeline; the promise resolves to a structured signal. */
+  const launchTask = (task: Task): void => {
+    const iteration = iterationIndex.get(task.id)!;
+    tasksStarted += 1;
     deps.logger.info(
-      `[orchestrator] iteração ${iterations}: task ${task.id} — ${task.title}`,
+      `[orchestrator] iteração ${iteration}: task ${task.id} — ${task.title}`,
     );
+    status.set(task.id, "running");
     checkpoint?.setStatus(task.id, "running");
     const resumePoint = resumeMap?.get(task.id);
-    const { outcome, taskMetrics } = await runTaskPipeline(
-      config,
-      task,
-      iterations,
-      deps,
-      resumePoint,
-    );
-    tasksMetrics[task.id] = taskMetrics;
 
-    if (outcome.ok) {
-      // Mark done inside the parent mutex (T-004): `require_clean_parent` is
-      // re-evaluated here (not as a pre-task gate) so it serializes correctly
-      // with concurrent merges. The mutex guarantees only one task's mark-done
-      // / merge runs at a time. Checkpoint writes stay OUTSIDE (already safe).
-      const markDoneResult = await markDoneWithMutex(
-        task.id,
+    const promise = (async (): Promise<TaskSignal> => {
+      const { outcome, taskMetrics } = await runTaskPipeline(
         config,
+        task,
+        iteration,
         deps,
-        requireCleanParent,
+        resumePoint,
       );
-      if (markDoneResult === "dirty_parent") {
-        return finish("dirty_parent");
+      tasksMetrics[task.id] = taskMetrics;
+
+      if (outcome.ok) {
+        const markDoneResult = await markDoneWithMutex(
+          task.id,
+          config,
+          deps,
+          requireCleanParent,
+        );
+        if (markDoneResult === "dirty_parent") {
+          status.set(task.id, "done");
+          return { taskId: task.id, stop: "dirty_parent" };
+        }
+        checkpoint?.clearTask(task.id);
+        completed.push(task.id);
+        status.set(task.id, "done");
+        deps.logger.info(
+          `[orchestrator] task ${task.id} concluída e marcada [x]`,
+        );
+        return { taskId: task.id };
       }
+
+      // Persistent failure → escalation.
+      escalated.push(task.id);
+      status.set(task.id, "escalated");
+      const policy = config.policies.escalation;
+      const keep = policy.keep_worktree ? " (keep_worktree)" : "";
+      const message =
+        `[escalonamento] task ${task.id} falhou no step "${outcome.failedStepId}": ` +
+        `${outcome.reason ?? "(sem motivo)"} → ação "${policy.action}"${keep}`;
+      deps.logger.error(message);
+      if (policy.notify) deps.notify?.(message);
+
+      if (decideEscalation(policy.action) === "stop") {
+        checkpoint?.setStatus(
+          task.id,
+          policy.action === "abort_loop" ? "aborted" : "paused",
+        );
+        const stop: LoopStopReason = policy.action === "abort_loop"
+          ? "escalation_abort"
+          : "escalation_pause";
+        return { taskId: task.id, stop };
+      }
+      // skip_task → mark descendants as skipped, clear checkpoint.
       checkpoint?.clearTask(task.id);
-      completed.push(task.id);
-      deps.logger.info(
-        `[orchestrator] task ${task.id} concluída e marcada [x]`,
-      );
-      continue;
+      for (const descId of skipDescendants(graph, task.id)) {
+        if (status.get(descId) === "blocked") {
+          status.set(descId, "skipped");
+          skipped.push(descId);
+          deps.logger.info(
+            `[orchestrator] task ${descId} pulada (dependência ${task.id} falhou)`,
+          );
+        }
+      }
+      return { taskId: task.id };
+    })();
+
+    inFlight.set(task.id, promise);
+  };
+
+  // --- Main scheduling loop ---
+  let stopReason: LoopStopReason | null = null;
+
+  while (true) {
+    // Fill pool with ready tasks up to concurrency.
+    if (stopReason === null) {
+      const ready = readySet(graph, status);
+      for (const taskId of ready) {
+        if (inFlight.size >= concurrency) break;
+        if (tasksStarted >= maxIterations) {
+          deps.logger.info(
+            `[orchestrator] max_iterations (${maxIterations}) atingido — encerrando`,
+          );
+          stopReason = "max_iterations";
+          break;
+        }
+        const stop = await checkStopConditions();
+        if (stop !== null) {
+          stopReason = stop;
+          break;
+        }
+        const task = taskById.get(taskId)!;
+        launchTask(task);
+      }
     }
 
-    // Persistent failure → escalation. The task is NOT marked done.
-    escalated.push(task.id);
-    const policy = config.policies.escalation;
-    const keep = policy.keep_worktree ? " (keep_worktree)" : "";
-    const message =
-      `[escalonamento] task ${task.id} falhou no step "${outcome.failedStepId}": ` +
-      `${outcome.reason ?? "(sem motivo)"} → ação "${policy.action}"${keep}`;
-    deps.logger.error(message);
-    // Surface to the operator per `policies.escalation.notify` (e.g. stderr).
-    if (policy.notify) deps.notify?.(message);
-    if (decideEscalation(policy.action) === "stop") {
-      checkpoint?.setStatus(
-        task.id,
-        policy.action === "abort_loop" ? "aborted" : "paused",
-      );
-      return finish(
-        policy.action === "abort_loop"
-          ? "escalation_abort"
-          : "escalation_pause",
-      );
-    }
-    // skip_task → clear the checkpoint (the task is abandoned, not resumable).
-    checkpoint?.clearTask(task.id);
+    // If nothing in flight, we're done.
+    if (inFlight.size === 0) break;
+
+    // Wait for the next task to complete.
+    const { taskId: settledId, stop } = await Promise.race(inFlight.values());
+    inFlight.delete(settledId);
+    if (stop) stopReason = stop;
   }
 
-  return finish("backlog_empty");
+  return finish(stopReason ?? "backlog_empty");
 }
