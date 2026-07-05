@@ -478,6 +478,8 @@ const notWiredGit: GitPort = {
   removeWorktree: notWired("git.removeWorktree"),
   merge: notWired("git.merge"),
   isParentClean: notWired("git.isParentClean"),
+  isMergeInProgress: notWired("git.isMergeInProgress"),
+  rebaseOnto: notWired("git.rebaseOnto"),
 };
 
 /**
@@ -754,6 +756,18 @@ async function runTaskPipeline(
   const executedSteps = new Set<string>();
   let checksReport = "";
 
+  /** Resolve the next PC (on_success goto or sequential), save checkpoint. */
+  const resolveNextPc = (step: StepConfig): number => {
+    const next = step.on_success
+      ? (stepIndex.get(step.on_success.goto) ?? pc + 1)
+      : pc + 1;
+    const nextStep = pipeline[next];
+    if (nextStep !== undefined) {
+      deps.checkpoint?.saveProgress(task.id, nextStep.id, visits, checksReport);
+    }
+    return next;
+  };
+
   // --- Program counter loop ---
   type Terminal =
     | { readonly ok: true }
@@ -831,19 +845,7 @@ async function runTaskPipeline(
       // Thread checks report (normal flow — only from result.report).
       if (result.report !== undefined) checksReport = result.report.text;
       deps.logger.debug(`[orchestrator] step "${step.id}" ok`);
-
-      // Resolve next PC: on_success goto or sequential.
-      const nextPc = step.on_success
-        ? (stepIndex.get(step.on_success.goto) ?? pc + 1)
-        : pc + 1;
-
-      // Save progress for resume (next step to execute).
-      const nextStep = pipeline[nextPc];
-      if (nextStep !== undefined) {
-        deps.checkpoint?.saveProgress(task.id, nextStep.id, visits, checksReport);
-      }
-
-      pc = nextPc;
+      pc = resolveNextPc(step);
       continue;
     }
 
@@ -851,6 +853,49 @@ async function runTaskPipeline(
     deps.logger.error(
       `[orchestrator] step "${step.id}" falhou: ${result.reason ?? "(sem motivo)"}`,
     );
+
+    // --- Merge-conflict recovery (T-008) ---
+    // When the git policy is `rebase` and a merge is in progress on the parent
+    // (MERGE_HEAD present), the engine aborts the conflict, rebases the task
+    // branch onto the parent, and retries the merge once — all inside the mutex.
+    // If the rebase or retry fails, control falls through to the normal on_fail.
+    if (
+      config.policies.git.on_merge_conflict === "rebase" &&
+      deps.git !== undefined &&
+      (await deps.git.isMergeInProgress())
+    ) {
+      const recovered = await guarded(deps.parentMutex, async () => {
+        const rebase = await deps.git!.rebaseOnto(
+          worktreePath,
+          config.workspace.parent_branch,
+        );
+        if (!rebase.ok) {
+          deps.logger.error(
+            `[orchestrator] rebase de "${task.branch}" em "${config.workspace.parent_branch}" falhou — escalando`,
+          );
+          return false;
+        }
+        deps.logger.info(
+          `[orchestrator] rebase ok — re-tentando merge de "${task.branch}"`,
+        );
+        const retry = await deps.git!.merge(task.branch, {
+          message: `merge(${task.id}): ${task.title}`,
+        });
+        if (retry.ok) return true;
+        deps.logger.error(
+          `[orchestrator] retry merge de "${task.branch}" falhou — escalando`,
+        );
+        return false;
+      });
+
+      if (recovered) {
+        deps.logger.info(
+          `[orchestrator] step "${step.id}" recuperado via rebase`,
+        );
+        pc = resolveNextPc(step);
+        continue;
+      }
+    }
 
     const onFail = step.on_fail;
     if (onFail !== undefined && typeof onFail === "object") {

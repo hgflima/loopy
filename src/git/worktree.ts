@@ -146,6 +146,28 @@ export function createGit(options: CreateGitOptions): Git {
       const out = await run(["status", "--porcelain"]);
       return out.trim() === "";
     },
+
+    async isMergeInProgress() {
+      return mergeInProgress();
+    },
+
+    async rebaseOnto(worktreePath, parentBranch) {
+      // Clean up any in-progress merge on the parent so the tree is usable.
+      if (await mergeInProgress()) {
+        await tryRun(["merge", "--abort"]);
+      }
+      // Rebase the task branch (in the worktree) onto the current parent tip.
+      const exitCode = await tryRun([
+        "-C",
+        worktreePath,
+        "rebase",
+        parentBranch,
+      ]);
+      if (exitCode === 0) return { ok: true, conflict: false };
+      // Conflict or error: abort so the worktree is restored to pre-rebase state.
+      await tryRun(["-C", worktreePath, "rebase", "--abort"]);
+      return { ok: false, conflict: true };
+    },
   };
 }
 

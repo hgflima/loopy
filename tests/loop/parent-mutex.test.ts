@@ -441,6 +441,8 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
         // First call is the pre-task early-out; second is inside markDoneWithMutex.
         return calls <= 1;
       },
+      isMergeInProgress: async () => false,
+      rebaseOnto: async () => ({ ok: true, conflict: false }),
     };
 
     const config = loopyConfig(true);
@@ -461,6 +463,8 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
       removeWorktree: async () => {},
       merge: async () => ({ ok: true, conflict: false }),
       isParentClean: async () => true, // always clean
+      isMergeInProgress: async () => false,
+      rebaseOnto: async () => ({ ok: true, conflict: false }),
     };
 
     const config = loopyConfig(true);
@@ -479,6 +483,8 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
       removeWorktree: async () => {},
       merge: async () => ({ ok: true, conflict: false }),
       isParentClean: async () => true,
+      isMergeInProgress: async () => false,
+      rebaseOnto: async () => ({ ok: true, conflict: false }),
     };
 
     const config = loopyConfig(true);

@@ -113,6 +113,8 @@ const inertGit: GitPort = {
   removeWorktree: async () => {},
   merge: async () => ({ ok: true, conflict: false }),
   isParentClean: async () => true,
+  isMergeInProgress: async () => false,
+  rebaseOnto: async () => ({ ok: true, conflict: false }),
 };
 
 const inertChecks: ChecksRunnerPort = {

@@ -12,7 +12,9 @@ import {
 import { createStepRegistry } from "../../src/steps/index";
 import type {
   AgentSession,
+  GitPort,
   LoopyConfig,
+  MergeConflictStrategy,
   StepContext,
   StepResult,
   StepType,
@@ -849,5 +851,190 @@ describe("runLoop — DAG pool scheduler", () => {
 
     expect(result.stoppedBy).toBe("escalation_abort");
     expect(result.escalated).toContain("A");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// on_merge_conflict policy (T-008)
+// ---------------------------------------------------------------------------
+
+describe("runLoop — on_merge_conflict policy", () => {
+  /** Build a config with a specific merge-conflict policy. */
+  function mergeConfig(
+    pipeline: Parameters<typeof makeLoopConfig>[0],
+    onMergeConflict: MergeConflictStrategy,
+  ) {
+    const base = makeLoopConfig(pipeline);
+    return {
+      ...base,
+      policies: {
+        ...base.policies,
+        git: { ...base.policies.git, on_merge_conflict: onMergeConflict },
+      },
+    };
+  }
+
+  /** A mock GitPort where `isMergeInProgress`, `rebaseOnto`, and `merge` are scripted. */
+  function mockGit(opts: {
+    mergeInProgress?: boolean;
+    rebaseOk?: boolean;
+    retryMergeOk?: boolean;
+  }): GitPort & { readonly calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      addWorktree: async () => {},
+      removeWorktree: async () => {},
+      isParentClean: async () => true,
+      isMergeInProgress: async () => {
+        calls.push("isMergeInProgress");
+        return opts.mergeInProgress ?? false;
+      },
+      rebaseOnto: async () => {
+        calls.push("rebaseOnto");
+        const ok = opts.rebaseOk ?? true;
+        return { ok, conflict: !ok };
+      },
+      merge: async () => {
+        calls.push("merge");
+        const ok = opts.retryMergeOk ?? true;
+        return { ok, conflict: !ok };
+      },
+    };
+  }
+
+  it("escalate (default): step failure does NOT trigger rebase even if merge in progress", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge conflict" },
+    });
+    const { port } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "escalate");
+    const git = mockGit({ mergeInProgress: true, rebaseOk: true, retryMergeOk: true });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    // Step failed → escalation. No rebase attempted.
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    // isMergeInProgress was never called because policy is "escalate".
+    expect(git.calls).not.toContain("isMergeInProgress");
+    expect(git.calls).not.toContain("rebaseOnto");
+  });
+
+  it("rebase: recovers from merge conflict via rebase + retry merge", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge conflict" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    const git = mockGit({ mergeInProgress: true, rebaseOk: true, retryMergeOk: true });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    // The step "failed" but the orchestrator recovered via rebase + retry merge.
+    expect(result.completed).toEqual(["T-1"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(git.calls).toContain("isMergeInProgress");
+    expect(git.calls).toContain("rebaseOnto");
+    expect(git.calls).toContain("merge");
+  });
+
+  it("rebase: falls through to on_fail when rebase itself fails", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge conflict" },
+    });
+    const { port } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    const git = mockGit({ mergeInProgress: true, rebaseOk: false });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    // Rebase failed → normal escalation.
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    expect(git.calls).toContain("rebaseOnto");
+    expect(git.calls).not.toContain("merge"); // merge retry never called
+  });
+
+  it("rebase: falls through to on_fail when retry merge fails", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge conflict" },
+    });
+    const { port } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    const git = mockGit({ mergeInProgress: true, rebaseOk: true, retryMergeOk: false });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    // Rebase ok but retry merge failed → normal escalation.
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    expect(git.calls).toContain("rebaseOnto");
+    expect(git.calls).toContain("merge");
+  });
+
+  it("rebase: no-op when step fails without merge in progress", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "shell error" },
+    });
+    const { port } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    const git = mockGit({ mergeInProgress: false });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    // No merge in progress → no rebase, normal escalation.
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    expect(git.calls).toContain("isMergeInProgress");
+    expect(git.calls).not.toContain("rebaseOnto");
+  });
+
+  it("byte-identical at concurrency:1 when no conflicts occur", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec);
+    const { port, marked } = recordingMarkDone();
+    const configEscalate = mergeConfig([shell("s1")], "escalate");
+    const configRebase = mergeConfig([shell("s1")], "rebase");
+    const tasks = [makeTask("A"), makeTask("B")];
+
+    const resultEscalate = await runLoop(configEscalate, tasks, makeDeps({ registry: reg, markDone: port }));
+    marked.length = 0;
+    rec.order.length = 0;
+
+    const { port: port2, marked: marked2 } = recordingMarkDone();
+    const rec2: Recorder = { order: [] };
+    const reg2 = scriptedRegistry(rec2);
+    const git = mockGit({ mergeInProgress: false });
+
+    const resultRebase = await runLoop(configRebase, tasks, {
+      ...makeDeps({ registry: reg2, markDone: port2 }),
+      git,
+    });
+
+    // Both produce the same results.
+    expect(resultRebase.completed).toEqual(resultEscalate.completed);
+    expect(resultRebase.stoppedBy).toEqual(resultEscalate.stoppedBy);
+    expect(marked2).toEqual(["A", "B"]);
   });
 });

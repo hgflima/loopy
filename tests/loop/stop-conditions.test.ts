@@ -107,6 +107,8 @@ function gitWithParentClean(clean: () => boolean | Promise<boolean>): GitPort {
     removeWorktree: nope,
     merge: nope,
     isParentClean: async () => clean(),
+    isMergeInProgress: async () => false,
+    rebaseOnto: nope,
   };
 }
 
