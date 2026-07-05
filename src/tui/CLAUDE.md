@@ -17,8 +17,11 @@ A UX do run: escolhe entre a TUI Ink ao vivo e o fallback append-only de linha, 
 - Não pôr lógica de decisão de render nos componentes; ela mora em `start.ts`.
 
 ## Dependencies & Edges
-- `RunFlags`/`UiPort`: `../types.ts`. Montado por `../index.ts` (`defaultRunLive`).
-- Componentes Ink em `components/`; entrada React em `mount.tsx`.
+- `RunFlags`/`UiPort`: `../types.ts`. Montado por `../index.ts` (`defaultRunLive`), que passa `mount: mountApp` e injeta `emit: ui.dispatch` em `OrchestratorDeps`.
+- Componentes Ink em `components/` (`GraphPane`/`TaskListPane`/`StreamPane`/`AcpLogPane`), compostos pelo `App.tsx` (Dashboard fixo); entrada React em `mount.tsx`.
+- **Emit seam (ADR-0005):** o progresso chega via `dispatch(event)`. O orquestrador emite as transições de Task/Step (`OrchestratorDeps.emit`) e os Steps os eventos intra-Step (`StepContext.emit`: `attempt_started`, `check_*`, `stream_chunk`); o boundary ACP alimenta `acp_traffic`/Stream via `onTraffic`/`onUpdate`.
 
 ## Patterns & Pitfalls
-- **`defaultRunLive` chama `startUi({ flags })` sem `mount`** → hoje o caminho vivo cai no fallback de linha e não empurra `StoreEvent`s de progresso. A TUI Ink existe e é testada via store, mas o fio `mount.tsx → index.ts` ainda não está ligado. Verifique isso antes de assumir que a TUI aparece num run real.
+- **Dashboard vivo (ADR-0005):** num TTY real (sem `--no-tui`, com `mount` injetado) o `App.tsx` monta o Dashboard fixo — Grafo (layout dagre) no topo, split Tasks | Stream+Logs abaixo — e o progresso flui pela store. Em modo TUI o logger é **arquivo-only** (o tee no stdout corromperia o frame) e o `notify` (escalação/dirty-parent) é bufferizado e drenado ao stderr **após** `ui.stop()`.
+- **AD-6 — apresentação pura:** toda matemática e estilo (layout dagre em `layoutGraph`→`GraphGeometry`, `renderGraph`, `pulseFrame`, `COLORS`) vivem puros em `view.ts`; os `.tsx` são wrappers finos. A **Native UI** (OpenTUI, futura) troca só o renderer, reaproveitando `view.ts` + `store`.
+- **AD-1 — só observa:** o Dashboard nunca altera o Run. `emit`/`onTraffic` são aditivos, no-op por omissão, e nenhuma tecla fora do Gate de Aprovação afeta o loop. `RunLoopResult` é byte-idêntico com e sem os seams.

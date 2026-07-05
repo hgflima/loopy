@@ -280,3 +280,47 @@ _Avoid_: index (sozinho — o index.md é o arquivo, não o conceito)
 **Change**:
 Termo do **devy**, adotado no motor **apenas** como par de valores de config derivados: `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. O motor não tem lógica de change além de (a) interpolar `${change.*}` e (b) escrever onde o yml mandar. Quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`. (Cf. AD-1.)
 _Avoid_: usar "change" como conceito do motor — é puramente derivado do path
+
+## Dashboard e TUI de execução (ADR-0005)
+
+O dashboard ao vivo do Run e o seam aditivo que o alimenta. A apresentação é **pura** em `view.ts` (AD-6) e o motor apenas **observa**: emitir um evento jamais altera o loop (AD-1) — `RunLoopResult` é byte-idêntico com e sem os seams. Não confundir estes termos com o cluster de verificação (Check/Verify/Tentativa/Visita) nem com Iteração.
+
+**Dashboard**:
+O layout **fixo** da TUI de execução: quatro Painéis simultâneos (Grafo, Tasks, Stream, Logs), todos vivos, sem foco nem navegação por teclado (a única entrada é o Gate de Aprovação). Distinto do **fallback de linha** (append-only, usado em no-TTY/`--no-tui`).
+_Avoid_: tela, UI (genérico); "painel" (é o conjunto, não uma região)
+
+**Painel** (_pane_):
+Uma região do Dashboard com um recorte do estado do Run. Exatamente quatro: **Painel de Grafo** (o Grafo de tasks), **Painel de Tasks** (uma linha por Task, glyph+cor por status, step/try/checks quando `running`), **Painel de Stream** (o Stream das Tasks `running`, ~3 mais recentes + contador `+K`) e **Painel de Logs** (tail do Tráfego ACP).
+_Avoid_: janela, aba; "view" (colide com `view.ts`)
+
+**Painel de Grafo**:
+A renderização do **Grafo de tasks** (ADR-0004) com layout computado por **dagre** (camadas Sugiyama, `rankdir:LR`): Tasks na mesma camada = candidatas a rodar em paralelo; arestas de dependência via os waypoints do dagre; cada nó colorido por `TaskStatus`; a Task `running` pulsa. Materialização visual do que era só dado em `StoreState.edges`.
+_Avoid_: DAG na tela, diagrama
+
+**GraphGeometry**:
+A saída **pura e renderer-agnóstica** de `layoutGraph`: posição de cada nó (em célula) + os segmentos das arestas (dos `points[]` do dagre), em coordenadas inteiras de célula. É o **artefato durável** que `view.ts` rasteriza para ASCII hoje e que a Native UI reaproveita para desenhar no framebuffer — **toda** a matemática de layout mora aqui.
+_Avoid_: layout (sozinho), coordenadas
+
+**Native UI**:
+A TUI **futura** sobre **OpenTUI** (fora do escopo desta change) que troca o renderer Ink por um framebuffer nativo, reaproveitando `view.ts` + `store` sem carregar Ink. É o motivo de a geometria e o estilo viverem puros em `view.ts` (AD-6).
+_Avoid_: GUI; "TUI nativa" solto (é especificamente OpenTUI)
+
+**Pulso** (_pulse_):
+A animação da Task `running`: alternância temporizada da ênfase do glyph no Painel de Grafo/Tasks. Pura em `view.ts` (`pulseFrame(tick)`); o relógio (`setInterval`) vive só no `.tsx`. **Só o Dashboard pulsa** (o fallback de linha, não).
+_Avoid_: piscar, spinner, animação (genérico)
+
+**Stream** (precisão):
+O texto **legível** do que executa agora: `agent_message_chunk` do Agente (via `onUpdate`) **ou** `stdout`/`stderr` do Step `shell` (via `ctx.emit`), acumulado em `TaskState.stream` (evento `stream_chunk`). É o "o quê" produzido — distinto do Tráfego ACP (o "por baixo do capô").
+_Avoid_: output, log; não confundir com Tráfego ACP
+
+**Tráfego ACP** (_ACP traffic_):
+As mensagens JSON-RPC **send/recv** entre motor e Agente (`AcpTrafficEntry { direction, method?, payload }`), exibidas no Painel de Logs. O "por baixo do capô" do protocolo. Novo evento de store **`acp_traffic`**; buffer **bounded** (~200 linhas); captura gated por `--verbose`/`capture_acp_traffic`.
+_Avoid_: mensagens, protocolo; não confundir com Stream
+
+**Emit seam** (_porta de progresso_):
+O ponto onde o motor **emite** `StoreEvent`s de progresso. Materializado em **`OrchestratorDeps.emit(event)`** (transições de que o orquestrador é dono: `edges_set`, `task_*`, `step_*`) e **`StepContext.emit?(event)`** (eventos intra-Step: `attempt_started`, `check_started`/`check_finished`, `stream_chunk` do shell). **Aditivo**, no-op por omissão, **puro efeito de observação** — não altera o loop (AD-1) e roda fora da Seção crítica do parent.
+_Avoid_: hook, dispatch (é o consumidor na store), callback (genérico)
+
+**onTraffic**:
+O callback de observação no boundary ACP (`OpenAgentOptions.onTraffic`) que capta o Tráfego send/recv e o roteia para **dois** consumidores: o arquivo (`TaskLogger.acp`) e a store (`acp_traffic`). Carimba `taskId` via o mapa `sessionId → taskId`. Observador puro — não altera o comportamento ACP.
+_Avoid_: confundir com `onUpdate` (é o seam do **texto** do Agente, que vira Stream)
