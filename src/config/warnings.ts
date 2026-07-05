@@ -122,6 +122,32 @@ function detectAlwaysGoto(steps: readonly StepConfig[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// (c) parallel_safe steps with parent-mutating argv
+// ---------------------------------------------------------------------------
+
+/** Single regex matching argv tokens that suggest parent-branch mutation. */
+const PARENT_MUTATING_RE =
+  /\b(git|merge|commit|worktree|branch|push)\b|\b-C\b|\$\{workspace\.root\}/;
+
+/** Detect `parallel_safe: true` on shell steps with argv that may mutate the parent. */
+function detectParallelSafeMutators(steps: readonly StepConfig[]): string[] {
+  const warnings: string[] = [];
+  for (const step of steps) {
+    if (!step.parallel_safe || step.type !== "shell") continue;
+    for (const cmd of step.run) {
+      if (PARENT_MUTATING_RE.test(cmd)) {
+        const snippet = cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd;
+        warnings.push(
+          `step "${step.id}": parallel_safe com comando que aparenta mutar o parent ("${snippet}") — confirme que é seguro.`,
+        );
+        break;
+      }
+    }
+  }
+  return warnings;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -132,7 +158,11 @@ function detectAlwaysGoto(steps: readonly StepConfig[]): string[] {
 export function collectPipelineWarnings(
   pipeline: readonly StepConfig[],
 ): string[] {
-  return [...detectCycles(pipeline), ...detectAlwaysGoto(pipeline)];
+  return [
+    ...detectCycles(pipeline),
+    ...detectAlwaysGoto(pipeline),
+    ...detectParallelSafeMutators(pipeline),
+  ];
 }
 
 /**

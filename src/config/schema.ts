@@ -105,6 +105,8 @@ const stepBaseShape = {
   always: z.boolean().optional(),
   /** Override sequential flow on success: jump to the target step. */
   on_success: gotoSchema.optional(),
+  /** Step can run outside the parent mutex (e.g. worktree-scoped commands). Default `false`. */
+  parallel_safe: z.boolean().default(false),
 };
 
 /** An ordered, non-empty list of shell commands (`shell`/`approval` `run`). */
@@ -267,6 +269,7 @@ const escalationSchema = z
 const gitPolicySchema = z
   .object({
     require_clean_parent: z.boolean(),
+    on_merge_conflict: z.enum(["escalate", "rebase"]).default("escalate"),
   })
   .strict();
 

@@ -95,6 +95,8 @@ function mkRunMetrics(overrides: Partial<RunMetrics> = {}): RunMetrics {
 const METRICS_RESULT: RunLoopResult = {
   completed: ["T-002"],
   escalated: [],
+  paused: [],
+  skipped: [],
   iterations: 1,
   stoppedBy: "backlog_empty",
   metrics: mkRunMetrics(),
@@ -113,6 +115,8 @@ const EMPTY_METRICS: RunMetrics = {
 const NO_METRICS_RESULT: RunLoopResult = {
   completed: [],
   escalated: [],
+  paused: [],
+  skipped: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
   metrics: EMPTY_METRICS,

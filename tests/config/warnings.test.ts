@@ -231,6 +231,133 @@ describe("collectPipelineWarnings — goto em step always", () => {
 });
 
 // ---------------------------------------------------------------------------
+// T-003 — parallel_safe com argv que aparenta mutar o parent -> warning
+// ---------------------------------------------------------------------------
+
+describe("collectPipelineWarnings — parallel_safe + parent-mutating argv", () => {
+  it("shell parallel_safe com 'git merge' -> warning", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        {
+          id: "merge-step",
+          type: "shell",
+          run: ["git merge --no-ff feature"],
+          parallel_safe: true,
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+
+    expect(warnings.some((w) => w.includes("merge-step") && w.includes("parallel_safe"))).toBe(true);
+  });
+
+  it("shell parallel_safe com 'git commit' -> warning", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        {
+          id: "commit-step",
+          type: "shell",
+          run: ["git commit -m 'test'"],
+          parallel_safe: true,
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+
+    expect(warnings.some((w) => w.includes("commit-step") && w.includes("parallel_safe"))).toBe(true);
+  });
+
+  it("shell parallel_safe com argv seguro -> zero warnings", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        {
+          id: "safe-cmd",
+          type: "shell",
+          run: ["npm ci --prefix .worktrees/T-001"],
+          parallel_safe: true,
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("shell sem parallel_safe com 'git merge' -> zero warnings (default false)", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        {
+          id: "merge-step",
+          type: "shell",
+          run: ["git merge --no-ff feature"],
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+
+    expect(warnings.some((w) => w.includes("parallel_safe"))).toBe(false);
+  });
+
+  it("agent parallel_safe -> zero warnings (agent não tem argv)", () => {
+    const yaml = configYaml((c) => {
+      (c.pipeline as Record<string, unknown>[])[0]!.parallel_safe = true;
+    });
+
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+
+    expect(warnings.some((w) => w.includes("parallel_safe"))).toBe(false);
+  });
+
+  it("shell parallel_safe com ${workspace.root} -> warning", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        {
+          id: "root-ref",
+          type: "shell",
+          run: ["ls -la ${workspace.root}"],
+          parallel_safe: true,
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+
+    expect(warnings.some((w) => w.includes("root-ref") && w.includes("parallel_safe"))).toBe(true);
+  });
+
+  it("warning é não-fatal (parseConfig não lança)", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        {
+          id: "merge-step",
+          type: "shell",
+          run: ["git merge --no-ff feature"],
+          parallel_safe: true,
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T-004 — formatWarnings
 // ---------------------------------------------------------------------------
 

@@ -39,6 +39,8 @@ const EMPTY_METRICS = {
 const OK_RESULT: RunLoopResult = {
   completed: [],
   escalated: [],
+  paused: [],
+  skipped: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
   metrics: EMPTY_METRICS,
@@ -138,6 +140,8 @@ describe("run — live loop (git repo already present)", () => {
       result: {
         completed: [],
         escalated: ["T-002"],
+        paused: [],
+        skipped: [],
         iterations: 1,
         stoppedBy: "escalation_pause",
         metrics: { ...EMPTY_METRICS, stoppedBy: "escalation_pause" },

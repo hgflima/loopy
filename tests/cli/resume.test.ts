@@ -34,6 +34,8 @@ function capture() {
 const OK_RESULT: RunLoopResult = {
   completed: [],
   escalated: [],
+  paused: [],
+  skipped: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
   metrics: {
