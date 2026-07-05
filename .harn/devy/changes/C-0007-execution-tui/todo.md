@@ -37,14 +37,14 @@
     Deps: nenhuma
     Files: src/types.ts, src/loop/orchestrator.ts, testes. Scope: L. RISCO ALTO.
 
-- [ ] T-005: Checks ao vivo — `onCheckStart/onCheckEnd` + `attempt_started`/`check_*`
+- [x] T-005: Checks ao vivo — `onCheckStart/onCheckEnd` + `attempt_started`/`check_*`
     `ChecksRunnerPort.run` (`types.ts:526-531`) e `RunChecksOptions` (`runner.ts:270-279`) ganham `onCheckStart?(name)`/`onCheckEnd?(name, ok)` (aditivos, opcionais); `runChecks` os dispara em torno de `runOne` no loop sequencial (`:297-304`). Step `agent` (`agent.ts:159-242`): emite `attempt_started` no início de cada tentativa do verify (`:183`) e encaminha `onCheckStart/End` (do `runVerifyChecks`/`ctx.checks.run` `:112`) → `ctx.emit(check_started/finished)` com `taskId`+`stepId`. Step `checks` (`checks.ts:47-80`): idem no `ctx.checks.run` (`:64`). Cada check acende `running → ✓/✗` **ao vivo**.
     Aceite: `runChecks` dispara `onCheckStart/End` por-check no loop sequencial (por-check, não só o agregado); `agent` emite `attempt_started` (com `attempt`/`maxAttempts`) e encaminha os `check_*`; `checks` idem; `ChecksReport` agregado **inalterado**; sem os callbacks o comportamento é idêntico.
     Verificação: `npm test -- checks` && `npm test -- steps` && `npm run typecheck`.
     Deps: T-004
     Files: src/types.ts, src/checks/runner.ts, src/steps/agent.ts, src/steps/checks.ts, testes. Scope: M.
 
-- [ ] T-006: Shell stream — `onChunk` aditivo → `stream_chunk` ao vivo
+- [x] T-006: Shell stream — `onChunk` aditivo → `stream_chunk` ao vivo
     `RunShellCommand` (`shell.ts:64-72`) ganha `onChunk?(text)` (aditivo); `runShellCommandWithExeca` (`:86-126`) passa a **streamar** `stdout`/`stderr` conforme o `execa` produz (streaming aditivo), invocando `onChunk`; `createShellStep` (`:179-242`) encaminha `onChunk` → `ctx.emit(stream_chunk)` com `taskId`. O `StepResult` **agregado permanece igual** (a captura no fim continua alimentando `output`); só espelha a saída para a store enquanto chega.
     Aceite: o Step `shell` emite `stream_chunk` conforme o `execa` produz (via `onChunk`); o `ShellCommandResult`/`StepResult` agregado **byte-idêntico** ao de hoje; sem `onChunk`/`emit` o comportamento é idêntico; roda respeitando a seção crítica (mutex só se não `parallel_safe`).
     Verificação: `npm test -- steps` && `npm run typecheck`.
@@ -85,7 +85,7 @@
 
 ## Fase 5 — Docs + close-out
 
-- [ ] T-011: ADR-0005 + CONTEXT.md (glossário) + `src/tui/CLAUDE.md` + full green
+- [x] T-011: ADR-0005 + CONTEXT.md (glossário) + `src/tui/CLAUDE.md` + full green
     Criar `docs/adrs/0005-*.md` (emit seam aditivo + Dashboard Ink + layout dagre + view pura renderer-agnostic + OpenTUI como Native UI futura + AD-1/AD-6) e indexá-lo (`docs/adrs/README.md`). Promover ao `CONTEXT.md` os termos novos da spec §"Linguagem ubíqua": **Dashboard**, **Painel** (Grafo/Tasks/Stream/Logs), **GraphGeometry**, **Native UI**, **Pulso**, precisão de **Stream**, **Tráfego ACP**, **Emit seam**, **onTraffic** — sem colidir com o cluster de verificação nem com Iteração/Tentativa/Visita. Atualizar `src/tui/CLAUDE.md` (Dashboard montado; emit seam vivo; fio `mount → index` ligado) e, se necessário, mencionar o emit seam em `src/loop/CLAUDE.md`/`src/steps/CLAUDE.md`/`src/acp/CLAUDE.md`.
     Aceite: ADR-0005 criado e indexado; glossário do `CONTEXT.md` promovido (termos novos, sem colisão); `src/tui/CLAUDE.md` reflete o dashboard vivo; `npm run typecheck && npm run lint && npm test` verdes (todos os Success Criteria 1-11 da spec).
     Verificação: `npm run typecheck && npm run lint && npm test`.
