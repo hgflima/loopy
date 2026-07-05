@@ -59,6 +59,7 @@ import {
   runLoop,
   worktreePathFor,
   type OrchestratorDeps,
+  type PlanDryRunOptions,
   type RunLoopResult,
 } from "./loop/orchestrator";
 import {
@@ -224,10 +225,11 @@ function printDryRun(
   pending: readonly Task[],
   paths: { readonly configPath: string; readonly todoPath: string },
   io: RunIO,
+  options?: PlanDryRunOptions,
 ): number {
   // Build the plan first: an unknown-variable error (OQ1) surfaces before any
   // output is emitted, keeping the failure clean.
-  const plan = planDryRun(config, pending);
+  const plan = planDryRun(config, pending, options);
 
   const cwd = process.cwd();
   // Show each path relative to cwd, falling back to the path when it *is* cwd.
@@ -415,7 +417,9 @@ async function runLiveFlow(
   }
 
   // 2) Task selection — `--task` runs one task (OQ6: warn, don't block).
+  //    T-011: forces concurrency=1 and warns about non-done deps.
   let tasks: readonly Task[] = pending;
+  let effectiveFlags = flags;
   if (flags.task !== undefined) {
     const selection = selectTask(pending, flags.task);
     if (selection.task === undefined) {
@@ -431,6 +435,17 @@ async function runLiveFlow(
           `(rodando ${flags.task} isolada mesmo assim).\n`,
       );
     }
+    // T-011: warn if the task has non-done deps.
+    const pendingIds = new Set(pending.map((t) => t.id));
+    const nonDoneDeps = selection.task.deps.filter((d) => pendingIds.has(d));
+    if (nonDoneDeps.length > 0) {
+      io.err(
+        `loopy: aviso — task ${flags.task} depende de ${nonDoneDeps.join(", ")} ` +
+          `(não concluídas); rodando isolada com concurrency=1 mesmo assim.\n`,
+      );
+    }
+    // T-011: --task forces concurrency = 1.
+    effectiveFlags = { ...flags, concurrency: 1 };
     tasks = [selection.task];
   }
 
@@ -446,7 +461,7 @@ async function runLiveFlow(
     result = await live({
       config,
       tasks,
-      flags,
+      flags: effectiveFlags,
       root,
       configPath: paths.configPath,
       todoPath: paths.todoPath,
@@ -627,7 +642,11 @@ async function execute(
   }
 
   if (flags.dryRun) {
-    return printDryRun(config, pending, { configPath, todoPath }, io);
+    const effectiveConcurrency = flags.concurrency ?? config.concurrency;
+    return printDryRun(config, pending, { configPath, todoPath }, io, {
+      knownTaskIds,
+      concurrency: effectiveConcurrency,
+    });
   }
 
   return runLiveFlow(

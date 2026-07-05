@@ -234,7 +234,13 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
       ),
     );
     expect(formatDryRunPlan(planDryRun(config, tasks))).toMatchInlineSnapshot(`
-      "=== T-002 — Primeira task pendente ===
+      "--- DAG ---
+        concorrência efetiva: 1
+        camadas topológicas:
+          camada 1: T-002, T-003
+        ordem de merge prevista: T-002 → T-003
+
+      === T-002 — Primeira task pendente ===
         iteration: 1
         branch:    T-002-primeira-task-pendente
         worktree:  .worktrees/T-002
@@ -293,5 +299,152 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
         [5] cleanup (shell) [always]
             $ git -C "." worktree remove --force ".worktrees/T-003""
     `);
+  });
+});
+
+/** Create a temp project with a todo.md containing Deps: lines (shared DAG fixture). */
+function dagFixture(todoLines: string[]) {
+  const dir = mkdtempSync(join(tmpdir(), "loopy-dag-"));
+  mkdirSync(join(dir, "tasks"), { recursive: true });
+  writeFileSync(
+    join(dir, "loopy.yml"),
+    readFileSync(join(PROJECT, "loopy.yml"), "utf8"),
+    "utf8",
+  );
+  writeFileSync(join(dir, "tasks/todo.md"), todoLines.join("\n"), "utf8");
+  return dir;
+}
+
+/** The canonical DAG: T-001 (done), T-002 (no deps), T-003 (deps: T-002). */
+const DAG_TODO = [
+  "# DAG fixture",
+  "",
+  "- [x] T-001: Concluida",
+  "",
+  "- [ ] T-002: Raiz independente",
+  "      Corpo da T-002.",
+  "",
+  "- [ ] T-003: Depende de T-002",
+  "      Deps: T-002",
+  "      Corpo da T-003.",
+  "",
+];
+
+/** A no-op RunLoopResult stub for hooks that short-circuit the live flow. */
+const EMPTY_RESULT = {
+  completed: [],
+  escalated: [],
+  paused: [],
+  skipped: [],
+  iterations: 0,
+  stoppedBy: "backlog_empty" as const,
+  metrics: { index: 0, startedAt: "", finishedAt: "", stoppedBy: "backlog_empty" as const, tasks: {} },
+  startedAt: "",
+  finishedAt: "",
+};
+
+describe("dry-run DAG output (T-011)", () => {
+  it("shows topological layers with deps in dry-run", async () => {
+    const cap = capture();
+    const code = await run([dagFixture(DAG_TODO), "--dry-run"], cap.io);
+
+    expect(code).toBe(0);
+    const out = cap.stdout();
+    expect(out).toContain("--- DAG ---");
+    expect(out).toContain("camadas topológicas:");
+    expect(out).toContain("camada 1: T-002");
+    expect(out).toContain("camada 2: T-003");
+    expect(out).toContain("ordem de merge prevista: T-002 → T-003");
+  });
+
+  it("shows effective concurrency from config", async () => {
+    const cap = capture();
+    await run([dagFixture(DAG_TODO), "--dry-run"], cap.io);
+    expect(cap.stdout()).toContain("concorrência efetiva: 1");
+  });
+
+  it("--concurrency overrides effective concurrency in dry-run", async () => {
+    const cap = capture();
+    await run([dagFixture(DAG_TODO), "--dry-run", "--concurrency", "4"], cap.io);
+    expect(cap.stdout()).toContain("concorrência efetiva: 4");
+  });
+
+  it("${iteration} is stable backlog index (identical dry-run × run, AD-4)", () => {
+    const config = loadConfig(join(PROJECT, "loopy.yml"));
+    const backlog = loadBacklog(
+      join(PROJECT, "tasks/todo.md"),
+      backlogOptionsFrom(config.inputs.backlog),
+    );
+    const pending = pendingTasks(backlog);
+    const knownTaskIds = backlog.map((t) => t.id);
+
+    const plan = planDryRun(config, pending, { knownTaskIds });
+    expect(plan.tasks[0]!.iteration).toBe(1);
+    expect(plan.tasks[0]!.task.id).toBe("T-002");
+    expect(plan.tasks[1]!.iteration).toBe(2);
+    expect(plan.tasks[1]!.task.id).toBe("T-003");
+  });
+
+  it("strips already-done deps from the graph (T-001 done → not an edge)", async () => {
+    const dir = dagFixture([
+      "# DAG fixture",
+      "",
+      "- [x] T-001: Concluida",
+      "",
+      "- [ ] T-002: Raiz com dep done",
+      "      Deps: T-001",
+      "      Corpo da T-002.",
+      "",
+      "- [ ] T-003: Depende de T-002",
+      "      Deps: T-002",
+      "",
+    ]);
+    const cap = capture();
+    const code = await run([dir, "--dry-run"], cap.io);
+
+    expect(code).toBe(0);
+    const out = cap.stdout();
+    expect(out).toContain("camada 1: T-002");
+    expect(out).toContain("camada 2: T-003");
+  });
+});
+
+describe("--task warns non-done deps (T-011)", () => {
+  it("warns about non-done deps when --task selects a dependent task", async () => {
+    const cap = capture();
+    const code = await run([dagFixture(DAG_TODO), "--task", "T-003"], cap.io, {
+      isGitRepo: () => true,
+      runLive: async () => EMPTY_RESULT,
+    });
+
+    expect(code).toBe(0);
+    expect(cap.stderr()).toContain("depende de T-002");
+    expect(cap.stderr()).toContain("não concluídas");
+    expect(cap.stderr()).toContain("concurrency=1");
+  });
+
+  it("does not warn when --task selects a task with no deps", async () => {
+    const cap = capture();
+    const code = await run([dagFixture(DAG_TODO), "--task", "T-002"], cap.io, {
+      isGitRepo: () => true,
+      runLive: async () => EMPTY_RESULT,
+    });
+
+    expect(code).toBe(0);
+    expect(cap.stderr()).not.toContain("depende de");
+  });
+
+  it("--task forces concurrency=1 in the flags passed to runLive", async () => {
+    let capturedConcurrency: number | undefined;
+    const cap = capture();
+    await run([dagFixture(DAG_TODO), "--task", "T-003", "--concurrency", "4"], cap.io, {
+      isGitRepo: () => true,
+      runLive: async (args) => {
+        capturedConcurrency = args.flags.concurrency;
+        return EMPTY_RESULT;
+      },
+    });
+
+    expect(capturedConcurrency).toBe(1);
   });
 });
