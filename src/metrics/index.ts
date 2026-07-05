@@ -22,3 +22,9 @@ export {
 } from "./format.js";
 
 export { renderRunReport } from "./report.js";
+
+export {
+  renderChangeSection,
+  upsertChangeSection,
+  persistChangeReport,
+} from "./change-report.js";

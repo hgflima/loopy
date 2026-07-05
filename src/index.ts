@@ -22,7 +22,7 @@
  */
 import { realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { relative, resolve as resolvePath } from "node:path";
+import { normalize, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
@@ -44,7 +44,11 @@ import {
   isGitRepo,
   type InitGitRepoOptions,
 } from "./git/worktree";
-import { InterpolationError } from "./interp/resolver";
+import {
+  InterpolationError,
+  resolve as resolveInterp,
+  type Scope,
+} from "./interp/resolver";
 import { createLogFactory } from "./logging/logger";
 import {
   createCheckpointPort,
@@ -60,6 +64,7 @@ import {
 import {
   loadMetrics,
   mergeRun,
+  persistChangeReport,
   renderRunReport,
   saveMetrics,
 } from "./metrics/index";
@@ -242,6 +247,30 @@ function gitignoreLinesFor(config: LoopyConfig): string[] {
   const stop = config.stop_conditions.stop_signal_file;
   // De-duplicate while preserving order.
   return [...new Set([worktrees, loopyDir, stop])];
+}
+
+/** Resolve `metrics.report.index` template against run-level scope vars. */
+function resolveReportIndex(
+  template: string,
+  change: { readonly id: string; readonly dir: string },
+  config: LoopyConfig,
+  root: string,
+): string {
+  const map = new Map<string, string>([
+    ["change.id", change.id],
+    ["change.dir", change.dir],
+    ["inputs.spec", config.inputs.spec],
+    ["inputs.plan", config.inputs.plan],
+    ["inputs.todo", config.inputs.todo],
+    ["workspace.root", config.workspace.root],
+    ["workspace.parent_branch", config.workspace.parent_branch],
+    ["workspace.worktrees_dir", config.workspace.worktrees_dir],
+  ]);
+  const scope: Scope = {
+    lookup: (k) => map.get(k),
+    keys: () => [...map.keys()].sort(),
+  };
+  return resolvePath(root, normalize(resolveInterp(template, scope)));
 }
 
 /** A readline y/N approval prompt on stderr — the default git-init gate. */
@@ -428,6 +457,22 @@ async function runLiveFlow(
 
     // Run report → stderr (after the TUI stopped in defaultRunLive's finally).
     io.err(renderRunReport(result.metrics, merged).join("\n") + "\n");
+
+    // Change report — persist index.md when backlog is 100% [x] (T-006).
+    // Trigger: re-parse todo.md (never stoppedBy) + report.index configured.
+    if (config.metrics.report?.index) {
+      const bo = backlogOptionsFrom(config.inputs.backlog);
+      const current = loadBacklog(paths.todoPath, bo);
+      if (pendingTasks(current).length === 0) {
+        const indexPath = resolveReportIndex(
+          config.metrics.report.index,
+          change,
+          config,
+          root,
+        );
+        persistChangeReport(indexPath, change.id, merged);
+      }
+    }
   }
 
   // 5) Summary + exit code.
