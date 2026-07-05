@@ -21,7 +21,7 @@
     Deps: nenhuma
     Files: src/tui/view.ts, src/tui/view.test.ts. Scope: S.
 
-- [ ] T-003: View — `layoutGraph` (`@dagrejs/dagre`) + `renderGraph` → `GraphGeometry` PURA
+- [x] T-003: View — `layoutGraph` (`@dagrejs/dagre`) + `renderGraph` → `GraphGeometry` PURA
     Adicionar dep `@dagrejs/dagre`. Em `view.ts` (puro, **sem** React/Ink — AD-6): tipo `GraphGeometry` (posição de cada nó em célula + segmentos H/V das arestas, coords inteiras); `layoutGraph(edges, statusById, order): GraphGeometry` — monta grafo dagre (`rankdir:"LR"`, `nodesep`/`ranksep` pequenos; `width=len("<glyph> <id>")`, `height=1`; 1 aresta por par `[dep,dependente]`), roda `layout(g)` síncrono, converte `node.x/.y`+`edge.points` em células snapadas; `renderGraph(geometry, statusById, tick): StyledRow[]` — rasteriza (glyph+id colorido por `COLORS.task[status]`; arestas box-drawing `─│┌┐└┘├┤┬┴` + `▶` na ponta, dim; `pulseFrame(tick)` nas `running`), **clipa** ao tamanho do painel (passivo, sem scroll). **Toda** a matemática fica aqui (a Native UI reaproveita a geometria).
     Aceite: dagre coloca cada nó na camada correta (coluna por camada topológica); arestas ligam camadas via waypoints; desempate por ordem de backlog; diamante A→{B,C}→D fecha; `renderGraph` colore por status, alterna o pulso por tick e clipa ao painel; puro (zero I/O/React).
     Verificação: `npm test -- tui` && `npm run typecheck`.
