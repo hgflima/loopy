@@ -3,6 +3,7 @@ import {
   attemptLabel,
   checkText,
   COLORS,
+  pulseFrame,
   streamTail,
   SYMBOLS,
 } from "../../src/tui/view";
@@ -89,10 +90,39 @@ describe("streamTail", () => {
 
 describe("SYMBOLS / COLORS", () => {
   it("covers every task status with a symbol and a color", () => {
-    for (const status of ["pending", "running", "done", "escalated"] as const) {
+    for (const status of [
+      "pending", "blocked", "running", "done",
+      "escalated", "skipped", "paused",
+    ] as const) {
       expect(SYMBOLS.task[status]).toBeTruthy();
       expect(COLORS.task[status]).toBeTruthy();
     }
+  });
+
+  it("maps amarelo=aguardando (pending/blocked yellow)", () => {
+    expect(COLORS.task.pending).toBe("yellow");
+    expect(COLORS.task.blocked).toBe("yellow");
+  });
+
+  it("maps vermelho=falhou (escalated red)", () => {
+    expect(COLORS.task.escalated).toBe("red");
+  });
+
+  it("keeps running=cyan and done=green", () => {
+    expect(COLORS.task.running).toBe("cyan");
+    expect(COLORS.task.done).toBe("green");
+  });
+
+  it("maps skipped→gray and paused→magenta", () => {
+    expect(COLORS.task.skipped).toBe("gray");
+    expect(COLORS.task.paused).toBe("magenta");
+  });
+
+  it("keeps SYMBOLS.task unchanged", () => {
+    expect(SYMBOLS.task).toEqual({
+      pending: "•", blocked: "◦", running: "▶", done: "✔",
+      escalated: "✖", skipped: "⊘", paused: "⏸",
+    });
   });
 
   it("covers every check status with a symbol and a color", () => {
@@ -100,5 +130,23 @@ describe("SYMBOLS / COLORS", () => {
       expect(SYMBOLS.check[status]).toBeTruthy();
       expect(COLORS.check[status]).toBeTruthy();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pulseFrame — deterministic on/off alternation per tick
+// ---------------------------------------------------------------------------
+
+describe("pulseFrame", () => {
+  it("returns 'on' for even ticks", () => {
+    expect(pulseFrame(0)).toBe("on");
+    expect(pulseFrame(2)).toBe("on");
+    expect(pulseFrame(100)).toBe("on");
+  });
+
+  it("returns 'off' for odd ticks", () => {
+    expect(pulseFrame(1)).toBe("off");
+    expect(pulseFrame(3)).toBe("off");
+    expect(pulseFrame(99)).toBe("off");
   });
 });

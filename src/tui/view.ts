@@ -37,8 +37,8 @@ export const COLORS: {
   readonly check: Readonly<Record<CheckStatus, string>>;
 } = {
   task: {
-    pending: "gray", blocked: "gray", running: "cyan", done: "green",
-    escalated: "red", skipped: "yellow", paused: "yellow",
+    pending: "yellow", blocked: "yellow", running: "cyan", done: "green",
+    escalated: "red", skipped: "gray", paused: "magenta",
   },
   step: { pending: "gray", running: "cyan", ok: "green", failed: "red" },
   check: { running: "yellow", passed: "green", failed: "red" },
@@ -79,4 +79,13 @@ export function streamTail(text: string, maxLines = 8): string[] {
   if (text === "") return [];
   const lines = text.replace(/\n+$/, "").split("\n");
   return lines.slice(Math.max(0, lines.length - maxLines));
+}
+
+/**
+ * Deterministic pulse phase for running-task animation. The `.tsx` component
+ * maps `"on"` → `bold` and `"off"` → `dimColor` (or similar emphasis toggle).
+ * Pure — no timer, no state; the caller drives the tick counter.
+ */
+export function pulseFrame(tick: number): "on" | "off" {
+  return tick % 2 === 0 ? "on" : "off";
 }
