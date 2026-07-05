@@ -62,6 +62,7 @@ function makeConfig(
     policies: {
       ...base.policies,
       git: {
+        ...base.policies.git,
         require_clean_parent:
           over.requireCleanParent ?? base.policies.git.require_clean_parent,
       },

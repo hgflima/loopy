@@ -312,6 +312,105 @@ describe("configs válidas com e sem goto", () => {
 });
 
 // ---------------------------------------------------------------------------
+// T-003 — parallel_safe (stepBaseShape, default false)
+// ---------------------------------------------------------------------------
+
+describe("stepBaseShape — parallel_safe", () => {
+  it("aplica default parallel_safe=false", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    expect(config.pipeline[0]!.parallel_safe).toBe(false);
+  });
+
+  it("aceita parallel_safe: true em shell step", () => {
+    const yaml = configYaml((c) => {
+      c.pipeline = [
+        { id: "safe-cmd", type: "shell", run: ["npm ci --prefix .worktrees/T-001"], parallel_safe: true },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    const config = parseConfig(yaml);
+    expect(config.pipeline[0]!.parallel_safe).toBe(true);
+  });
+
+  it("aceita parallel_safe: true em agent step", () => {
+    const yaml = configYaml((c) => {
+      (c.pipeline as Record<string, unknown>[])[0]!.parallel_safe = true;
+    });
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+
+  it("rejeita parallel_safe com valor não-booleano (strict)", () => {
+    const yaml = configYaml((c) => {
+      (c.pipeline as Record<string, unknown>[])[0]!.parallel_safe = "yes";
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-003 — on_merge_conflict (gitPolicySchema, default 'escalate')
+// ---------------------------------------------------------------------------
+
+describe("gitPolicySchema — on_merge_conflict", () => {
+  it("aplica default on_merge_conflict='escalate'", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    expect(config.policies.git.on_merge_conflict).toBe("escalate");
+  });
+
+  it("aceita on_merge_conflict: 'rebase'", () => {
+    const yaml = configYaml((c) => {
+      (c.policies as Record<string, unknown>).git = {
+        require_clean_parent: true,
+        on_merge_conflict: "rebase",
+      };
+    });
+    const config = parseConfig(yaml);
+    expect(config.policies.git.on_merge_conflict).toBe("rebase");
+  });
+
+  it("rejeita on_merge_conflict com valor inválido", () => {
+    const yaml = configYaml((c) => {
+      (c.policies as Record<string, unknown>).git = {
+        require_clean_parent: true,
+        on_merge_conflict: "abort",
+      };
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-003 — concurrency legível (já existente, confirmar default)
+// ---------------------------------------------------------------------------
+
+describe("concurrency", () => {
+  it("aplica default concurrency=1", () => {
+    const yaml = configYaml((c) => {
+      delete c.concurrency;
+    });
+    const config = parseConfig(yaml);
+    expect(config.concurrency).toBe(1);
+  });
+
+  it("aceita concurrency explícito", () => {
+    const yaml = configYaml((c) => {
+      c.concurrency = 4;
+    });
+    const config = parseConfig(yaml);
+    expect(config.concurrency).toBe(4);
+  });
+
+  it("rejeita concurrency=0", () => {
+    const yaml = configYaml((c) => {
+      c.concurrency = 0;
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T-001 — bloco `metrics` opt-in (C-0005)
 // ---------------------------------------------------------------------------
 

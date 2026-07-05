@@ -119,6 +119,8 @@ export interface StepBase {
   readonly always?: boolean;
   /** Override sequential flow on success: jump to the target step. */
   readonly on_success?: OnSuccessAction;
+  /** Step can run outside the parent mutex (e.g. worktree-scoped commands). Default `false`. */
+  readonly parallel_safe?: boolean;
 }
 
 /** `agent` — one ACP agent turn (with optional inner verify loop + verdict). */
@@ -238,9 +240,14 @@ export interface EscalationPolicy {
   readonly notify: string;
 }
 
+/** Strategy when a merge hits a conflict. */
+export type MergeConflictStrategy = "escalate" | "rebase";
+
 export interface GitPolicy {
   /** Abort the next task if the parent branch is dirty at its start. */
   readonly require_clean_parent: boolean;
+  /** What to do when a merge hits a conflict. Default `"escalate"`. */
+  readonly on_merge_conflict: MergeConflictStrategy;
 }
 
 export interface Policies {

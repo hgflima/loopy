@@ -920,6 +920,10 @@ export interface RunLoopResult {
   readonly completed: readonly string[];
   /** Ids of tasks that failed and escalated (never marked done), in order. */
   readonly escalated: readonly string[];
+  /** Ids of tasks paused (resumable) by escalation, in order. Populated by T-006. */
+  readonly paused: readonly string[];
+  /** Ids of tasks skipped (transitively or by policy), in order. Populated by T-006. */
+  readonly skipped: readonly string[];
   /** How many tasks the outer loop actually started. */
   readonly iterations: number;
   /** Which stop condition ended the loop. */
@@ -963,11 +967,14 @@ export async function runLoop(
   const requireCleanParent = config.policies.git.require_clean_parent;
   let iterations = 0;
   // Every exit returns the same accumulators; only the stop reason differs.
+  // `paused` / `skipped` are populated by T-006 (parallel pool); empty here.
   const finish = (stoppedBy: LoopStopReason): RunLoopResult => {
     const finishedAt = new Date(clock()).toISOString();
     return {
       completed,
       escalated,
+      paused: [],
+      skipped: [],
       iterations,
       stoppedBy,
       metrics: {
