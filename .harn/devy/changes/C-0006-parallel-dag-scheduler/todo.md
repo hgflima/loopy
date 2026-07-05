@@ -52,7 +52,7 @@
     Verificação: `npm test -- policies` && `npm test -- acp` && `npm run typecheck`.
     Deps: T-006. Files: src/loop/orchestrator.ts, src/acp/session.ts, src/steps/shell.ts, testes. Scope: M.
 
-- [ ] T-008: Conflito de merge — `on_merge_conflict: rebase`
+- [x] T-008: Conflito de merge — `on_merge_conflict: rebase`
     Com `on_merge_conflict: rebase`, no conflito o motor roda `git rebase <parent>` na branch da Task (novo helper em `worktree.ts`) + re-tenta o Merge uma vez, DENTRO do mutex; persistindo, cai no `on_fail`/Escalonamento. Default `escalate` = comportamento atual (regressão-zero).
     Aceite: `escalate` (default) → conflito escala (=hoje); `rebase` → rebase + re-merge uma vez dentro do mutex; conflito persistente → `on_fail`; byte-idêntico em `concurrency: 1`.
     Verificação: `npm test -- orchestrator` && `npm test -- git` && `npm run typecheck`.
