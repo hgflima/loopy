@@ -373,10 +373,10 @@ describe("e2e-agent — full pipeline against the fake agent + real repo", () =>
       scenario,
     );
 
-    // Not completed — escalated (default action `pause` halts the loop).
+    // Not completed — paused (default action `pause` continues draining, T-006).
     expect(result.completed).toEqual([]);
-    expect(result.escalated).toEqual([TASK_ID]);
-    expect(result.stoppedBy).toBe("escalation_pause");
+    expect(result.paused).toEqual([TASK_ID]);
+    expect(result.stoppedBy).toBe("backlog_empty");
 
     // The backlog was NOT marked done.
     const todo = readFileSync(todoPath, "utf8");

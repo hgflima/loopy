@@ -68,9 +68,9 @@ import {
 // ---------------------------------------------------------------------------
 
 describe("decideEscalation", () => {
-  it("continues on skip_task and stops on pause/abort_loop", () => {
+  it("continues on skip_task/pause and stops only on abort_loop (T-006)", () => {
     expect(decideEscalation("skip_task")).toBe("continue");
-    expect(decideEscalation("pause")).toBe("stop");
+    expect(decideEscalation("pause")).toBe("continue");
     expect(decideEscalation("abort_loop")).toBe("stop");
   });
 });
@@ -124,7 +124,8 @@ describe("runLoop — order + mark-done", () => {
     // A failure part-way through means the task is never marked.
     expect(marked).toEqual([]);
     expect(result.completed).toEqual([]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // Default escalation is `pause` → task goes to `paused` (T-006).
+    expect(result.paused).toEqual(["T-1"]);
   });
 });
 
@@ -160,9 +161,10 @@ describe("runLoop — always + failure", () => {
     expect(rec.order).toEqual(["T-1:s1", "T-1:s2", "T-1:cleanup"]);
     // A failed pipeline is never marked done.
     expect(marked).toEqual([]);
-    expect(result.escalated).toEqual(["T-1"]);
-    // Default escalation action is `pause` → the outer loop halts.
-    expect(result.stoppedBy).toBe("escalation_pause");
+    // `pause` preserves checkpoint and continues draining (T-006).
+    expect(result.paused).toEqual(["T-1"]);
+    expect(result.escalated).toEqual([]);
+    expect(result.stoppedBy).toBe("backlog_empty");
   });
 
   it("runs an always step even when EVERY prior step succeeded (happy path)", async () => {
@@ -531,7 +533,9 @@ describe("runLoop — checkpoint: skip + record + status", () => {
       checkpoint: cp.port,
     });
 
-    expect(result.stoppedBy).toBe("escalation_pause");
+    // pause continues draining (T-006); checkpoint preserved (resumable).
+    expect(result.stoppedBy).toBe("backlog_empty");
+    expect(result.paused).toEqual(["T-1"]);
     expect(cp.calls).toContain("setStatus:T-1:paused");
     expect(cp.state().tasks["T-1"]?.status).toBe("paused");
   });
@@ -621,7 +625,8 @@ describe("runLoop — program counter (goto flow)", () => {
     // a runs, b fails → escalate. c is never reached by PC.
     expect(rec.order).toEqual(["T-1:a", "T-1:b"]);
     expect(marked).toEqual([]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // Default escalation is `pause` → paused (T-006).
+    expect(result.paused).toEqual(["T-1"]);
   });
 
   it("on_success: { goto } jumps to target, skipping intermediate steps", async () => {
@@ -706,7 +711,8 @@ describe("runLoop — program counter (goto flow)", () => {
       "T-1:review",
     ]);
     expect(marked).toEqual([]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // Default escalation is `pause` → paused (T-006).
+    expect(result.paused).toEqual(["T-1"]);
     // The escalation message carries the reason for the visit exceeded.
     expect(
       logger.errors.some((m) => m.includes("max_step_visits")),
@@ -770,7 +776,8 @@ describe("runLoop — program counter (goto flow)", () => {
 
     // a → b(fail) → terminal escalate → cleanup in teardown (keep_worktree off).
     expect(rec.order).toEqual(["T-1:a", "T-1:b", "T-1:cleanup"]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // `pause` → paused (T-006).
+    expect(result.paused).toEqual(["T-1"]);
   });
 
   it("terminal (escalate) suppresses always steps when keep_worktree on", async () => {
@@ -798,7 +805,8 @@ describe("runLoop — program counter (goto flow)", () => {
 
     // a(fail) → terminal escalate + keep_worktree → cleanup suppressed.
     expect(rec.order).toEqual(["T-1:a"]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // `pause` → paused (T-006).
+    expect(result.paused).toEqual(["T-1"]);
   });
 
   it("on_fail: { goto } seeds checksReport from result.output (feedback carry, OQ-8)", async () => {
