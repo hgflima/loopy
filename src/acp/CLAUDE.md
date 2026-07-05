@@ -5,8 +5,8 @@ Toda a plumbing do Agent Client Protocol: subprocesso do agente, conexão JSON-R
 
 ## Entry Points & Contracts
 - `openAgent(opts)` → `AgentHandle` (`agent.ts`). **Um** processo ACP por run (AD-3; `npx` cold-start pago uma vez), hospedando N sessões. `ctx` (long-lived `ClientContext`) é o que a camada de sessão usa para `buildSession(cwd)`. `shutdown()` idempotente.
-- `createSessionPool({ ctx, text, logger })` → `AgentSessionPool` (`session.ts`). Sessões **keyed por caminho de worktree** — cwd é imutável por sessão (AD-3), então 1 worktree = 1 sessão. `concurrency:1` hoje, mas o keying é parallel-ready.
-- `LoopySession` implementa `AgentSession` de `../types.ts`: `setMode`/`clear` (`/clear` raw, mantém `sessionId`)/`prompt` (resolve só com `stopReason`)/`readText`/`cancel`.
+- `createSessionPool({ ctx, text, cost?, logger })` → `AgentSessionPool` (`session.ts`). Sessões **keyed por caminho de worktree** — cwd é imutável por sessão (AD-3), então 1 worktree = 1 sessão. `concurrency:1` hoje, mas o keying é parallel-ready. `cost` (o `CostBuffer` de `agent.ts`) é opcional — spine/testes omitem.
+- `LoopySession` implementa `AgentSession` de `../types.ts`: `setMode`/`clear` (`/clear` raw, mantém `sessionId`)/`prompt` (resolve só com `stopReason`)/`readText`/`cancel` + captura de métricas `drainUsage`/`readCost` (aditivo, C-0005 — ver Pitfalls).
 - `createClientApp(opts)` → registra TODOS os handlers **antes** de conectar (`client.ts`).
 
 ## Usage Patterns
@@ -28,3 +28,4 @@ Toda a plumbing do Agent Client Protocol: subprocesso do agente, conexão JSON-R
 - **Timing OQ3**: o buffer é alimentado por handler de notificação *posterior* ao `prompt()` resolver. `runTurn` cruza uma macrotask (`flushSessionUpdates`/`setImmediate`) após drenar `readText()` da SDK para garantir buffer completo e não vazar chunk tardio para o próximo turno.
 - **Conexão viva**: a SDK fecha uma conexão `connectWith` quando o callback resolve; por isso o callback resolve o handshake e depois `await gate.promise` — só aberto por `shutdown()`.
 - `on_request: "policy"` (deny-patterns) ainda não implementado → resolve como `allow` (placeholder, config-change para ativar, fiel ao AD-1).
+- **Captura de métricas (C-0005, best-effort)**: `drainUsage()` é acumulador **por-turno** drain-and-reset — soma `PromptResponse.usage` de todo `runTurn` (inclui verify e `/clear`, que dá zeros) e zera; `null` quando nenhum turno reportou. `readCost()` é snapshot **cumulativo da Sessão** (não zera), lido do `CostBuffer` (`client.ts`) alimentado pelo stream `usage_update`. Ambos best-effort: `null` nunca falha turno/step (⇒ `n/d` a jusante). `usage_update.cost` é `@experimental`/UNSTABLE no SDK (cast frouxo). O cost assenta só **após** a barreira `flushSessionUpdates` do `runTurn`, por isso `readCost()` (chamado pelo orquestrador após `execute()`) lê valor estável.

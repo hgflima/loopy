@@ -28,6 +28,7 @@ Intent nodes filhos (siga para o detalhe):
 - `src/steps/CLAUDE.md` — os 4 primitivos e o registry (AD-2).
 - `src/acp/CLAUDE.md` — ponte ACP: processo, sessões, permission/fs/terminal (AD-3).
 - `src/tui/CLAUDE.md` — renderer Ink + fallback de linha.
+- `src/metrics/CLAUDE.md` — instrumentação opt-in (tempo/tokens/custo), rollup e relatórios (ADR-0003).
 - Módulos de apoio (sem node próprio): `src/interp/` (interpolação `${...}`), `src/checks/` (runner de checks), `src/git/` (worktree/merge), `src/backlog/` (parse do todo.md), `src/resume/` (checkpoint `.loopy/state.json`), `src/logging/`.
 
 Docs: `SPEC.md` (spec completa), `README.md`, ADRs em `docs/adrs/`. **`CONTEXT.md` é o glossário da linguagem ubíqua** — a fonte canônica dos termos do domínio (resumidos abaixo); consulte-o antes de nomear conceitos.
@@ -45,7 +46,8 @@ O motor **interpreta** estas palavras, então cada uma tem um único significado
 - **on_fail** = a Ação em falha unificada de um Step (uma chave só): `escalate` (default — dispara **Escalonamento**: `pause`/`skip_task`/`abort_loop`) **ou** `{ goto: <step-id> }` (**Desvio** — salta para o alvo em vez de escalar). Em Step `agent`, `on_fail` exige `verify` ou `expect`. **on_success** = `{ goto: <step-id> }` opcional em qualquer Step; omitir = sequencial.
 - **Desvio** (_goto_) = salto do fluxo para outro Step por `id`. Ciclos permitidos (fix-loop); limitados por **`max_step_visits`** (default 10, fail-closed → escalate). Cada entrada num Step conta uma **Visita**; exceder o teto escala sem executar.
 - **Gate** sempre qualificado: Gate de Aprovação (humano, no Merge) × Gate de veredito (Expect). **Stop signal** (`.loopy.stop`) encerra a Run após a Task corrente.
-- **Artefato** = saída de runtime no projeto-alvo (Worktrees, logs, Stop signal), sempre gitignored. **Interpolação** (`${…}`) resolve vars conhecidas por Task/Tentativa; var desconhecida aborta fail-fast.
+- **Artefato** = saída de runtime no projeto-alvo (Worktrees, logs, Stop signal), sempre gitignored. **Interpolação** (`${…}`) resolve vars conhecidas por Task/Tentativa (`task.*`, `worktree.*`, `iteration`, `attempt`, `checks.report`, `inputs.*`, `workspace.*`, `change.*`); var desconhecida aborta fail-fast.
+- **Métricas** (opt-in, ADR-0003 — cluster distinto do de verificação): **Amostra** (medição de uma Visita) → **Agregado** por Step/Task/Run/Change. **Uso** = tokens por-turno (só Agente; somados) × **Custo** = valor cumulativo da Sessão (nível Task/Run/Change, nunca por-Step); ambos best-effort (`n/d`). **Relatório de execução** (stderr por Run) × **Relatório de change** (`index.md` ao zerar o backlog). **Change** = par derivado `{id,dir}` do path do `todo.md`, não conceito do motor.
 
 ## Patterns & Pitfalls
 Decisões arquiteturais que atravessam todo o código (definidas nos docstrings; citadas por nome nos filhos):
@@ -56,4 +58,4 @@ Decisões arquiteturais que atravessam todo o código (definidas nos docstrings;
 - **AD-5 — erros como valores nas fronteiras de step**: intérpretes retornam `ok:false`; exceções só para faltas genuínas.
 - **AD-6 — funções puras onde dá**: verdict, planner do dry-run e a view da TUI são puros e testáveis isolados.
 
-**Artefatos de um run vivem no repo-ALVO, não neste repo**: worktrees (`.worktrees/`), branches, `todo.md`, `.loopy/state.json` e logs são criados no diretório-alvo passado para `loopy`. Ao investigar "sumiu/não existe", olhe lá.
+**Artefatos de um run vivem no repo-ALVO, não neste repo**: worktrees (`.worktrees/`), branches, `todo.md`, `.loopy/state.json`, `.loopy/metrics.json`, o `index.md` do Relatório de change e logs são criados no diretório-alvo passado para `loopy`. Ao investigar "sumiu/não existe", olhe lá.
