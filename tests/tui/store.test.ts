@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  blockedTasks,
   createStore,
   initialState,
+  readyTasks,
   reduce,
+  runningTasks,
+  skippedTasks,
   type StoreEvent,
   type StoreState,
   type TaskState,
@@ -418,5 +422,341 @@ describe("createStore", () => {
     store.dispatch({ type: "task_registered", taskId: "T-002", title: "t" });
 
     expect(listener).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reduce — edges_set
+// ---------------------------------------------------------------------------
+
+describe("reduce · edges_set", () => {
+  it("sets edges on the state", () => {
+    const state = reduce(initialState(), {
+      type: "edges_set",
+      edges: [["T-001", "T-002"]],
+    });
+    expect(state.edges).toEqual([["T-001", "T-002"]]);
+  });
+
+  it("replaces previous edges", () => {
+    let state = reduce(initialState(), {
+      type: "edges_set",
+      edges: [["T-001", "T-002"]],
+    });
+    state = reduce(state, {
+      type: "edges_set",
+      edges: [
+        ["T-001", "T-003"],
+        ["T-002", "T-003"],
+      ],
+    });
+    expect(state.edges).toEqual([
+      ["T-001", "T-003"],
+      ["T-002", "T-003"],
+    ]);
+  });
+
+  it("preserves tasks when setting edges", () => {
+    let state = play({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "t",
+    });
+    state = reduce(state, {
+      type: "edges_set",
+      edges: [["T-001", "T-002"]],
+    });
+    expect(state.tasks).toHaveLength(1);
+    expect(findTask(state, "T-001").title).toBe("t");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reduce — new task statuses (blocked / skipped / paused)
+// ---------------------------------------------------------------------------
+
+describe("reduce · new task statuses", () => {
+  it("registers a task as blocked when status is provided", () => {
+    const state = play({
+      type: "task_registered",
+      taskId: "T-002",
+      title: "depende de T-001",
+      status: "blocked",
+    });
+    expect(findTask(state, "T-002").status).toBe("blocked");
+  });
+
+  it("defaults to pending when status is omitted", () => {
+    const state = play({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "raiz",
+    });
+    expect(findTask(state, "T-001").status).toBe("pending");
+  });
+
+  it("marks a task as skipped via task_finished", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "task_finished",
+        taskId: "T-001",
+        status: "skipped",
+        reason: "ancestor T-000 failed",
+      },
+    );
+    expect(findTask(state, "T-001").status).toBe("skipped");
+    expect(findTask(state, "T-001").reason).toBe("ancestor T-000 failed");
+  });
+
+  it("marks a task as paused via task_finished", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "task_started", taskId: "T-001" },
+      {
+        type: "task_finished",
+        taskId: "T-001",
+        status: "paused",
+        reason: "escalation: pause",
+      },
+    );
+    expect(findTask(state, "T-001").status).toBe("paused");
+    expect(findTask(state, "T-001").reason).toBe("escalation: pause");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Derived selectors (AD-6 — pure functions)
+// ---------------------------------------------------------------------------
+
+describe("derived selectors", () => {
+  function dagState(): StoreState {
+    // DAG: T-001 → T-003, T-002 → T-003 (T-003 depends on both)
+    let state = initialState();
+    state = reduce(state, {
+      type: "edges_set",
+      edges: [
+        ["T-001", "T-003"],
+        ["T-002", "T-003"],
+      ],
+    });
+    state = reduce(state, {
+      type: "task_registered",
+      taskId: "T-001",
+      title: "raiz A",
+    });
+    state = reduce(state, {
+      type: "task_registered",
+      taskId: "T-002",
+      title: "raiz B",
+    });
+    state = reduce(state, {
+      type: "task_registered",
+      taskId: "T-003",
+      title: "depende de A e B",
+      status: "blocked",
+    });
+    return state;
+  }
+
+  it("readyTasks returns pending tasks (roots without deps)", () => {
+    const state = dagState();
+    const ready = readyTasks(state);
+    expect(ready.map((t) => t.id)).toEqual(["T-001", "T-002"]);
+  });
+
+  it("readyTasks excludes blocked tasks with unmet deps", () => {
+    const state = dagState();
+    const ready = readyTasks(state);
+    expect(ready.find((t) => t.id === "T-003")).toBeUndefined();
+  });
+
+  it("readyTasks includes blocked task when all deps are done", () => {
+    let state = dagState();
+    state = reduce(state, { type: "task_started", taskId: "T-001" });
+    state = reduce(state, {
+      type: "task_finished",
+      taskId: "T-001",
+      status: "done",
+    });
+    state = reduce(state, { type: "task_started", taskId: "T-002" });
+    state = reduce(state, {
+      type: "task_finished",
+      taskId: "T-002",
+      status: "done",
+    });
+    const ready = readyTasks(state);
+    expect(ready.map((t) => t.id)).toEqual(["T-003"]);
+  });
+
+  it("readyTasks excludes blocked task when only some deps are done", () => {
+    let state = dagState();
+    state = reduce(state, { type: "task_started", taskId: "T-001" });
+    state = reduce(state, {
+      type: "task_finished",
+      taskId: "T-001",
+      status: "done",
+    });
+    // T-002 still pending (not done)
+    const ready = readyTasks(state);
+    expect(ready.map((t) => t.id)).toContain("T-002");
+    expect(ready.find((t) => t.id === "T-003")).toBeUndefined();
+  });
+
+  it("runningTasks returns only running tasks", () => {
+    let state = dagState();
+    state = reduce(state, { type: "task_started", taskId: "T-001" });
+    expect(runningTasks(state).map((t) => t.id)).toEqual(["T-001"]);
+  });
+
+  it("blockedTasks returns only blocked tasks", () => {
+    const state = dagState();
+    expect(blockedTasks(state).map((t) => t.id)).toEqual(["T-003"]);
+  });
+
+  it("skippedTasks returns only skipped tasks", () => {
+    let state = dagState();
+    state = reduce(state, {
+      type: "task_finished",
+      taskId: "T-003",
+      status: "skipped",
+      reason: "ancestor failed",
+    });
+    expect(skippedTasks(state).map((t) => t.id)).toEqual(["T-003"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Concurrency safety — concurrent events do not corrupt the store
+// ---------------------------------------------------------------------------
+
+describe("concurrency safety", () => {
+  it("interleaved events from parallel tasks do not corrupt state", () => {
+    const store = createStore();
+
+    // Set up DAG edges
+    store.dispatch({
+      type: "edges_set",
+      edges: [["T-001", "T-003"]],
+    });
+
+    // Register 3 tasks, T-003 blocked on T-001
+    store.dispatch({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "raiz",
+    });
+    store.dispatch({
+      type: "task_registered",
+      taskId: "T-002",
+      title: "independente",
+    });
+    store.dispatch({
+      type: "task_registered",
+      taskId: "T-003",
+      title: "dependente",
+      status: "blocked",
+    });
+
+    // T-001 and T-002 start in parallel
+    store.dispatch({ type: "task_started", taskId: "T-001" });
+    store.dispatch({ type: "task_started", taskId: "T-002" });
+
+    // Interleaved step events
+    store.dispatch({
+      type: "step_started",
+      taskId: "T-001",
+      stepId: "implement",
+      stepType: "agent",
+    });
+    store.dispatch({
+      type: "step_started",
+      taskId: "T-002",
+      stepId: "implement",
+      stepType: "agent",
+    });
+    store.dispatch({
+      type: "stream_chunk",
+      taskId: "T-001",
+      text: "código A",
+    });
+    store.dispatch({
+      type: "stream_chunk",
+      taskId: "T-002",
+      text: "código B",
+    });
+
+    // Verify isolation
+    const state = store.getState();
+    expect(findTask(state, "T-001").stream).toBe("código A");
+    expect(findTask(state, "T-002").stream).toBe("código B");
+    expect(findTask(state, "T-003").status).toBe("blocked");
+
+    // T-001 finishes → T-003 becomes ready
+    store.dispatch({
+      type: "step_finished",
+      taskId: "T-001",
+      stepId: "implement",
+      ok: true,
+    });
+    store.dispatch({
+      type: "task_finished",
+      taskId: "T-001",
+      status: "done",
+    });
+
+    const afterDone = store.getState();
+    const ready = readyTasks(afterDone);
+    expect(ready.map((t) => t.id)).toContain("T-003");
+
+    // Edges are preserved throughout
+    expect(afterDone.edges).toEqual([["T-001", "T-003"]]);
+  });
+
+  it("edges are preserved across all event types", () => {
+    const edges: [string, string][] = [["T-001", "T-002"]];
+    let state = reduce(initialState(), { type: "edges_set", edges });
+
+    state = reduce(state, {
+      type: "task_registered",
+      taskId: "T-001",
+      title: "a",
+    });
+    state = reduce(state, { type: "task_started", taskId: "T-001" });
+    state = reduce(state, {
+      type: "step_started",
+      taskId: "T-001",
+      stepId: "s",
+      stepType: "shell",
+    });
+    state = reduce(state, {
+      type: "stream_chunk",
+      taskId: "T-001",
+      text: "x",
+    });
+    state = reduce(state, {
+      type: "step_finished",
+      taskId: "T-001",
+      stepId: "s",
+      ok: true,
+    });
+    state = reduce(state, {
+      type: "task_finished",
+      taskId: "T-001",
+      status: "done",
+    });
+
+    // edges survive through all mutations
+    expect(state.edges).toEqual(edges);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initialState includes edges
+// ---------------------------------------------------------------------------
+
+describe("initialState", () => {
+  it("includes an empty edges array", () => {
+    expect(initialState().edges).toEqual([]);
   });
 });
