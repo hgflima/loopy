@@ -1162,7 +1162,18 @@ export async function runLoop(
   };
 
   // --- DAG construction (fail-fast before any task runs) ---
-  const graphResult = buildGraph(tasks);
+  // Deps referencing done tasks (in `knownTaskIds` but not in `tasks`) are
+  // pre-satisfied (already merged per `[x]` in todo.md — the source of truth).
+  // Strip them before building the graph so `buildGraph` sees only live edges.
+  // Deps referencing unknown ids (not in `knownTaskIds` at all) are kept so
+  // `buildGraph` catches them as orphans (fail-fast, T-010).
+  const pendingIds = new Set(tasks.map((t) => t.id));
+  const knownIdSet = new Set(deps.knownTaskIds ?? tasks.map((t) => t.id));
+  const tasksForGraph = tasks.map((t) => {
+    const liveDeps = t.deps.filter((d) => pendingIds.has(d) || !knownIdSet.has(d));
+    return liveDeps.length === t.deps.length ? t : { ...t, deps: liveDeps };
+  });
+  const graphResult = buildGraph(tasksForGraph);
   if (!graphResult.ok) {
     throw new Error(`[orchestrator] ${graphResult.error}`);
   }
