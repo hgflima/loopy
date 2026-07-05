@@ -26,7 +26,7 @@
 
 ## Fase 2 — Seção crítica + pool (sequencial: T-004 → T-005)
 
-- [ ] T-004: Seção crítica do parent (mutex na camada de execução de Steps) — o coração
+- [x] T-004: Seção crítica do parent (mutex na camada de execução de Steps) — o coração
     Mutex único da Run serializando TODA mutação do parent, com o `for...of` intacto (`concurrency: 1` ⇒ uncontended ⇒ byte-idêntico): (a) execução de comando de Step não-Agente sem `parallel_safe`, threaded via o seam `RunShellCommand` (`shell.ts:62-65`)/`runCommand` do approval/`ChecksRunnerPort`, NÃO via `StepContext` (intocado); (b) `commitPaths`/`isParentClean` (`worktree.ts:113/142`); (c) approval: wait humano (`ui.requestApproval` `approval.ts:91`) FORA, só a exec do comando aprovado (`:106-118`) dentro; (d) `require_clean_parent` migra do gate pré-task (`orchestrator.ts:1037-1041`) para DENTRO do mutex, antes de cada Merge/mark-done; (e) `parallel_safe: true` recebe o runner não-embrulhado. As escritas de checkpoint ficam FORA do mutex (já seguras por design: `createCheckpointPort` é instância única + escrita síncrona keyed por taskId ⇒ event loop serializa; guardrail validado em T-010).
     Aceite: mutex primitivo (fila de Promise) unit-testado (aquisições serializam, release FIFO); `require_clean_parent` reavaliado dentro, antes do merge/mark-done; approval wait fora / exec dentro (ordem de eventos com fakes); `parallel_safe` fora; `concurrency: 1` byte-idêntico.
     Verificação: `npm test -- orchestrator` && `npm test -- steps` && `npm run typecheck`.
