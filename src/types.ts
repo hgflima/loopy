@@ -17,6 +17,8 @@
  * `LoopyConfig` here.
  */
 
+import type { StoreEvent } from "./tui/store";
+
 // ---------------------------------------------------------------------------
 // Backlog
 // ---------------------------------------------------------------------------
@@ -573,6 +575,13 @@ export interface StepContext {
   readonly checks: ChecksRunnerPort;
   readonly ui: UiPort;
   readonly logger: LoggerPort;
+  /**
+   * Best-effort event sink for TUI progress (T-004 C-0007). Synchronous,
+   * never throws to the caller (the orchestrator swallows exceptions).
+   * Absent when the TUI is not mounted — the engine is byte-identical
+   * with or without it (AD-1).
+   */
+  readonly emit?: (event: StoreEvent) => void;
 }
 
 /**

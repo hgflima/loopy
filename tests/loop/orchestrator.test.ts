@@ -1038,3 +1038,315 @@ describe("runLoop — on_merge_conflict policy", () => {
     expect(marked2).toEqual(["A", "B"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Emit seam (C-0007 T-004)
+// ---------------------------------------------------------------------------
+import type { StoreEvent } from "../../src/tui/store";
+
+/** Collecting emit sink for tests. */
+function collectingEmit() {
+  const events: StoreEvent[] = [];
+  return { events, emit: (e: StoreEvent) => events.push(e) };
+}
+
+describe("emit seam (C-0007 T-004)", () => {
+  it("emits edges_set + task_registered + lifecycle events for a simple task", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline);
+    const tasks = [makeTask("A")];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const result = await runLoop(
+      config,
+      tasks,
+      { ...makeDeps({ registry: scriptedRegistry(rec), markDone: port }), emit },
+    );
+
+    expect(result.completed).toEqual(["A"]);
+
+    // edges_set first (empty for no deps)
+    expect(events[0]).toEqual({ type: "edges_set", edges: [] });
+    // task_registered
+    expect(events[1]).toEqual({
+      type: "task_registered",
+      taskId: "A",
+      title: "Task A",
+      status: "pending",
+    });
+    // task_started
+    expect(events[2]).toEqual({ type: "task_started", taskId: "A" });
+    // step_started
+    expect(events[3]).toEqual({
+      type: "step_started",
+      taskId: "A",
+      stepId: "s1",
+      stepType: "shell",
+    });
+    // step_finished
+    expect(events[4]).toEqual({
+      type: "step_finished",
+      taskId: "A",
+      stepId: "s1",
+      ok: true,
+      reason: undefined,
+    });
+    // task_finished
+    expect(events[5]).toEqual({
+      type: "task_finished",
+      taskId: "A",
+      status: "done",
+    });
+  });
+
+  it("emits blocked status for tasks with deps and correct sequence for DAG A→C, B", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline);
+    const tasks = [
+      makeTask("A"),
+      makeTask("B"),
+      makeTask("C", { deps: ["A"] }),
+    ];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const result = await runLoop(
+      config,
+      tasks,
+      { ...makeDeps({ registry: scriptedRegistry(rec), markDone: port }), emit },
+    );
+
+    expect(result.completed).toEqual(["A", "B", "C"]);
+
+    // edges_set with one edge
+    expect(events[0]).toEqual({ type: "edges_set", edges: [["A", "C"]] });
+
+    // task_registered: A=pending, B=pending, C=blocked (has deps)
+    const registrations = events.filter((e) => e.type === "task_registered") as Array<
+      Extract<StoreEvent, { type: "task_registered" }>
+    >;
+    expect(registrations).toEqual([
+      { type: "task_registered", taskId: "A", title: "Task A", status: "pending" },
+      { type: "task_registered", taskId: "B", title: "Task B", status: "pending" },
+      { type: "task_registered", taskId: "C", title: "Task C", status: "blocked" },
+    ]);
+
+    // After A finishes, C should eventually start
+    const taskStarted = events.filter((e) => e.type === "task_started") as Array<
+      Extract<StoreEvent, { type: "task_started" }>
+    >;
+    const taskIds = taskStarted.map((e) => e.taskId);
+    // A and B start first (either order), C after A finishes
+    expect(taskIds).toContain("A");
+    expect(taskIds).toContain("B");
+    expect(taskIds).toContain("C");
+    // C must come after A's task_finished
+    const aFinishedIdx = events.findIndex(
+      (e) => e.type === "task_finished" && e.taskId === "A",
+    );
+    const cStartedIdx = events.findIndex(
+      (e) => e.type === "task_started" && e.taskId === "C",
+    );
+    expect(cStartedIdx).toBeGreaterThan(aFinishedIdx);
+  });
+
+  it("emits task_finished(escalated) on escalation with skip_task", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline, {
+      escalation: { action: "skip_task", keep_worktree: false, notify: "" },
+    });
+    const tasks = [makeTask("A")];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const result = await runLoop(
+      config,
+      tasks,
+      {
+        ...makeDeps({
+          registry: scriptedRegistry(rec, { "A:s1": { ok: false, reason: "fail" } }),
+          markDone: port,
+        }),
+        emit,
+      },
+    );
+
+    expect(result.escalated).toEqual(["A"]);
+    const finished = events.filter(
+      (e) => e.type === "task_finished",
+    ) as Array<Extract<StoreEvent, { type: "task_finished" }>>;
+    expect(finished).toContainEqual({
+      type: "task_finished",
+      taskId: "A",
+      status: "escalated",
+      reason: "fail",
+    });
+  });
+
+  it("emits task_finished(paused) on escalation with pause", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline, {
+      escalation: { action: "pause", keep_worktree: false, notify: "" },
+    });
+    const tasks = [makeTask("A")];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const result = await runLoop(
+      config,
+      tasks,
+      {
+        ...makeDeps({
+          registry: scriptedRegistry(rec, { "A:s1": { ok: false, reason: "broken" } }),
+          markDone: port,
+        }),
+        emit,
+      },
+    );
+
+    expect(result.paused).toEqual(["A"]);
+    const finished = events.filter(
+      (e) => e.type === "task_finished",
+    ) as Array<Extract<StoreEvent, { type: "task_finished" }>>;
+    expect(finished).toContainEqual({
+      type: "task_finished",
+      taskId: "A",
+      status: "paused",
+      reason: "broken",
+    });
+  });
+
+  it("emits task_finished(skipped) for transitive dependents on failure", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline, {
+      escalation: { action: "skip_task", keep_worktree: false, notify: "" },
+    });
+    const tasks = [
+      makeTask("A"),
+      makeTask("B", { deps: ["A"] }),
+    ];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const result = await runLoop(
+      config,
+      tasks,
+      {
+        ...makeDeps({
+          registry: scriptedRegistry(rec, { "A:s1": { ok: false, reason: "bad" } }),
+          markDone: port,
+        }),
+        emit,
+      },
+    );
+
+    expect(result.skipped).toEqual(["B"]);
+    const finished = events.filter(
+      (e) => e.type === "task_finished",
+    ) as Array<Extract<StoreEvent, { type: "task_finished" }>>;
+    expect(finished).toContainEqual({
+      type: "task_finished",
+      taskId: "B",
+      status: "skipped",
+      reason: "dependência A falhou",
+    });
+  });
+
+  it("swallows emit exceptions — RunLoopResult is identical", async () => {
+    const throwingEmit = () => {
+      throw new Error("boom");
+    };
+
+    const pipeline = [shell("s1"), shell("s2")];
+    const config = makeLoopConfig(pipeline);
+    const tasks = [makeTask("A")];
+
+    const rec1: Recorder = { order: [] };
+    const { port: port1 } = recordingMarkDone();
+    const resultWithEmit = await runLoop(
+      config,
+      tasks,
+      { ...makeDeps({ registry: scriptedRegistry(rec1), markDone: port1 }), emit: throwingEmit },
+    );
+
+    const rec2: Recorder = { order: [] };
+    const { port: port2 } = recordingMarkDone();
+    const resultWithout = await runLoop(
+      config,
+      tasks,
+      makeDeps({ registry: scriptedRegistry(rec2), markDone: port2 }),
+    );
+
+    // Byte-identical (ignoring timing fields).
+    expect(resultWithEmit.completed).toEqual(resultWithout.completed);
+    expect(resultWithEmit.escalated).toEqual(resultWithout.escalated);
+    expect(resultWithEmit.paused).toEqual(resultWithout.paused);
+    expect(resultWithEmit.skipped).toEqual(resultWithout.skipped);
+    expect(resultWithEmit.stoppedBy).toEqual(resultWithout.stoppedBy);
+    expect(resultWithEmit.iterations).toEqual(resultWithout.iterations);
+  });
+
+  it("RunLoopResult is identical with and without emit (AD-1)", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline);
+    const tasks = [makeTask("A"), makeTask("B")];
+
+    const rec1: Recorder = { order: [] };
+    const { port: port1 } = recordingMarkDone();
+    const resultWith = await runLoop(
+      config,
+      tasks,
+      { ...makeDeps({ registry: scriptedRegistry(rec1), markDone: port1 }), emit },
+    );
+
+    const rec2: Recorder = { order: [] };
+    const { port: port2 } = recordingMarkDone();
+    const resultWithout = await runLoop(
+      config,
+      tasks,
+      makeDeps({ registry: scriptedRegistry(rec2), markDone: port2 }),
+    );
+
+    expect(resultWith.completed).toEqual(resultWithout.completed);
+    expect(resultWith.escalated).toEqual(resultWithout.escalated);
+    expect(resultWith.stoppedBy).toEqual(resultWithout.stoppedBy);
+    expect(resultWith.iterations).toEqual(resultWithout.iterations);
+    // Events were actually collected
+    expect(events.length).toBeGreaterThan(0);
+  });
+
+  it("step_started/step_finished emitted around teardown (always) steps", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [
+      shell("s1"),
+      shell("cleanup", { always: true }),
+    ];
+    const config = makeLoopConfig(pipeline);
+    const tasks = [makeTask("A")];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    await runLoop(
+      config,
+      tasks,
+      { ...makeDeps({ registry: scriptedRegistry(rec), markDone: port }), emit },
+    );
+
+    const stepEvents = events.filter(
+      (e) => e.type === "step_started" || e.type === "step_finished",
+    );
+    const stepIds = stepEvents
+      .filter((e): e is Extract<StoreEvent, { type: "step_started" }> => e.type === "step_started")
+      .map((e) => e.stepId);
+    expect(stepIds).toContain("s1");
+    expect(stepIds).toContain("cleanup");
+  });
+});

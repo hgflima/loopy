@@ -49,6 +49,7 @@ import {
   type ResumePoint,
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
+import type { StoreEvent } from "../tui/store";
 import type { Mutex } from "./mutex";
 import { guarded } from "./mutex";
 import type {
@@ -686,6 +687,21 @@ export interface OrchestratorDeps {
    * cooperative cancellation (tasks settle naturally).
    */
   readonly abort?: AbortPort;
+  /**
+   * Best-effort TUI event sink (T-004 C-0007). Synchronous; the orchestrator
+   * wraps every call in a try-catch so a throwing `emit` never disrupts the
+   * engine. Absent → no events emitted (motor byte-identical, AD-1).
+   */
+  readonly emit?: (event: StoreEvent) => void;
+}
+
+/** Best-effort emit: swallows any exception so the engine is never disrupted. */
+function safeEmit(deps: OrchestratorDeps, event: StoreEvent): void {
+  try {
+    deps.emit?.(event);
+  } catch {
+    // Best-effort — never block/throw into the engine (AD-1).
+  }
 }
 
 /**
@@ -723,6 +739,7 @@ function buildTaskStepContext(
     checks: deps.checks,
     ui: deps.ui,
     logger: deps.logger,
+    emit: deps.emit,
   };
 }
 
@@ -794,17 +811,30 @@ async function runTaskPipeline(
         )
       : (deps.session ?? notWiredSession);
 
-  /** Execute a step, measure duration, and record a Sample in one shot. */
+  /** Execute a step: emit start/finish, measure duration, record a Sample. */
   const timedExecute = async (
     interpreter: { execute(ctx: StepContext): Promise<StepResult> },
     ctx: StepContext,
   ): Promise<StepResult> => {
+    safeEmit(deps, {
+      type: "step_started",
+      taskId: task.id,
+      stepId: ctx.step.id,
+      stepType: ctx.step.type,
+    });
     const t0 = clock();
     const result = await interpreter.execute(ctx);
     recordSample(ctx.step.id, ctx.step.type, {
       durationMs: clock() - t0,
       usage: session.drainUsage(),
       cost: session.readCost(),
+    });
+    safeEmit(deps, {
+      type: "step_finished",
+      taskId: task.id,
+      stepId: ctx.step.id,
+      ok: result.ok,
+      reason: result.ok ? undefined : result.reason,
     });
     return result;
   };
@@ -1233,6 +1263,17 @@ export async function runLoop(
   }
   const graph: TaskGraph = graphResult.value;
 
+  // --- Emit DAG topology + task registrations (C-0007 T-004) ---
+  safeEmit(deps, { type: "edges_set", edges: graph.edges as [string, string][] });
+  for (const t of tasks) {
+    safeEmit(deps, {
+      type: "task_registered",
+      taskId: t.id,
+      title: t.title,
+      status: t.deps.length > 0 ? "blocked" : "pending",
+    });
+  }
+
   // Stable iteration index per task (1-based position in the backlog, AD-4).
   const iterationIndex = new Map<string, number>();
   for (let i = 0; i < tasks.length; i++) {
@@ -1324,6 +1365,7 @@ export async function runLoop(
       `[orchestrator] iteração ${iteration}: task ${task.id} — ${task.title}`,
     );
     status.set(task.id, "running");
+    safeEmit(deps, { type: "task_started", taskId: task.id });
     checkpoint?.setStatus(task.id, "running");
     const resumePoint = resumeMap?.get(task.id);
 
@@ -1346,11 +1388,13 @@ export async function runLoop(
         );
         if (markDoneResult === "dirty_parent") {
           status.set(task.id, "done");
+          safeEmit(deps, { type: "task_finished", taskId: task.id, status: "done" });
           return { taskId: task.id, stop: "dirty_parent" };
         }
         checkpoint?.clearTask(task.id);
         completed.push(task.id);
         status.set(task.id, "done");
+        safeEmit(deps, { type: "task_finished", taskId: task.id, status: "done" });
         deps.logger.info(
           `[orchestrator] task ${task.id} concluída e marcada [x]`,
         );
@@ -1364,6 +1408,7 @@ export async function runLoop(
           `[orchestrator] task ${task.id} cancelada por abort_loop — checkpoint preservado`,
         );
         status.set(task.id, "paused");
+        safeEmit(deps, { type: "task_finished", taskId: task.id, status: "paused" });
         return { taskId: task.id };
       }
 
@@ -1380,6 +1425,10 @@ export async function runLoop(
       if (decideEscalation(policy.action) === "stop") {
         escalated.push(task.id);
         status.set(task.id, "escalated");
+        safeEmit(deps, {
+          type: "task_finished", taskId: task.id,
+          status: "escalated", reason: outcome.reason,
+        });
         checkpoint?.setStatus(task.id, "aborted");
         return { taskId: task.id, stop: "escalation_abort" };
       }
@@ -1388,11 +1437,19 @@ export async function runLoop(
       if (policy.action === "pause") {
         paused.push(task.id);
         status.set(task.id, "paused");
+        safeEmit(deps, {
+          type: "task_finished", taskId: task.id,
+          status: "paused", reason: outcome.reason,
+        });
         checkpoint?.setStatus(task.id, "paused");
       } else {
         // skip_task
         escalated.push(task.id);
         status.set(task.id, "escalated");
+        safeEmit(deps, {
+          type: "task_finished", taskId: task.id,
+          status: "escalated", reason: outcome.reason,
+        });
         checkpoint?.clearTask(task.id);
       }
 
@@ -1402,6 +1459,10 @@ export async function runLoop(
         if (status.get(descId) === "blocked") {
           status.set(descId, "skipped");
           skipped.push(descId);
+          safeEmit(deps, {
+            type: "task_finished", taskId: descId,
+            status: "skipped", reason: `dependência ${task.id} falhou`,
+          });
           deps.logger.info(
             `[orchestrator] task ${descId} pulada (dependência ${task.id} falhou)`,
           );
