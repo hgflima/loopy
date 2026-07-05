@@ -5,7 +5,15 @@
  * - WITHOUT `config.metrics`: no metrics artefact, byte-identical output
  *   (regression-zero).
  */
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -272,5 +280,82 @@ describe("run — no metrics (regression-zero)", () => {
     expect(existsSync(metricsJsonPath)).toBe(false);
     expect(cap.stderr()).not.toContain("── Run report ──");
     expect(cap.stderr()).not.toContain("Change até agora:");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-006: Change report — index.md persistence
+// ---------------------------------------------------------------------------
+
+describe("run — Change report (index.md)", () => {
+  /** Copy fixture to temp dir; runLive marks all tasks as done, simulating a completing run. */
+  function setupCompletingRun() {
+    const tmpDir = mkdtempSync(join(tmpdir(), "loopy-test-"));
+    cpSync(PROJECT_WITH_METRICS, tmpDir, { recursive: true });
+    cleanupPaths.push(tmpDir);
+    const todoPath = join(tmpDir, "tasks/todo.md");
+    const hooks: RunHooks = {
+      isGitRepo: () => true,
+      runLive: async () => {
+        const content = readFileSync(todoPath, "utf8");
+        writeFileSync(todoPath, content.replace(/- \[ \]/g, "- [x]"), "utf8");
+        return METRICS_RESULT;
+      },
+    };
+    return { tmpDir, hooks };
+  }
+
+  it("persists index.md when backlog reaches 0 pending", async () => {
+    const { tmpDir, hooks } = setupCompletingRun();
+    const cap = capture();
+
+    const code = await run([tmpDir], cap.io, hooks);
+
+    expect(code).toBe(0);
+    // report.index = "${change.dir}/../index.md", change.dir = "tasks" → "index.md"
+    const indexPath = join(tmpDir, "index.md");
+    expect(existsSync(indexPath)).toBe(true);
+
+    const content = readFileSync(indexPath, "utf8");
+    expect(content).toMatch(/^# /);
+    expect(content).toContain("## tasks"); // change.id = basename("tasks")
+    expect(content).toContain("| Task |");
+    expect(content).toContain("T-002");
+    expect(content).toContain("$0.42");
+  });
+
+  it("does NOT persist index.md when tasks are still pending", async () => {
+    const cap = capture();
+    const { hooks } = recordingHooks(METRICS_RESULT);
+    cleanupPaths.push(join(PROJECT_WITH_METRICS, ".loopy"));
+
+    await run([PROJECT_WITH_METRICS], cap.io, hooks);
+
+    expect(existsSync(join(PROJECT_WITH_METRICS, "index.md"))).toBe(false);
+  });
+
+  it("re-persist updates only the change section (byte-preserving)", async () => {
+    const { tmpDir, hooks } = setupCompletingRun();
+
+    // Pre-create an index.md with an existing section
+    const indexPath = join(tmpDir, "index.md");
+    writeFileSync(indexPath, "# Changes\n\n## other-change\n\nOther content.\n\n", "utf8");
+
+    const cap = capture();
+    await run([tmpDir], cap.io, hooks);
+
+    const content = readFileSync(indexPath, "utf8");
+    expect(content).toContain("## other-change\n\nOther content.\n\n");
+    expect(content).toContain("## tasks");
+    expect(content).toContain("| Task |");
+  });
+
+  it("does NOT persist index.md when report.index is absent", async () => {
+    const cap = capture();
+    const { hooks } = recordingHooks(NO_METRICS_RESULT);
+
+    await run([PROJECT_NO_METRICS], cap.io, hooks);
+
+    expect(existsSync(join(PROJECT_NO_METRICS, "index.md"))).toBe(false);
   });
 });
