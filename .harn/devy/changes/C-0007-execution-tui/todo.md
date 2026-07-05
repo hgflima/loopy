@@ -30,7 +30,7 @@
 
 ## Fase 2 — Emit seam (produtor; T-005 ∥ T-006 após T-004)
 
-- [ ] T-004: Orquestrador — `OrchestratorDeps.emit` + `StepContext.emit` (espelha transições)
+- [x] T-004: Orquestrador — `OrchestratorDeps.emit` + `StepContext.emit` (espelha transições)
     Contrato aditivo/opcional: `StepContext.emit?: (event: StoreEvent) => void` (`types.ts:554-576`, import type-only de `tui/store`) e `OrchestratorDeps.emit?` (`orchestrator.ts:617-689`). O orquestrador emite **espelhando as transições que já faz** — nenhuma nova: `edges_set` (de `graph.edges`) + `task_registered` (status `blocked` se `task.deps` senão `pending`) na carga do grafo (`:1230-1234`); `task_started` em `launchTask` (`:1326`); `task_finished(status)` em done/escalate/pause/skip (`:1351/1380/1388/1401`); `step_started`/`step_finished` em torno de `timedExecute` (`:797-810`, nos DOIS sites: PC loop `:906` e teardown `:1014`). `buildTaskStepContext` (`:703-727`) propaga `emit: deps.emit`. **Best-effort**: síncrono, engole exceção, nunca bloqueia; roda **fora** da seção crítica do parent (não segura o mutex).
     Aceite: dado DAG A→C, B, a **sequência** emitida bate (`edges_set`, `task_registered×3` — A/B `blocked` se têm deps, `task_started`, `step_*`, `task_finished(A,done)`, `task_started(C)`…); `emit` que lança é engolido; **`RunLoopResult` byte-idêntico com e sem `emit`** (AD-1); `emit` ausente ⇒ motor byte-idêntico.
     Verificação: `npm test -- orchestrator` && `npm run typecheck`.
