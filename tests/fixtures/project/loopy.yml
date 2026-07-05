@@ -21,6 +21,7 @@ inputs:
     task_id_pattern: "T-\\d+"
     body: indented
     mark_done_on_success: true
+    deps_pattern: "Deps:"
 checks:
   ci:
     - { name: typecheck, run: "npm run typecheck" }

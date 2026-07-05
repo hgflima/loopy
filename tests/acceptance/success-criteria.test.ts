@@ -79,6 +79,7 @@ describe("acceptance · example loopy.yml matches the final schema", () => {
     const order = config.pipeline.map((s) => `${s.id}:${s.type}`);
     expect(order).toEqual([
       "create-worktree:shell",
+      "install-deps:shell",
       "implement:agent",
       "simplify:agent",
       "review:agent",

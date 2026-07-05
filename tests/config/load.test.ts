@@ -248,11 +248,11 @@ describe("loadConfig — from disk", () => {
     const config = loadConfig(EXAMPLE_YML);
 
     expect(config.name).toBe("agentic-loop");
-    expect(config.pipeline).toHaveLength(7);
+    expect(config.pipeline).toHaveLength(8);
     expect(config.pipeline[0]?.id).toBe("create-worktree");
     expect(config.pipeline[0]?.type).toBe("shell");
 
-    const implement = config.pipeline[1];
+    const implement = config.pipeline[2];
     expect(implement?.type).toBe("agent");
     if (implement?.type === "agent") {
       expect(implement.clear_context).toBe(true);
