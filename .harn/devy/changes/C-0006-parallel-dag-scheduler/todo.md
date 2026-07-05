@@ -78,7 +78,7 @@
     Verificação: `npm test -- cli` && `npm test -- interp` && `npm run typecheck`.
     Deps: T-005. Files: src/index.ts, src/loop/orchestrator.ts, testes. Scope: M.
 
-- [ ] T-012: Docs + config + fixtures (ADR-0004 + CONTEXT.md + exemplos)
+- [x] T-012: Docs + config + fixtures (ADR-0004 + CONTEXT.md + exemplos)
     `examples/loopy.yml`: split `create-worktree` em `git worktree add` (serializado) + `install-deps` (`npm ci --prefix`, `parallel_safe: true`); `concurrency > 1` (comentado); `on_merge_conflict`; linha `Deps:` no fixture. `tests/fixtures/.../todo.md` com DAG de teste. ADR-0004 (Concorrência N + skip transitivo + Seção crítica na camada de Steps + cancelamento + `on_merge_conflict` + AD-1). Promover ao `CONTEXT.md` os termos novos (Aresta de dependência, Grafo de tasks, Scheduler, Ready/Blocked/Skipped, Seção crítica do parent, `parallel_safe`, `on_merge_conflict`, Cancelamento; precisões de Concorrência e Iteração) sem colidir com Iteração/Tentativa/Visita nem com o flow graph de `goto`.
     Aceite: ADR-0004 criado e indexado; glossário atualizado; `examples/loopy.yml` com split + policies + Deps; fixture com DAG; `npm run typecheck && npm run lint && npm test` verdes.
     Verificação: `npm run typecheck && npm run lint && npm test`.
