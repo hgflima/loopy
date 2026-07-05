@@ -27,6 +27,7 @@ import {
   ALLOW_KINDS,
   REJECT_KINDS,
   agentChunkText,
+  createClientApp,
   createCostBuffer,
   createNodeFileSystem,
   createPermissionResolver,
@@ -37,6 +38,7 @@ import {
   usageUpdateCost,
   type TerminalManager,
 } from "../../src/acp/client";
+import type { AcpTrafficEntry } from "../../src/logging/logger";
 
 // ---------------------------------------------------------------------------
 // Permission decision by kind (AC2)
@@ -397,5 +399,27 @@ describe("createTerminalManager", () => {
     expect(() =>
       manager.output({ sessionId: "sess-1", terminalId: "nope" }),
     ).toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// onTraffic recv — createClientApp captures agent→engine traffic (T-007)
+// ---------------------------------------------------------------------------
+
+describe("createClientApp · onTraffic recv", () => {
+  it("builds a ClientApp with onTraffic wired (integration in agent.test.ts)", () => {
+    const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
+    const { app } = createClientApp({
+      onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
+    });
+    // The full recv path is exercised end-to-end in agent.test.ts against the
+    // fake agent; here we just verify the bundle builds without error.
+    expect(app).toBeDefined();
+  });
+
+  it("does not alter behavior when onTraffic is absent", () => {
+    const { app, textBuffer } = createClientApp({});
+    expect(app).toBeDefined();
+    expect(textBuffer).toBeDefined();
   });
 });

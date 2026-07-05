@@ -21,6 +21,7 @@ import {
   type LoopySession,
   type SessionDeps,
 } from "../../src/acp/session";
+import type { AcpTrafficEntry } from "../../src/logging/logger";
 import type { StopReason } from "../../src/types";
 import type { FakeScenario } from "../fixtures/fake-agent";
 
@@ -333,6 +334,82 @@ describe("buildSession / session pool (against the fake agent)", () => {
     // Cost is cumulative — the last snapshot wins.
     expect(cost!.amount).toBe(0.12);
     expect(cost!.currency).toBe("USD");
+
+    session.dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // T-007: onTraffic send — session captures engine→agent traffic
+  // -------------------------------------------------------------------------
+
+  it("onTraffic captures send for setMode, prompt, and cancel with sessionId", async () => {
+    const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
+    handle = await openAgent({
+      command: fakeCommand({
+        modes: {
+          currentModeId: "default",
+          availableModes: [
+            { id: "default", name: "Default" },
+            { id: "plan", name: "Plan" },
+          ],
+        },
+        defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+      }),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+    });
+    const deps: SessionDeps = {
+      ctx: handle.ctx,
+      text: handle.text,
+      cost: handle.cost,
+      onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
+    };
+    const session = await buildSession(deps, PROJECT_ROOT).start();
+    const sid = session.sessionId;
+
+    await session.setMode("plan");
+    await session.prompt("implement it");
+    await session.cancel();
+
+    // Verify sends were captured with correct methods and sessionId.
+    const sends = traffic.filter((t) => t.entry.direction === "send");
+    const methods = sends.map((t) => t.entry.method);
+
+    expect(methods).toContain("session/set_mode");
+    expect(methods).toContain("session/prompt");
+    expect(methods).toContain("session/cancel");
+
+    // Every send carries the correct sessionId.
+    for (const t of sends) {
+      expect(t.sessionId).toBe(sid);
+    }
+
+    // setMode payload includes modeId.
+    const setModeEntry = sends.find((t) => t.entry.method === "session/set_mode");
+    expect((setModeEntry!.entry.payload as Record<string, unknown>)?.modeId).toBe("plan");
+
+    // prompt payload includes the prompt text.
+    const promptEntry = sends.find((t) => t.entry.method === "session/prompt");
+    expect((promptEntry!.entry.payload as Record<string, unknown>)?.text).toBe("implement it");
+
+    session.dispose();
+  });
+
+  it("onTraffic is not called when absent (boundary identical to pre-T-007)", async () => {
+    // SessionDeps without onTraffic — must not throw.
+    handle = await openAgent({
+      command: fakeCommand({
+        defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+      }),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+    });
+    const deps: SessionDeps = { ctx: handle.ctx, text: handle.text };
+    const session = await buildSession(deps, PROJECT_ROOT).start();
+
+    // These should all succeed without error.
+    await session.prompt("hello");
+    await session.cancel();
 
     session.dispose();
   });

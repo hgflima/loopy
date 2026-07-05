@@ -42,6 +42,7 @@ import type {
   StopReason,
   TurnUsage,
 } from "../types";
+import type { AcpTrafficEntry } from "../logging/logger";
 import type { CostBuffer, TurnTextBuffer } from "./client";
 
 /** The raw command that resets an agent's context while keeping the session. */
@@ -93,6 +94,8 @@ export interface SessionDeps {
   readonly text: TurnTextBuffer;
   /** Per-session cumulative cost buffer (C-0005), keyed by `sessionId`. */
   readonly cost?: CostBuffer;
+  /** Called for every ACP JSON-RPC message (send/recv); pure observation (AD-1). */
+  readonly onTraffic?: (entry: AcpTrafficEntry, sessionId: string) => void;
   readonly logger?: LoggerPort;
 }
 
@@ -131,11 +134,15 @@ class SessionWrapper implements LoopySession {
     this.deps.logger?.debug(`[acp] ${action} (${this.sessionId})`);
   }
 
+  /** Fire-and-forget send traffic entry (observation only — AD-1). */
+  private send(method: string, payload?: unknown): void {
+    this.deps.onTraffic?.({ direction: "send", method, payload }, this.sessionId);
+  }
+
   async setMode(modeId: string): Promise<void> {
-    await this.deps.ctx.request(AGENT_METHODS.session_set_mode, {
-      sessionId: this.sessionId,
-      modeId,
-    });
+    const params = { sessionId: this.sessionId, modeId };
+    this.send("session/set_mode", params);
+    await this.deps.ctx.request(AGENT_METHODS.session_set_mode, params);
     this.logAction(`set_mode ${modeId}`);
   }
 
@@ -159,9 +166,9 @@ class SessionWrapper implements LoopySession {
   }
 
   async cancel(): Promise<void> {
-    await this.deps.ctx.notify(AGENT_METHODS.session_cancel, {
-      sessionId: this.sessionId,
-    });
+    const params = { sessionId: this.sessionId };
+    this.send("session/cancel", params);
+    await this.deps.ctx.notify(AGENT_METHODS.session_cancel, params);
     this.logAction("cancel");
   }
 
@@ -208,6 +215,7 @@ class SessionWrapper implements LoopySession {
    * into the next turn's (reset) buffer.
    */
   private async runTurn(text: string): Promise<StopReason> {
+    this.send("session/prompt", { sessionId: this.sessionId, text });
     this.deps.text.reset(this.sessionId);
     // Start the prompt first so its `stop` completion is queued before the
     // concurrent drain reads it.
