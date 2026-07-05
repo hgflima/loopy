@@ -35,6 +35,8 @@ export interface Task {
   readonly branch: string;
   /** `true` when the checkbox is already `- [x]`. */
   readonly done: boolean;
+  /** Task ids this task depends on, parsed from `Deps:` line in body. */
+  readonly deps: readonly string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -197,6 +199,8 @@ export interface BacklogConfig {
   readonly done_marker: string;
   /** Regex source used to extract the task id (e.g. `"T-\\d+"`). */
   readonly task_id_pattern: string;
+  /** Prefix of the deps line in body (case-insensitive match). Default `"Deps:"`. */
+  readonly deps_pattern?: string;
   readonly body: BacklogBodyMode;
   readonly mark_done_on_success: boolean;
 }

@@ -54,6 +54,7 @@ export const SAMPLE_TASK: Task = {
   body: "Detalhes da task.",
   branch: "loopy/T-001",
   done: false,
+  deps: [],
 };
 
 /** A minimal-but-complete {@link LoopyConfig}; `checks` is the field steps read. */

@@ -40,6 +40,7 @@ function makeTask(id: string): Task {
     body: "",
     branch: `loopy/${id}`,
     done: false,
+    deps: [],
   };
 }
 

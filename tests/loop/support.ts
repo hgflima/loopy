@@ -90,6 +90,7 @@ export function makeTask(id: string, over: Partial<Task> = {}): Task {
     body: "",
     branch: `loopy/${id}`,
     done: false,
+    deps: [],
     ...over,
   };
 }
