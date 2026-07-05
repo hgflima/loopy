@@ -2,7 +2,7 @@
  * Tests for the App dashboard (T-010) using `ink-testing-library`.
  *
  * Covers:
- *  - Composed dashboard snapshot (header + 4 panes)
+ *  - Composed dashboard snapshot (header + graph + task list + streams)
  *  - Pulse effect advances tick under fake timers (running task toggles emphasis)
  *  - Stream bound: N running → ~3 visible + `+K` overflow counter
  *  - No key outside the ApprovalPrompt alters the run
@@ -37,7 +37,7 @@ function setup(...events: StoreEvent[]) {
 // ---------------------------------------------------------------------------
 
 describe("App dashboard", () => {
-  it("renders header with counters, graph, task list, and acp log", () => {
+  it("renders header with counters, graph, and task list", () => {
     const { lastFrame } = setup(
       { type: "edges_set", edges: [["T-001", "T-002"]] },
       { type: "task_registered", taskId: "T-001", title: "First" },
@@ -48,13 +48,6 @@ describe("App dashboard", () => {
         status: "blocked",
       },
       { type: "task_started", taskId: "T-001" },
-      {
-        type: "acp_traffic",
-        taskId: "T-001",
-        direction: "send",
-        method: "tools/call",
-        summary: "read file",
-      },
     );
     const frame = lastFrame()!;
 
@@ -72,9 +65,9 @@ describe("App dashboard", () => {
     // Task list pane
     expect(frame).toContain("tasks");
 
-    // ACP log pane
-    expect(frame).toContain("acp");
-    expect(frame).toContain("read file");
+    // No ACP pane — the JSON-RPC traffic seam feeds the file log / verbose
+    // line fallback, not the dashboard.
+    expect(frame).not.toContain("acp");
   });
 
   it("shows stream pane when a running task has stream content", () => {

@@ -3,8 +3,13 @@
  * terminal rectangle:
  *
  *   header (1 row)
- *   graph  (graphH)                       ← DAG, fixed height, clipped
- *   body   (bodyH): tasks | streams + acp ← fixed-width columns, clipped
+ *   graph  (graphH ≈ 70%)           ← DAG, fixed height, clipped
+ *   body   (bodyH): tasks | streams ← fixed-width columns, clipped
+ *
+ * The graph takes ~70% of the terminal so the DAG fits without the bottom ranks
+ * being clipped; the body (task list | agent streams) gets the rest. There is no
+ * ACP pane — the JSON-RPC traffic seam feeds the file log and the verbose line
+ * fallback, not the dashboard.
  *
  * Every region has an **explicit height** and `overflow="hidden"`, and the root
  * box is pinned to `cols × rows` — so the frame occupies one stable rectangle
@@ -20,7 +25,6 @@
 import { Box, Text, useStdout } from "ink";
 import { useEffect, useState } from "react";
 import type { ApprovalController } from "./approval";
-import { AcpLogPane } from "./components/AcpLogPane";
 import { ApprovalPrompt } from "./components/ApprovalPrompt";
 import { GraphPane } from "./components/GraphPane";
 import { StreamPane } from "./components/StreamPane";
@@ -86,12 +90,18 @@ export function App({
 
   // ---- Fixed geometry (derived once per render from the terminal size) -----
   const headerH = 1;
-  const graphH = clamp(Math.round(rows * 0.42), 6, Math.max(6, rows - 10));
-  const bodyH = Math.max(6, rows - headerH - graphH);
+  // Graph gets ~70% of the terminal (the DAG was being clipped at ~40%); the
+  // body (tasks | streams) gets the rest, floored so both stay visible.
+  const graphH = clamp(
+    Math.round(rows * 0.7),
+    6,
+    Math.max(6, rows - headerH - 5),
+  );
+  const bodyH = Math.max(5, rows - headerH - graphH);
   const leftW = clamp(Math.round(cols * 0.44), 24, Math.max(24, cols - 30));
   const rightW = cols - leftW;
-  const acpH = clamp(Math.round(bodyH * 0.5), 5, Math.max(5, bodyH - 5));
-  const streamsH = Math.max(5, bodyH - acpH);
+  // With the ACP pane removed, the agent streams fill the whole right column.
+  const streamsH = bodyH;
 
   // ---- Streams: fill the fixed streams region, tiled; overflow → +K note ----
   const maxFit = clamp(Math.floor(streamsH / MIN_STREAM_H), 1, MAX_STREAMS);
@@ -121,40 +131,39 @@ export function App({
       {/* Graph pane — full width, fixed height */}
       <GraphPane state={state} width={cols} height={graphH} tick={tick} />
 
-      {/* Body: Tasks (left) | Streams + AcpLog (right) */}
+      {/* Body: Tasks (left) | Streams (right) */}
       <Box height={bodyH}>
         {/* Left column */}
         <TaskListPane state={state} width={leftW} height={bodyH} />
 
-        {/* Right column */}
-        <Box flexDirection="column" width={rightW} height={bodyH}>
-          {/* Streams region — fixed height, tiled panes */}
-          <Box flexDirection="column" height={streamsH} overflow="hidden">
-            {hiddenCount > 0 ? (
-              <Text dimColor>+{hiddenCount} streams ocultas</Text>
-            ) : null}
-            {visibleStreams.length === 0 ? (
+        {/* Right column — agent streams, fixed height, tiled panes */}
+        <Box
+          flexDirection="column"
+          width={rightW}
+          height={streamsH}
+          overflow="hidden"
+        >
+          {hiddenCount > 0 ? (
+            <Text dimColor>+{hiddenCount} streams ocultas</Text>
+          ) : null}
+          {visibleStreams.length === 0 ? (
+            <StreamPane
+              title="idle"
+              stream=""
+              width={rightW}
+              height={streamsH}
+            />
+          ) : (
+            visibleStreams.map((task) => (
               <StreamPane
-                title="idle"
-                stream=""
+                key={task.id}
+                title={task.id}
+                stream={task.stream}
                 width={rightW}
-                height={streamsH}
+                height={paneH}
               />
-            ) : (
-              visibleStreams.map((task) => (
-                <StreamPane
-                  key={task.id}
-                  title={task.id}
-                  stream={task.stream}
-                  width={rightW}
-                  height={paneH}
-                />
-              ))
-            )}
-          </Box>
-
-          {/* ACP traffic — fixed height */}
-          <AcpLogPane state={state} width={rightW} height={acpH} />
+            ))
+          )}
         </Box>
       </Box>
 

@@ -10,7 +10,6 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it } from "vitest";
 import { createStore, type StoreEvent } from "../../src/tui/store";
-import { AcpLogPane } from "../../src/tui/components/AcpLogPane";
 import { GraphPane } from "../../src/tui/components/GraphPane";
 import { TaskListPane } from "../../src/tui/components/TaskListPane";
 
@@ -65,131 +64,6 @@ describe("GraphPane", () => {
     // Done glyph: ✔
     expect(frame).toContain("✔");
     expect(frame).toContain("T-001");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// AcpLogPane
-// ---------------------------------------------------------------------------
-
-describe("AcpLogPane", () => {
-  it("renders its titled frame (fixed presence) when the ACP log is empty", () => {
-    const state = buildState();
-    const { lastFrame } = render(<AcpLogPane state={state} />);
-    const frame = lastFrame()!;
-    // Always present now — shows the title + an empty-state placeholder.
-    expect(frame).toContain("acp");
-    expect(frame).toContain("sem tráfego");
-  });
-
-  it("renders ACP traffic lines with direction glyphs", () => {
-    const state = buildState(
-      { type: "task_registered", taskId: "T-001", title: "Task" },
-      { type: "task_started", taskId: "T-001" },
-      {
-        type: "acp_traffic",
-        taskId: "T-001",
-        direction: "send",
-        method: "tools/call",
-        summary: "read file.ts",
-      },
-      {
-        type: "acp_traffic",
-        taskId: "T-001",
-        direction: "recv",
-        summary: "file contents returned",
-      },
-    );
-    const { lastFrame } = render(<AcpLogPane state={state} />);
-    const frame = lastFrame()!;
-
-    expect(frame).toContain("acp");
-    // Send glyph
-    expect(frame).toContain("▸");
-    // Recv glyph
-    expect(frame).toContain("◂");
-    // Method shown for the first line
-    expect(frame).toContain("tools/call");
-    // Summaries
-    expect(frame).toContain("read file.ts");
-    expect(frame).toContain("file contents returned");
-  });
-
-  it("does NOT prefix taskId when only one task is running", () => {
-    const state = buildState(
-      { type: "task_registered", taskId: "T-001", title: "Solo" },
-      { type: "task_started", taskId: "T-001" },
-      {
-        type: "acp_traffic",
-        taskId: "T-001",
-        direction: "send",
-        summary: "hello",
-      },
-    );
-    const { lastFrame } = render(<AcpLogPane state={state} />);
-    const frame = lastFrame()!;
-
-    // The line should contain the summary but NOT the taskId prefix
-    // (taskId prefix only shows under concurrency > 1)
-    const lines = frame.split("\n");
-    const trafficLine = lines.find((l) => l.includes("hello"));
-    expect(trafficLine).toBeDefined();
-    // T-001 should NOT appear on the traffic line (only in the "acp" header or not at all)
-    expect(trafficLine).not.toContain("T-001");
-  });
-
-  it("prefixes taskId when more than one task is running (concurrency)", () => {
-    const state = buildState(
-      { type: "task_registered", taskId: "T-001", title: "First" },
-      { type: "task_registered", taskId: "T-002", title: "Second" },
-      { type: "task_started", taskId: "T-001" },
-      { type: "task_started", taskId: "T-002" },
-      {
-        type: "acp_traffic",
-        taskId: "T-001",
-        direction: "send",
-        summary: "alpha",
-      },
-      {
-        type: "acp_traffic",
-        taskId: "T-002",
-        direction: "recv",
-        summary: "beta",
-      },
-    );
-    const { lastFrame } = render(<AcpLogPane state={state} />);
-    const frame = lastFrame()!;
-
-    // Under concurrency, taskId prefix should appear on traffic lines
-    const lines = frame.split("\n");
-    const alphaLine = lines.find((l) => l.includes("alpha"));
-    const betaLine = lines.find((l) => l.includes("beta"));
-    expect(alphaLine).toContain("T-001");
-    expect(betaLine).toContain("T-002");
-  });
-
-  it("respects maxLines and shows only the tail", () => {
-    const events: StoreEvent[] = [
-      { type: "task_registered", taskId: "T-001", title: "Task" },
-      { type: "task_started", taskId: "T-001" },
-    ];
-    for (let i = 0; i < 10; i++) {
-      events.push({
-        type: "acp_traffic",
-        taskId: "T-001",
-        direction: "send",
-        summary: `msg-${i}`,
-      });
-    }
-    const state = buildState(...events);
-    const { lastFrame } = render(<AcpLogPane state={state} maxLines={3} />);
-    const frame = lastFrame()!;
-
-    // Should show only the last 3 messages
-    expect(frame).toContain("msg-7");
-    expect(frame).toContain("msg-8");
-    expect(frame).toContain("msg-9");
-    expect(frame).not.toContain("msg-6");
   });
 });
 
