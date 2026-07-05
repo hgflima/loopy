@@ -46,7 +46,7 @@
     Verificação: `npm test -- policies` && `npm test -- orchestrator` && `npm run typecheck`.
     Deps: T-005. Files: src/loop/orchestrator.ts, testes. Scope: M.
 
-- [ ] T-007: Parada dura (`abort_loop`) + Cancelamento por Sessão
+- [x] T-007: Parada dura (`abort_loop`) + Cancelamento por Sessão
     `abort_loop` → cancela imediatamente as irmãs em voo: `session.cancel()` (`acp/session.ts:161-166`, sibling-safe, cooperativo — `prompt()` resolve `cancelled` `:68-72,234`) em cada Sessão, aguarda o settle com timeout; ao expirar, `child.kill()` do processo (`agent.ts`) + kill dos childs execa de Steps shell em voo (a Run inteira encerra). Comando dentro do mutex completa atomicamente. Prompt de aprovação pendente abandonado. Tasks canceladas: worktree + checkpoint preservados resumíveis (OQ13); a que falhou → `escalated`.
     Aceite: `abort_loop` cancela em-voo via `session.cancel()` (só as alvo — sibling-safe); timeout → `child.kill()` (fake registra); Run encerra; canceladas resumíveis (worktree+checkpoint intactos); `child.kill()` nunca para abortar UMA Task só.
     Verificação: `npm test -- policies` && `npm test -- acp` && `npm run typecheck`.
