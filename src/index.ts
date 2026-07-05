@@ -22,11 +22,12 @@
  */
 import { realpathSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { normalize, relative, resolve as resolvePath } from "node:path";
+import { basename, normalize, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { openAgent } from "./acp/agent";
+import { agentChunkText } from "./acp/client";
 import { createSessionPool } from "./acp/session";
 import {
   BacklogError,
@@ -49,7 +50,7 @@ import {
   resolve as resolveInterp,
   type Scope,
 } from "./interp/resolver";
-import { createLogFactory } from "./logging/logger";
+import { createLogFactory, type AcpTrafficEntry } from "./logging/logger";
 import {
   createCheckpointPort,
   createMarkDonePort,
@@ -77,6 +78,7 @@ import {
 } from "./resume/state";
 import { createMutex } from "./loop/mutex";
 import { createFullRegistry } from "./steps/index";
+import { mountApp } from "./tui/mount";
 import { startUi } from "./tui/start";
 import type {
   ChecksRunnerPort,
@@ -327,14 +329,60 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     root,
     verbose: flags.verbose,
   });
-  const logger = teeLogger(logFactory.forTask("loopy"), io, flags.verbose);
-  const ui = startUi({ flags });
+  const fileLogger = logFactory.forTask("loopy");
+
+  // T-008: mount Ink + emit=dispatch + sessionId→taskId + logs arquivo-only.
+  const ui = startUi({ flags, mount: mountApp });
+
+  // In TUI mode the Ink frame owns stdout — motor logs go file-only so they
+  // don't corrupt the frame (OQ16). In fallback mode the teeLogger echoes to
+  // stdout as before.
+  const logger: LoggerPort = ui.tui
+    ? fileLogger
+    : teeLogger(fileLogger, io, flags.verbose);
+
+  // Buffered notify for TUI mode: escalation/dirty-parent messages are held
+  // and drained to stderr AFTER ui.stop() so they don't corrupt the frame.
+  const notifyBuffer: string[] = [];
+  const notify = ui.tui
+    ? (message: string) => { notifyBuffer.push(message); }
+    : (message: string) => io.err(`${message}\n`);
+
+  // sessionId→taskId map: populated by the sessionProvider wrapper; read by
+  // onUpdate/onTraffic to stamp the correct taskId on ACP callbacks.
+  const sessionToTask = new Map<string, string>();
+
+  // Gate ACP capture by --verbose / capture_acp_traffic.
+  const captureAcp = flags.verbose || config.logging.capture_acp_traffic;
+
+  /** Resolve sessionId to taskId (falls back to sessionId when not yet mapped). */
+  const taskFor = (sessionId: string): string =>
+    sessionToTask.get(sessionId) ?? sessionId;
+
+  /** Dispatch one ACP traffic event to the store and log it to file. */
+  const logTraffic = (taskId: string, entry: AcpTrafficEntry, summary: string): void => {
+    ui.dispatch({ type: "acp_traffic", taskId, direction: entry.direction, method: entry.method, summary });
+    fileLogger.acp(entry);
+  };
 
   const agent = await openAgent({
     command: config.acp.command,
     cwd: root,
     permissions: { on_request: config.acp.permissions.on_request },
     logger,
+    onUpdate: (notification) => {
+      // Agent stream → stream_chunk only; session/update as ACP traffic is
+      // already captured by onTraffic (client.ts calls recv() before onUpdate).
+      const text = agentChunkText(notification.update);
+      if (text !== undefined) {
+        ui.dispatch({ type: "stream_chunk", taskId: taskFor(notification.sessionId), text });
+      }
+    },
+    onTraffic: captureAcp
+      ? (entry, sessionId) => {
+          logTraffic(taskFor(sessionId), entry, entry.method ?? entry.direction);
+        }
+      : undefined,
   });
   const pool = createSessionPool({ ctx: agent.ctx, text: agent.text, cost: agent.cost, logger });
   const git = createGit({ root });
@@ -361,11 +409,17 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
       backlogOptions,
     }),
     git,
-    notify: (message) => io.err(`${message}\n`),
-    sessionProvider: (cwd) => pool.session(cwd),
+    notify,
+    // Wrap sessionProvider to register sessionId→taskId when a session opens.
+    sessionProvider: async (cwd) => {
+      const session = await pool.session(cwd);
+      sessionToTask.set(session.sessionId, basename(cwd));
+      return session;
+    },
     checkpoint: createCheckpointPort({ statePath, pipelineHash }),
     knownTaskIds,
     parentMutex,
+    emit: ui.dispatch,
   };
 
   try {
@@ -374,6 +428,10 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     pool.closeAll();
     await agent.shutdown();
     ui.stop();
+    // Drain buffered notify messages to stderr after the TUI is unmounted.
+    for (const msg of notifyBuffer) {
+      io.err(`${msg}\n`);
+    }
   }
 }
 
