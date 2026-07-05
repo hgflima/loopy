@@ -85,11 +85,27 @@ export interface TaskState {
   readonly reason?: string;
 }
 
+/** Direction of an ACP message: sent to the agent or received from it. */
+export type AcpDirection = "send" | "recv";
+
+/** One line in the global ACP traffic log (ring bounded). */
+export interface AcpLogLine {
+  readonly taskId: string;
+  readonly direction: AcpDirection;
+  readonly method?: string;
+  readonly summary: string;
+}
+
+/** Maximum entries kept in {@link StoreState.acpLog} (ring bounded). */
+export const ACP_LOG_CAP = 200;
+
 /** The whole observable run state: tasks in backlog order + DAG edges. */
 export interface StoreState {
   readonly tasks: readonly TaskState[];
   /** Dependency edges: `[dep, dependente]` — "dependente depends on dep". */
   readonly edges: readonly [string, string][];
+  /** Global ACP traffic log — ring bounded to {@link ACP_LOG_CAP} entries. */
+  readonly acpLog: readonly AcpLogLine[];
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +174,13 @@ export type StoreEvent =
       readonly taskId: string;
       readonly status: "done" | "escalated" | "skipped" | "paused";
       readonly reason?: string;
+    }
+  | {
+      readonly type: "acp_traffic";
+      readonly taskId: string;
+      readonly direction: AcpDirection;
+      readonly method?: string;
+      readonly summary: string;
     };
 
 // ---------------------------------------------------------------------------
@@ -166,7 +189,7 @@ export type StoreEvent =
 
 /** The empty starting state (no tasks, no edges). */
 export function initialState(): StoreState {
-  return { tasks: [], edges: [] };
+  return { tasks: [], edges: [], acpLog: [] };
 }
 
 /**
@@ -334,6 +357,20 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         reason: event.reason,
         currentStepId: undefined,
       }));
+
+    case "acp_traffic": {
+      const line: AcpLogLine = {
+        taskId: event.taskId,
+        direction: event.direction,
+        method: event.method,
+        summary: event.summary,
+      };
+      const log = [...state.acpLog, line];
+      return {
+        ...state,
+        acpLog: log.length > ACP_LOG_CAP ? log.slice(-ACP_LOG_CAP) : log,
+      };
+    }
   }
 }
 

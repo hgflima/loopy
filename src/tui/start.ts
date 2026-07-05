@@ -111,7 +111,7 @@ export function startUi(options: StartUiOptions): Ui {
 
   const print =
     options.linePrint ?? ((line: string) => void out.write(`${line}\n`));
-  const reporter = createLineReporter({ print });
+  const reporter = createLineReporter({ print, verbose: flags.verbose });
   const ui: UiPort = flags.yes
     ? createAutoApproval()
     : createReadlineApproval({ input: options.stdin, output: options.stdout });
