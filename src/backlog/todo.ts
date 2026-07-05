@@ -41,6 +41,8 @@ export interface BacklogOptions {
   readonly doneMarker?: string;
   /** Regex source used to extract the task id. Default `"T-\\d+"`. */
   readonly taskIdPattern?: string;
+  /** Prefix of the deps line in task body (case-insensitive). Default `"Deps:"`. */
+  readonly depsPattern?: string;
   /** Build `${task.branch}` from a task. Default `"${id}-${slug}"`. */
   readonly branchFor?: (parts: BranchParts) => string;
 }
@@ -48,6 +50,7 @@ export interface BacklogOptions {
 const DEFAULT_PENDING = "- [ ]";
 const DEFAULT_DONE = "- [x]";
 const DEFAULT_ID_PATTERN = "T-\\d+";
+const DEFAULT_DEPS_PATTERN = "Deps:";
 
 /** Translate a validated {@link BacklogConfig} into {@link BacklogOptions}. */
 export function backlogOptionsFrom(config: BacklogConfig): BacklogOptions {
@@ -55,6 +58,7 @@ export function backlogOptionsFrom(config: BacklogConfig): BacklogOptions {
     pendingMarker: config.pending_marker,
     doneMarker: config.done_marker,
     taskIdPattern: config.task_id_pattern,
+    depsPattern: config.deps_pattern,
   };
 }
 
@@ -63,6 +67,10 @@ interface ResolvedOptions {
   readonly pendingMarker: string;
   readonly doneMarker: string;
   readonly idRegex: RegExp;
+  /** Case-insensitive prefix for the deps line (e.g. `"Deps:"`). */
+  readonly depsPattern: string;
+  /** Full id regex (not anchored) used to validate dep ids. */
+  readonly idValidationRegex: RegExp;
   readonly branchFor: (parts: BranchParts) => string;
 }
 
@@ -77,6 +85,8 @@ function resolveOptions(options: BacklogOptions): ResolvedOptions {
     doneMarker: options.doneMarker ?? DEFAULT_DONE,
     // Anchor at the start of the checkbox content so the id is the first token.
     idRegex: new RegExp(`^(?:${pattern})`),
+    depsPattern: options.depsPattern ?? DEFAULT_DEPS_PATTERN,
+    idValidationRegex: new RegExp(`^(?:${pattern})$`),
     branchFor: options.branchFor ?? defaultBranch,
   };
 }
@@ -136,6 +146,28 @@ function extractBody(lines: readonly string[], startIndex: number): string {
   return collected.map((line) => line.slice(indent)).join("\n");
 }
 
+/**
+ * Extract dep ids from the first `Deps:` line in the body.
+ * `"nenhuma"` (case-insensitive) or absent line → `[]`.
+ * Ids that don't match `task_id_pattern` are silently dropped.
+ */
+function parseDeps(body: string, opts: ResolvedOptions): string[] {
+  const prefix = opts.depsPattern.toLowerCase();
+
+  for (const line of body.split("\n")) {
+    if (!line.trim().toLowerCase().startsWith(prefix)) continue;
+
+    const raw = line.trim().slice(opts.depsPattern.length).trim();
+    if (!raw || /^nenhuma$/i.test(raw)) return [];
+
+    return raw
+      .split(",")
+      .map((t) => t.trim())
+      .filter((id) => id && opts.idValidationRegex.test(id));
+  }
+  return [];
+}
+
 /** Parse one column-0 checkbox line into a task, or `null` if it isn't one. */
 function parseTaskLine(
   line: string,
@@ -168,8 +200,9 @@ function parseTaskLine(
   const slug = slugify(title);
   const branch = opts.branchFor({ id, slug, title });
   const body = extractBody(lines, lineIndex + 1);
+  const deps = parseDeps(body, opts);
 
-  return { id, slug, title, body, branch, done, lineIndex };
+  return { id, slug, title, body, branch, done, deps, lineIndex };
 }
 
 /**
@@ -199,6 +232,7 @@ export function parseBacklog(
     body: t.body,
     branch: t.branch,
     done: t.done,
+    deps: t.deps,
   }));
 }
 

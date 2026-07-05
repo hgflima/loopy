@@ -16,6 +16,7 @@ function task(id: string): Task {
     body: "",
     branch: id,
     done: false,
+    deps: [],
   };
 }
 

@@ -248,3 +248,112 @@ describe("backlogOptionsFrom", () => {
     expect(task?.id).toBe("TASK-1");
   });
 });
+
+describe("parseBacklog — deps parsing", () => {
+  it("parses Deps: line into task.deps array", () => {
+    const tasks = parseBacklog(fixtureSource());
+    const t002 = tasks.find((t) => t.id === "T-002");
+
+    expect(t002?.deps).toEqual(["T-001"]);
+  });
+
+  it("parses multiple deps separated by commas", () => {
+    const tasks = parseBacklog(fixtureSource());
+    const t003 = tasks.find((t) => t.id === "T-003");
+
+    expect(t003?.deps).toEqual(["T-001", "T-002"]);
+  });
+
+  it("returns empty array when no Deps: line is present", () => {
+    const tasks = parseBacklog(fixtureSource());
+    const t001 = tasks.find((t) => t.id === "T-001");
+
+    expect(t001?.deps).toEqual([]);
+  });
+
+  it("returns empty array for tasks with no body", () => {
+    const tasks = parseBacklog(fixtureSource());
+    const t010 = tasks.find((t) => t.id === "T-010");
+
+    expect(t010?.deps).toEqual([]);
+  });
+
+  it("treats 'nenhuma' (any case) as no deps", () => {
+    const source = [
+      "- [ ] T-001: First task",
+      "      Deps: nenhuma",
+    ].join("\n");
+
+    const [task] = parseBacklog(source);
+    expect(task?.deps).toEqual([]);
+  });
+
+  it("treats 'Nenhuma' (capitalized) as no deps", () => {
+    const source = [
+      "- [ ] T-001: First task",
+      "      Deps: Nenhuma",
+    ].join("\n");
+
+    const [task] = parseBacklog(source);
+    expect(task?.deps).toEqual([]);
+  });
+
+  it("is case-insensitive on the Deps: prefix", () => {
+    const source = [
+      "- [ ] T-001: First",
+      "- [ ] T-002: Second",
+      "      deps: T-001",
+    ].join("\n");
+
+    const tasks = parseBacklog(source);
+    expect(tasks[1]?.deps).toEqual(["T-001"]);
+  });
+
+  it("tolerates extra spaces around commas and ids", () => {
+    const source = [
+      "- [ ] T-001: A",
+      "- [ ] T-002: B",
+      "- [ ] T-003: C",
+      "      Deps:  T-001 , T-002 ",
+    ].join("\n");
+
+    const tasks = parseBacklog(source);
+    expect(tasks[2]?.deps).toEqual(["T-001", "T-002"]);
+  });
+
+  it("ignores dep ids that don't match task_id_pattern", () => {
+    const source = [
+      "- [ ] T-001: A",
+      "- [ ] T-002: B",
+      "      Deps: T-001, INVALID, T-999",
+    ].join("\n");
+
+    const tasks = parseBacklog(source);
+    // T-001 and T-999 match T-\\d+ but INVALID does not
+    expect(tasks[1]?.deps).toEqual(["T-001", "T-999"]);
+  });
+
+  it("respects custom deps_pattern", () => {
+    const source = [
+      "- [ ] T-001: A",
+      "- [ ] T-002: B",
+      "      Requires: T-001",
+    ].join("\n");
+
+    const tasks = parseBacklog(source, { depsPattern: "Requires:" });
+    expect(tasks[1]?.deps).toEqual(["T-001"]);
+  });
+
+  it("preserves body byte-for-byte including the Deps: line", () => {
+    const source = [
+      "- [ ] T-001: First",
+      "- [ ] T-002: Second task",
+      "      Some description.",
+      "      Deps: T-001",
+    ].join("\n");
+
+    const tasks = parseBacklog(source);
+    expect(tasks[1]?.body).toBe("Some description.\nDeps: T-001");
+    expect(tasks[1]?.deps).toEqual(["T-001"]);
+  });
+});

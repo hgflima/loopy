@@ -11,10 +11,12 @@
 
 - [ ] T-002: Schema + loader do loopy.yml
       config/schema.ts (zod) e config/load.ts.
+      Deps: T-001
 
 - [ ] T-003: Simplificação do parser (T-\d+)
       Corpo com caracteres especiais: `- [ ]` literal no meio do texto,
       e uma linha extra indentada.
+      Deps: T-001, T-002
 
 ## Checkpoint A — revisão humana.
 

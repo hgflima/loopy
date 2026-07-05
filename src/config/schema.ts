@@ -66,6 +66,7 @@ const backlogSchema = z
     pending_marker: nonEmptyString,
     done_marker: nonEmptyString,
     task_id_pattern: nonEmptyString,
+    deps_pattern: nonEmptyString.optional(),
     body: z.enum(["indented"]),
     mark_done_on_success: z.boolean(),
   })

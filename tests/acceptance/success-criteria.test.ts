@@ -47,6 +47,7 @@ function sampleTask(): Task {
     body: "Corpo da task de amostra.",
     branch: "T-042-amostra",
     done: false,
+    deps: [],
   };
 }
 
