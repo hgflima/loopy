@@ -60,7 +60,7 @@
 
 ## Fase 4 — Surfaces expostas + docs (T-009 ∥ cedo; T-010 ∥ T-011; T-012 sink)
 
-- [ ] T-009: Store — grafo exposto (só dados, sem rendering)
+- [x] T-009: Store — grafo exposto (só dados, sem rendering)
     `StoreState` (`tui/store.ts:83-85`) ganha `edges: readonly [string,string][]`; `TaskStatus` da store (`:31-39`) ganha `blocked`/`skipped`/`paused`. Derivados (ready/running/blocked/skipped) = funções puras (AD-6). Novo `StoreEvent` + `case` no `reduce`. Nenhum rendering novo (a store não é emitida pelo orquestrador — fora do escopo). `findIndex` O(n) mantido (MVP; `Map` pós-MVP).
     Aceite: `edges` + status novos expostos; derivados corretos; eventos concorrentes não corrompem a store (teste de concorrência); nenhum componente de render novo.
     Verificação: `npm test -- tui` && `npm run typecheck`.
