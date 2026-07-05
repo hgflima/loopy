@@ -276,6 +276,10 @@ export interface RunChecksOptions {
   readonly truncate?: Partial<TruncateOptions>;
   /** Injection seam for tests; defaults to {@link runCheckWithExeca}. */
   readonly runOne?: RunOne;
+  /** Fired just before a single check starts (live progress, T-005). */
+  readonly onCheckStart?: (name: string) => void;
+  /** Fired right after a single check finishes (live progress, T-005). */
+  readonly onCheckEnd?: (name: string, ok: boolean) => void;
 }
 
 /**
@@ -295,12 +299,13 @@ export async function runChecks(
 
   const results: CheckResult[] = [];
   for (const check of checks) {
-    results.push(
-      await runOne(check, {
-        cwd: options.cwd,
-        timeoutMs: options.timeoutMs,
-      }),
-    );
+    options.onCheckStart?.(check.name);
+    const r = await runOne(check, {
+      cwd: options.cwd,
+      timeoutMs: options.timeoutMs,
+    });
+    options.onCheckEnd?.(check.name, r.ok);
+    results.push(r);
   }
 
   const ok = results.every((r) => r.ok);
@@ -320,6 +325,12 @@ export function createChecksRunner(
   } = {},
 ): ChecksRunnerPort {
   return {
-    run: (checks, opts) => runChecks(checks, { ...defaults, cwd: opts.cwd }),
+    run: (checks, opts) =>
+      runChecks(checks, {
+        ...defaults,
+        cwd: opts.cwd,
+        onCheckStart: opts.onCheckStart,
+        onCheckEnd: opts.onCheckEnd,
+      }),
   };
 }
