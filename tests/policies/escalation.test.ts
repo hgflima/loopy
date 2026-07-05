@@ -106,7 +106,9 @@ describe("escalation — keep_worktree preserves the failed task's worktree", ()
 
     // `work` fails; the `always` cleanup is SKIPPED — the worktree is preserved.
     expect(order).toEqual(["T-1:work"]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // `pause` → task goes to `paused` (checkpoint preserved, T-006).
+    expect(result.paused).toEqual(["T-1"]);
+    expect(result.escalated).toEqual([]);
     expect(result.completed).toEqual([]);
   });
 
@@ -122,7 +124,9 @@ describe("escalation — keep_worktree preserves the failed task's worktree", ()
 
     // `work` fails; the `always` cleanup runs anyway — the worktree is torn down.
     expect(order).toEqual(["T-1:work", "T-1:cleanup"]);
-    expect(result.escalated).toEqual(["T-1"]);
+    // `pause` → paused (T-006).
+    expect(result.paused).toEqual(["T-1"]);
+    expect(result.escalated).toEqual([]);
   });
 
   it("keep_worktree never suppresses `always` steps on a SUCCESSFUL task", async () => {

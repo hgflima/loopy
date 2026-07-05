@@ -906,13 +906,12 @@ async function runTaskPipeline(
 export type EscalationDecision = "continue" | "stop";
 
 /**
- * Map an escalation `action` to an outer-loop decision: `skip_task` moves on to
- * the next task; `pause` and `abort_loop` halt the loop. (T-018 fleshes out the
- * fuller semantics: `keep_worktree` preservation, `notify` targets, and a
- * genuinely resumable `pause` vs. a hard `abort`.)
+ * Map an escalation `action` to an outer-loop decision: only `abort_loop`
+ * halts the Run. `pause` (checkpoint preserved, resumable) and `skip_task`
+ * (checkpoint abandoned) both **continue draining** reachable tasks (T-006).
  */
 export function decideEscalation(action: EscalationAction): EscalationDecision {
-  return action === "skip_task" ? "continue" : "stop";
+  return action === "abort_loop" ? "stop" : "continue";
 }
 
 /** Why {@link runLoop} stopped iterating. */
@@ -921,7 +920,6 @@ export type LoopStopReason =
   | "max_iterations"
   | "stop_signal"
   | "dirty_parent"
-  | "escalation_pause"
   | "escalation_abort";
 
 /** Summary of a {@link runLoop} run. */
@@ -1004,6 +1002,7 @@ export async function runLoop(
   const startedAt = new Date(clock()).toISOString();
   const completed: string[] = [];
   const escalated: string[] = [];
+  const paused: string[] = [];
   const skipped: string[] = [];
   const tasksMetrics: Record<string, TaskMetrics> = {};
   // `--concurrency N` overrides yml; `--max-iterations N` overrides yml ceiling.
@@ -1023,7 +1022,7 @@ export async function runLoop(
     return {
       completed,
       escalated,
-      paused: [],
+      paused,
       skipped,
       iterations: tasksStarted,
       stoppedBy,
@@ -1166,9 +1165,7 @@ export async function runLoop(
         return { taskId: task.id };
       }
 
-      // Persistent failure → escalation.
-      escalated.push(task.id);
-      status.set(task.id, "escalated");
+      // Persistent failure → escalation (T-006: draining semantics).
       const policy = config.policies.escalation;
       const keep = policy.keep_worktree ? " (keep_worktree)" : "";
       const message =
@@ -1177,18 +1174,28 @@ export async function runLoop(
       deps.logger.error(message);
       if (policy.notify) deps.notify?.(message);
 
+      // abort_loop → hard stop (T-007 adds cancellation of in-flight).
       if (decideEscalation(policy.action) === "stop") {
-        checkpoint?.setStatus(
-          task.id,
-          policy.action === "abort_loop" ? "aborted" : "paused",
-        );
-        const stop: LoopStopReason = policy.action === "abort_loop"
-          ? "escalation_abort"
-          : "escalation_pause";
-        return { taskId: task.id, stop };
+        escalated.push(task.id);
+        status.set(task.id, "escalated");
+        checkpoint?.setStatus(task.id, "aborted");
+        return { taskId: task.id, stop: "escalation_abort" };
       }
-      // skip_task → mark descendants as skipped, clear checkpoint.
-      checkpoint?.clearTask(task.id);
+
+      // pause → checkpoint preserved (resumable); skip_task → checkpoint abandoned.
+      if (policy.action === "pause") {
+        paused.push(task.id);
+        status.set(task.id, "paused");
+        checkpoint?.setStatus(task.id, "paused");
+      } else {
+        // skip_task
+        escalated.push(task.id);
+        status.set(task.id, "escalated");
+        checkpoint?.clearTask(task.id);
+      }
+
+      // Both pause and skip_task: mark the transitive closure of descendants
+      // as skipped and continue draining reachable tasks.
       for (const descId of skipDescendants(graph, task.id)) {
         if (status.get(descId) === "blocked") {
           status.set(descId, "skipped");

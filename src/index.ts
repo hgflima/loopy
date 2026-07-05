@@ -490,10 +490,14 @@ async function runLiveFlow(
   // 5) Summary + exit code.
   io.out(
     `loopy: fim — ${result.completed.length} concluída(s), ` +
-      `${result.escalated.length} escalada(s); parada: ${result.stoppedBy}.\n`,
+      `${result.escalated.length} escalada(s), ` +
+      `${result.paused.length} pausada(s), ` +
+      `${result.skipped.length} pulada(s); parada: ${result.stoppedBy}.\n`,
   );
   const problem =
-    result.escalated.length > 0 || result.stoppedBy === "dirty_parent";
+    result.escalated.length > 0 ||
+    result.paused.length > 0 ||
+    result.stoppedBy === "dirty_parent";
   return problem ? 1 : 0;
 }
 
