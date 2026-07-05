@@ -18,7 +18,7 @@
     Verificação: `npm test -- scheduler` && `npm run typecheck`.
     Deps: T-001. Files: src/scheduler/* (novo), src/types.ts, testes. Scope: M.
 
-- [ ] T-003: Config aditivo — `parallel_safe`, `on_merge_conflict`, Warning + buckets de resultado
+- [x] T-003: Config aditivo — `parallel_safe`, `on_merge_conflict`, Warning + buckets de resultado
     `Step.parallel_safe?` (em `stepBaseShape` `schema.ts:101-107` + `StepBase` `types.ts:114-120`, default `false`, mantendo `.strict()`); `policies.git.on_merge_conflict: 'escalate' | 'rebase'` (default `escalate`, em `gitPolicySchema` `schema.ts:266-270` + `GitPolicy` `types.ts:237-240`); Warning estático não-fatal (padrão `collectPipelineWarnings` `warnings.ts:132-136`) se Step `parallel_safe` tiver argv que aparente mutar o parent. `RunLoopResult` (`orchestrator.ts:918-933`) ganha `paused`/`skipped` (tipo; população em T-006). Garantir `concurrency` (`schema.ts:317`) legível.
     Aceite: config com os campos novos parseia; omissão → defaults seguros; Warning dispara no argv suspeito e não é fatal; `RunLoopResult` compila com os buckets.
     Verificação: `npm test -- config` && `npm run typecheck`.
