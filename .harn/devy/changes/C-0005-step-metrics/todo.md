@@ -45,7 +45,7 @@
     Verificação: `npm test -- metrics` && aceite de integração && `npm run typecheck`.
     Deps: T-005, T-002. Files: src/metrics/*, src/index.ts, testes. Scope: M.
 
-- [ ] T-007: Docs — ADR-0003 + CONTEXT.md + fixture
+- [x] T-007: Docs — ADR-0003 + CONTEXT.md + fixture
     ADR-0003 (contrato aditivo + AD-1 + best-effort ACP). Promover ao `CONTEXT.md` os termos novos (Amostra/Uso/Custo/Agregado/Run report/Change report/Change) sem colidir com Iteração/Tentativa/Visita/Report de checks. Bloco `metrics` no `tests/fixtures/project/loopy.yml` se ainda não coberto.
     Aceite: ADR-0003 criado e indexado; glossário atualizado; fixture com `metrics`.
     Verificação: `npm run typecheck` && `npm run lint` && `npm test` verdes.
