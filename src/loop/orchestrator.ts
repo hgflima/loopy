@@ -36,7 +36,7 @@ import {
   selectPrompt,
   type ScopeVars,
 } from "../interp/resolver";
-import { foldSamples } from "../metrics/folds.js";
+import { addCost, foldSamples } from "../metrics/folds.js";
 import {
   clearTaskIn,
   loadState,
@@ -830,7 +830,6 @@ async function runTaskPipeline(
 
   // --- Sample accumulator (C-0005 T-004) ---
   const stepSamples = new Map<string, { type: StepType; samples: Sample[] }>();
-  let lastCost: StepCost | null = null;
   const recordSample = (stepId: string, type: StepType, sample: Sample): void => {
     let entry = stepSamples.get(stepId);
     if (!entry) {
@@ -838,7 +837,6 @@ async function runTaskPipeline(
       stepSamples.set(stepId, entry);
     }
     entry.samples.push(sample);
-    if (sample.cost !== null) lastCost = sample.cost;
   };
 
   // On a failed task, `keep_worktree` preserves the worktree for inspection —
@@ -1122,7 +1120,15 @@ async function runTaskPipeline(
   for (const [stepId, { type, samples }] of stepSamples) {
     steps[stepId] = foldSamples(type, samples);
   }
-  const taskMetrics: TaskMetrics = { steps, cost: lastCost };
+
+  // Cost = sum of readCost() finals from each Session of the Task (T-007).
+  // Multi-agent: one session per agent, each with its own cumulative cost.
+  // Best-effort: null/absent tolerated via addCost identity.
+  let taskCost: StepCost | null = null;
+  for (const session of sessionsByAgent.values()) {
+    taskCost = addCost(taskCost, session.readCost());
+  }
+  const taskMetrics: TaskMetrics = { steps, cost: taskCost };
 
   return { outcome: terminal, taskMetrics };
 }
