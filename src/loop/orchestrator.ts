@@ -62,6 +62,7 @@ import type {
   LoopyConfig,
   OnFailAction,
   PipelineOutcome,
+  ResolvedAgents,
   RunFlags,
   RunMetrics,
   Sample,
@@ -154,6 +155,36 @@ export function buildScopeVars(
 }
 
 // ---------------------------------------------------------------------------
+// Agent binding resolution (AD-6, pure — shared by orchestrator, step, dry-run)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve which agent runs a step and with what model/effort. Pure (AD-6),
+ * reused by: (a) the orchestrator (session routing per step), (b) the agent
+ * step interpreter (apply `setModel`/`setEffort`), (c) the dry-run planner
+ * (print resolved bindings).
+ *
+ * Resolution: `agentName = step.agent ?? default`; `model = step.model ??
+ * agentDef.model`; `effort = step.effort ?? agentDef.effort`. Non-agent steps
+ * resolve to the default agent (their session is never actually used).
+ */
+export function resolveAgentBinding(
+  step: StepConfig,
+  resolvedAgents: ResolvedAgents,
+): { readonly agentName: string; readonly model?: string; readonly effort?: string } {
+  if (step.type !== "agent") {
+    return { agentName: resolvedAgents.default };
+  }
+  const agentName = step.agent ?? resolvedAgents.default;
+  const agentDef = resolvedAgents.byName[agentName];
+  return {
+    agentName,
+    model: step.model ?? agentDef?.model,
+    effort: step.effort ?? agentDef?.effort,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // DAG helpers (shared by dry-run + live loop)
 // ---------------------------------------------------------------------------
 
@@ -242,15 +273,25 @@ export const formatOnFail = (a: OnFailAction): string =>
  * Resolve the template fields of one step against `resolve`. Each primitive
  * exposes different templated fields; this switch encodes only that structural
  * knowledge (the same the schema encodes), never pipeline behavior.
+ *
+ * `resolvedAgents` is used to show the resolved agent binding (agent/model/
+ * effort) for `agent` steps in the dry-run output (T-004).
  */
 function resolveStep(
   step: StepConfig,
   resolve: (template: string) => string,
+  resolvedAgents: ResolvedAgents,
 ): ResolvedStep {
   const fields: ResolvedField[] = [];
 
   switch (step.type) {
     case "agent": {
+      // T-004: show resolved agent binding before the step's own fields.
+      const binding = resolveAgentBinding(step, resolvedAgents);
+      fields.push(setting("agent", binding.agentName));
+      if (binding.model) fields.push(setting("model", binding.model));
+      if (binding.effort) fields.push(setting("effort", binding.effort));
+
       if (step.mode) fields.push(setting("mode", step.mode));
       fields.push(setting("clear_context", String(step.clear_context ?? true)));
       fields.push(prompt("prompt", resolve(selectPrompt(step, FIRST_ATTEMPT))));
@@ -339,7 +380,7 @@ export function planDryRun(
       }),
     );
     const steps = config.pipeline.map((step) =>
-      resolveStep(step, createResolver(scope, { stepId: step.id })),
+      resolveStep(step, createResolver(scope, { stepId: step.id }), config.resolvedAgents),
     );
     return { task, iteration, worktreePath, steps };
   });
@@ -551,12 +592,13 @@ const notWiredGit: GitPort = {
 };
 
 /**
- * Opens (or reuses) the ACP session bound to a task's worktree (AD-3: cwd is
- * immutable per session). Called with the worktree's absolute path the first
- * time an agent step reaches for the session — i.e. *after* `create-worktree`
- * has made the directory exist.
+ * Opens (or reuses) the ACP session bound to an agent + worktree pair (AD-3
+ * evolved: one session per `(agent, worktree)`). Called with the agent name
+ * and the worktree's absolute path the first time an agent step of that agent
+ * reaches for the session — i.e. *after* `create-worktree` has made the
+ * directory exist.
  */
-export type SessionProvider = (worktreeCwd: string) => Promise<AgentSession>;
+export type SessionProvider = (agentName: string, worktreeCwd: string) => Promise<AgentSession>;
 
 /**
  * Wrap a {@link SessionProvider} in an {@link AgentSession} that opens the real
@@ -804,16 +846,22 @@ async function runTaskPipeline(
   // suppressed. Read once; it is config-driven, not engine policy (AD-1).
   const keepWorktree = policies.escalation.keep_worktree;
 
-  // One ACP session per task (AD-3), bound to the worktree's absolute cwd and
-  // opened lazily on the first agent step's use (after `create-worktree`). The
-  // same instance is shared by every step of this task.
+  // Per-agent lazy sessions (AD-3 evolved): one session per (agent, worktree).
+  // A task with Steps from two agents gets two sessions, both with the same cwd.
   const { sessionProvider } = deps;
-  const session: AgentSession =
-    sessionProvider !== undefined
-      ? createLazySession(() =>
-          sessionProvider(resolve(deps.root, worktreePath)),
-        )
-      : (deps.session ?? notWiredSession);
+  const sessionsByAgent = new Map<string, AgentSession>();
+  const getSession = (agentName: string): AgentSession => {
+    let s = sessionsByAgent.get(agentName);
+    if (s === undefined) {
+      s = sessionProvider !== undefined
+        ? createLazySession(() =>
+            sessionProvider(agentName, resolve(deps.root, worktreePath)),
+          )
+        : (deps.session ?? notWiredSession);
+      sessionsByAgent.set(agentName, s);
+    }
+    return s;
+  };
 
   /** Execute a step: emit start/finish, measure duration, record a Sample. */
   const timedExecute = async (
@@ -830,8 +878,8 @@ async function runTaskPipeline(
     const result = await interpreter.execute(ctx);
     recordSample(ctx.step.id, ctx.step.type, {
       durationMs: clock() - t0,
-      usage: session.drainUsage(),
-      cost: session.readCost(),
+      usage: ctx.session.drainUsage(),
+      cost: ctx.session.readCost(),
     });
     safeEmit(deps, {
       type: "step_finished",
@@ -922,6 +970,10 @@ async function runTaskPipeline(
       continue;
     }
 
+    // Resolve agent binding and get the session for this step's agent.
+    const binding = resolveAgentBinding(step, config.resolvedAgents);
+    const stepSession = getSession(binding.agentName);
+
     // Build context and execute.
     const ctx = buildTaskStepContext(
       config,
@@ -935,7 +987,7 @@ async function runTaskPipeline(
         checksReport,
       },
       deps,
-      session,
+      stepSession,
     );
     const result: StepResult = await timedExecute(interpreter, ctx);
     executedSteps.add(step.id);
@@ -1031,6 +1083,8 @@ async function runTaskPipeline(
       if (interpreter === undefined) continue;
 
       try {
+        const teardownBinding = resolveAgentBinding(step, config.resolvedAgents);
+        const teardownSession = getSession(teardownBinding.agentName);
         const ctx = buildTaskStepContext(
           config,
           task,
@@ -1043,7 +1097,7 @@ async function runTaskPipeline(
             checksReport,
           },
           deps,
-          session,
+          teardownSession,
         );
         const result = await timedExecute(interpreter, ctx);
         executedSteps.add(step.id);
