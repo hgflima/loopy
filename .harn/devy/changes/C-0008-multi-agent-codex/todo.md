@@ -80,7 +80,7 @@
   Deps: T-006
   Files: src/tui/store.ts, src/tui/view.ts, src/index.ts
 
-- [ ] T-009: Exemplo canônico multi-agente + ADR-0006 + CONTEXT.md + docstrings
+- [x] T-009: Exemplo canônico multi-agente + ADR-0006 + CONTEXT.md + docstrings
   `examples/loopy.yml` multi-agente (Claude default implementa + Codex simplifica `effort: low` +
   Claude audita `mode: plan`; `acp.default_agent: claude`). Teste de aceite: `--dry-run` imprime
   Agente/model/effort por Step, sem escrever nada. ADR-0006 (via skill de ADR). CONTEXT.md promove
