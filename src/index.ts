@@ -28,7 +28,12 @@ import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { openAgent } from "./acp/agent";
 import { acpTrafficSummary, agentChunkText } from "./acp/client";
-import { createSessionPool } from "./acp/session";
+import {
+  createAgentProcessPool,
+  type PerAgentOptions,
+} from "./acp/pool";
+import { resolveAgentEnv } from "./config/env";
+import { referencedAgents } from "./config/warnings";
 import {
   BacklogError,
   backlogOptionsFrom,
@@ -315,10 +320,11 @@ function teeLogger(file: LoggerPort, io: RunIO, verbose: boolean): LoggerPort {
 }
 
 /**
- * The real live executor: spawn the single ACP agent for the run, wire git +
- * checks + the full step registry + the UI/approval transport, run the outer
- * loop over `tasks`, then tear everything down. This is thin composition over
- * already-tested building blocks; it hardcodes no loop behavior (AD-1).
+ * The real live executor: spawn one ACP process per referenced Agent (AD-3
+ * evolved), wire git + checks + the full step registry + the UI/approval
+ * transport, run the outer loop over `tasks`, then tear everything down.
+ * This is thin composition over already-tested building blocks; it hardcodes
+ * no loop behavior (AD-1).
  */
 async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   const { config, tasks, flags, root, todoPath, knownTaskIds, io } = args;
@@ -348,16 +354,17 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     ? (message: string) => { notifyBuffer.push(message); }
     : (message: string) => io.err(`${message}\n`);
 
-  // sessionId→taskId map: populated by the sessionProvider wrapper; read by
-  // onUpdate/onTraffic to stamp the correct taskId on ACP callbacks.
-  const sessionToTask = new Map<string, string>();
+  // sessionId→{taskId,agent} map: populated by the sessionProvider wrapper;
+  // read by onUpdate/onTraffic to stamp the correct taskId on ACP callbacks.
+  // The `agent` field is carried for T-008 (TUI prefixing by agent when >1).
+  const sessionToTask = new Map<string, { taskId: string; agent: string }>();
 
   // Gate ACP capture by --verbose / capture_acp_traffic.
   const captureAcp = flags.verbose || config.logging.capture_acp_traffic;
 
   /** Resolve sessionId to taskId (falls back to sessionId when not yet mapped). */
   const taskFor = (sessionId: string): string =>
-    sessionToTask.get(sessionId) ?? sessionId;
+    sessionToTask.get(sessionId)?.taskId ?? sessionId;
 
   /** Dispatch one ACP traffic event to the store and log it to file. */
   const logTraffic = (taskId: string, entry: AcpTrafficEntry, summary: string): void => {
@@ -365,27 +372,45 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     fileLogger.acp(entry);
   };
 
-  const defaultAgent = config.resolvedAgents.byName[config.resolvedAgents.default]!;
-  const agent = await openAgent({
-    command: defaultAgent.command,
-    cwd: root,
-    permissions: { on_request: config.acp.permissions.on_request },
+  // Build per-agent options from referenced agents only (AD-3 evolved).
+  const refs = referencedAgents(config.pipeline, config.resolvedAgents.default);
+  const resolvedEnv = resolveAgentEnv(config.resolvedAgents.byName, process.env);
+  const agentOptions = new Map<string, PerAgentOptions>();
+  for (const name of refs) {
+    const def = config.resolvedAgents.byName[name]!;
+    const envOverrides = resolvedEnv[name];
+    agentOptions.set(name, {
+      command: def.command,
+      env: envOverrides && Object.keys(envOverrides).length > 0
+        ? { ...process.env, ...envOverrides }
+        : undefined,
+    });
+  }
+
+  // Eager spawn — one process per referenced agent; spawn-fail = Run fail-fast.
+  const pool = await createAgentProcessPool(
+    agentOptions,
+    async (_name, opts) =>
+      openAgent({
+        command: opts.command,
+        cwd: root,
+        env: opts.env,
+        permissions: { on_request: config.acp.permissions.on_request },
+        logger,
+        onUpdate: (notification) => {
+          const text = agentChunkText(notification.update);
+          if (text !== undefined) {
+            ui.dispatch({ type: "stream_chunk", taskId: taskFor(notification.sessionId), text });
+          }
+        },
+        onTraffic: captureAcp
+          ? (entry, sessionId) => {
+              logTraffic(taskFor(sessionId), entry, acpTrafficSummary(entry));
+            }
+          : undefined,
+      }),
     logger,
-    onUpdate: (notification) => {
-      // Agent stream → stream_chunk only; session/update as ACP traffic is
-      // already captured by onTraffic (client.ts calls recv() before onUpdate).
-      const text = agentChunkText(notification.update);
-      if (text !== undefined) {
-        ui.dispatch({ type: "stream_chunk", taskId: taskFor(notification.sessionId), text });
-      }
-    },
-    onTraffic: captureAcp
-      ? (entry, sessionId) => {
-          logTraffic(taskFor(sessionId), entry, acpTrafficSummary(entry));
-        }
-      : undefined,
-  });
-  const pool = createSessionPool({ ctx: agent.ctx, text: agent.text, cost: agent.cost, logger });
+  );
   const git = createGit({ root });
   const checks: ChecksRunnerPort = {
     run: (list, opts) => runChecks(list, { cwd: resolvePath(root, opts.cwd) }),
@@ -411,10 +436,11 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     }),
     git,
     notify,
-    // Wrap sessionProvider to register sessionId→taskId when a session opens.
-    sessionProvider: async (_agentName, cwd) => {
-      const session = await pool.session(cwd);
-      sessionToTask.set(session.sessionId, basename(cwd));
+    // Wrap sessionProvider to route to the correct Process and register
+    // sessionId→{taskId,agent} when a session opens.
+    sessionProvider: async (agentName, cwd) => {
+      const session = await pool.session(agentName, cwd);
+      sessionToTask.set(session.sessionId, { taskId: basename(cwd), agent: agentName });
       return session;
     },
     checkpoint: createCheckpointPort({ statePath, pipelineHash }),
@@ -426,8 +452,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   try {
     return await runLoop(config, tasks, deps);
   } finally {
-    pool.closeAll();
-    await agent.shutdown();
+    await pool.shutdownAll();
     ui.stop();
     // Drain buffered notify messages to stderr after the TUI is unmounted.
     for (const msg of notifyBuffer) {
