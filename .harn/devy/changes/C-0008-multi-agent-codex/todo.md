@@ -16,7 +16,7 @@
   Deps:
   Files: src/types.ts, src/config/schema.ts, src/config/load.ts, src/config/warnings.ts
 
-- [ ] T-002: Port de Sessão setModel/setEffort (best-effort)
+- [x] T-002: Port de Sessão setModel/setEffort (best-effort)
   `AgentSession += setModel/setEffort` (aditivo). `SessionWrapper` descobre a categoria do config
   option (`model`/`thought_level`) anunciada no `session/new`, chama `session/set_config_option`
   `{ sessionId, configId, value }` (fallback `session/set_model`); capability ausente ⇒ no-op + log;
