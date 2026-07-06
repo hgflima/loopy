@@ -73,7 +73,7 @@
   Deps: T-004
   Files: src/loop/orchestrator.ts, src/metrics/folds.ts
 
-- [ ] T-008: TUI — prefixa Stream/Logs ACP por Agente quando >1
+- [x] T-008: TUI — prefixa Stream/Logs ACP por Agente quando >1
   Eventos `stream_chunk`/`acp_traffic` carregam o Agente (do map sessionId→{taskId,agent}); a view
   prefixa `[<agent>]` **só** quando >1 Agente ativo. Single-agent = byte-idêntico (sem prefixo).
   Aceite: >1 Agente ⇒ prefixo; 1 Agente ⇒ idêntico.
