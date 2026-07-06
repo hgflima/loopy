@@ -65,7 +65,7 @@
   Deps: T-003, T-004
   Files: src/index.ts, src/acp/pool.ts
 
-- [ ] T-007: Métricas — custo por-Task sob multi-Sessão
+- [x] T-007: Métricas — custo por-Task sob multi-Sessão
   `TaskMetrics.cost` = soma dos `readCost()` finais de **cada** Sessão da Task (itera
   `Map<agentName, session>`), best-effort (`n/d` tolerado). Uso por-turno somado por Step inalterado.
   Custo nunca por-Step; forma de `.loopy/metrics.json` inalterada. Single-agente idêntico.
