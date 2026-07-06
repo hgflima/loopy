@@ -240,6 +240,68 @@ describe("parseConfig — migration pre-scan (T-026)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// C-0008 T-001 — ResolvedAgents normalization
+// ---------------------------------------------------------------------------
+
+describe("parseConfig — ResolvedAgents (C-0008 T-001)", () => {
+  it("sintetiza default do acp.command legado", () => {
+    const config = parseConfig(configYaml());
+    expect(config.resolvedAgents).toBeDefined();
+    expect(config.resolvedAgents.default).toBe("default");
+    expect(config.resolvedAgents.byName.default).toBeDefined();
+    expect(config.resolvedAgents.byName.default!.command).toEqual([
+      "npx", "-y", "@agentclientprotocol/claude-agent-acp",
+    ]);
+  });
+
+  it("normaliza agents: registry com default_agent", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        claude: { command: ["claude-agent-acp"] },
+        codex: { command: ["codex-acp"], model: "gpt-5-codex", effort: "medium" },
+      };
+      delete (c.acp as Record<string, unknown>).command;
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+    });
+    const config = parseConfig(yaml);
+    expect(config.resolvedAgents.default).toBe("claude");
+    expect(Object.keys(config.resolvedAgents.byName)).toEqual(
+      expect.arrayContaining(["claude", "codex"]),
+    );
+    expect(config.resolvedAgents.byName.codex!.model).toBe("gpt-5-codex");
+    expect(config.resolvedAgents.byName.codex!.effort).toBe("medium");
+  });
+
+  it("normaliza agents: registry com agente único (default implícito)", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        claude: { command: ["claude-agent-acp"] },
+      };
+      delete (c.acp as Record<string, unknown>).command;
+    });
+    const config = parseConfig(yaml);
+    expect(config.resolvedAgents.default).toBe("claude");
+    expect(Object.keys(config.resolvedAgents.byName)).toEqual(["claude"]);
+  });
+
+  it("preserva env no ResolvedAgents", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        codex: {
+          command: ["codex-acp"],
+          env: { CODEX_API_KEY: "${env.CODEX_API_KEY}" },
+        },
+      };
+      delete (c.acp as Record<string, unknown>).command;
+    });
+    const config = parseConfig(yaml);
+    expect(config.resolvedAgents.byName.codex!.env).toEqual({
+      CODEX_API_KEY: "${env.CODEX_API_KEY}",
+    });
+  });
+});
+
 describe("loadConfig — from disk", () => {
   it("validates the canonical example loopy.yml (examples/loopy.yml)", () => {
     const config = loadConfig(EXAMPLE_YML);

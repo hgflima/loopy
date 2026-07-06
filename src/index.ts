@@ -365,8 +365,9 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     fileLogger.acp(entry);
   };
 
+  const defaultAgent = config.resolvedAgents.byName[config.resolvedAgents.default]!;
   const agent = await openAgent({
-    command: config.acp.command,
+    command: defaultAgent.command,
     cwd: root,
     permissions: { on_request: config.acp.permissions.on_request },
     logger,
@@ -681,7 +682,7 @@ async function execute(
   const config = loadConfig(configPath);
 
   // Non-blocking warnings (cycles, always+goto) — printed to stderr, never fatal.
-  const warnings = collectPipelineWarnings(config.pipeline);
+  const warnings = collectPipelineWarnings(config.pipeline, config.resolvedAgents);
   if (warnings.length > 0) {
     io.err(`loopy: ${formatWarnings(warnings, configPath)}\n`);
   }

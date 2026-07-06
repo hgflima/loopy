@@ -20,6 +20,29 @@
 import type { StoreEvent } from "./tui/store";
 
 // ---------------------------------------------------------------------------
+// Agent registry (C-0008, ADR-0006)
+// ---------------------------------------------------------------------------
+
+/** A named agent definition from the `agents:` registry in `loopy.yml`. */
+export interface AgentDef {
+  readonly command: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  readonly model?: string;
+  readonly effort?: string;
+}
+
+/**
+ * Normalized agent registry produced by `load` — the uniform shape consumed
+ * by the runtime (pools, session provider, dry-run). Legacy `acp.command`
+ * is synthesized into `{ byName: { default: {command} }, default: "default" }`.
+ */
+export interface ResolvedAgents {
+  readonly byName: Readonly<Record<string, AgentDef>>;
+  /** Name of the default agent (used when a Step omits `agent:`). */
+  readonly default: string;
+}
+
+// ---------------------------------------------------------------------------
 // Backlog
 // ---------------------------------------------------------------------------
 
@@ -137,6 +160,12 @@ export interface AgentStep extends StepBase {
   /** Verdict gate, e.g. `"AUDIT: PASS"`; blocks continuation if unmet. */
   readonly expect?: string;
   readonly on_fail?: OnFailAction;
+  /** Name of an Agent in the `agents:` registry. Omitted = default agent. */
+  readonly agent?: string;
+  /** Model override for this step (best-effort; passed raw to the adapter). */
+  readonly model?: string;
+  /** Reasoning effort override for this step (best-effort, per-Agent). */
+  readonly effort?: string;
 }
 
 /** `shell` — external commands via execa, in order. */
@@ -190,7 +219,10 @@ export interface AcpPermissionsConfig {
 
 /** Mechanics of the ACP subprocess (not the loop; how the engine talks ACP). */
 export interface AcpConfig {
-  readonly command: readonly string[];
+  /** Legacy command — mutually exclusive with top-level `agents:`. */
+  readonly command?: readonly string[];
+  /** Name of the default agent from the `agents:` registry (optional). */
+  readonly default_agent?: string;
   readonly request_timeout_seconds: number;
   readonly permissions: AcpPermissionsConfig;
 }
@@ -278,6 +310,8 @@ export interface LoopyConfig {
   readonly version: string;
   readonly name: string;
   readonly workspace: WorkspaceConfig;
+  /** Named agent registry (C-0008); mutually exclusive with `acp.command`. */
+  readonly agents?: Readonly<Record<string, AgentDef>>;
   readonly acp: AcpConfig;
   readonly inputs: InputsConfig;
   readonly checks: ChecksConfig;
@@ -288,6 +322,8 @@ export interface LoopyConfig {
   readonly policies: Policies;
   readonly logging: LoggingConfig;
   readonly metrics?: MetricsConfig;
+  /** Normalized agent registry — always present after `load` (synthesized from legacy when needed). */
+  readonly resolvedAgents: ResolvedAgents;
 }
 
 // ---------------------------------------------------------------------------

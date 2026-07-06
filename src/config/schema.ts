@@ -51,11 +51,29 @@ const acpPermissionsSchema = z
 
 const acpSchema = z
   .object({
-    command: z.array(z.string()).min(1),
+    command: z.array(z.string()).min(1).optional(),
+    default_agent: nonEmptyString.optional(),
     request_timeout_seconds: z.number().positive(),
     permissions: acpPermissionsSchema,
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// agents (named registry, C-0008)
+// ---------------------------------------------------------------------------
+
+/** A single agent definition: `{ command, env?, model?, effort? }`. */
+const agentDefSchema = z
+  .object({
+    command: z.array(z.string()).min(1),
+    env: z.record(z.string(), z.string()).optional(),
+    model: nonEmptyString.optional(),
+    effort: nonEmptyString.optional(),
+  })
+  .strict();
+
+/** Optional top-level `agents:` registry (`name → AgentDef`). */
+const agentsSchema = z.record(nonEmptyString, agentDefSchema);
 
 // ---------------------------------------------------------------------------
 // inputs / backlog
@@ -131,6 +149,9 @@ const agentStepSchema = z
     verify: verifySchema.optional(),
     expect: nonEmptyString.optional(),
     on_fail: onFailSchema.optional(),
+    agent: nonEmptyString.optional(),
+    model: nonEmptyString.optional(),
+    effort: nonEmptyString.optional(),
   })
   .strict();
 
@@ -313,6 +334,7 @@ export const loopyConfigSchema = z
     version: nonEmptyString,
     name: nonEmptyString,
     workspace: workspaceSchema,
+    agents: agentsSchema.optional(),
     acp: acpSchema,
     inputs: inputsSchema,
     checks: checksSchema,
@@ -323,7 +345,74 @@ export const loopyConfigSchema = z
     logging: loggingSchema,
     metrics: metricsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((cfg, ctx) => {
+    const hasAgents = cfg.agents !== undefined && Object.keys(cfg.agents).length > 0;
+    const hasLegacyCommand = cfg.acp.command !== undefined;
+
+    // (a) agents: and acp.command are mutually exclusive
+    if (hasAgents && hasLegacyCommand) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "'agents' e 'acp.command' são mutuamente exclusivos — use um ou outro.",
+        path: ["agents"],
+      });
+      return; // short-circuit: remaining checks need a single source
+    }
+
+    // (d) at least one resolvable agent
+    if (!hasAgents && !hasLegacyCommand) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Nenhum agente resolvível: defina 'agents' ou 'acp.command'.",
+        path: ["acp"],
+      });
+      return;
+    }
+
+    // When using legacy command, no agent-level validations needed
+    if (!hasAgents) return;
+
+    const agentNames = new Set(Object.keys(cfg.agents!));
+    const namesList = [...agentNames].join(", ");
+
+    // (c) default_agent (if set) must exist in registry
+    if (cfg.acp.default_agent !== undefined && !agentNames.has(cfg.acp.default_agent)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `'acp.default_agent' referencia "${cfg.acp.default_agent}", que não existe em 'agents' (disponíveis: ${namesList}).`,
+        path: ["acp", "default_agent"],
+      });
+      return;
+    }
+
+    // Determine the default agent name
+    const defaultAgent =
+      cfg.acp.default_agent ??
+      (agentNames.size === 1 ? [...agentNames][0]! : undefined);
+
+    // (b)+(e) validate agent references on agent steps
+    for (let i = 0; i < cfg.pipeline.length; i++) {
+      const step = cfg.pipeline[i]!;
+      if (step.type !== "agent") continue;
+
+      if (step.agent !== undefined && !agentNames.has(step.agent)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `step "${step.id}": 'agent' referencia "${step.agent}", que não existe em 'agents' (disponíveis: ${namesList}).`,
+          path: ["pipeline", i, "agent"],
+        });
+      } else if (step.agent === undefined && defaultAgent === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `step "${step.id}": 'agent' é obrigatório quando há >1 agente sem 'acp.default_agent' (disponíveis: ${namesList}).`,
+          path: ["pipeline", i, "agent"],
+        });
+      }
+    }
+  });
 
 /** The validated, defaults-applied config as inferred from the schema. */
 export type LoopyConfigParsed = z.infer<typeof loopyConfigSchema>;
