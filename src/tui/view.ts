@@ -305,6 +305,16 @@ function overlapsNode(
 // ---------------------------------------------------------------------------
 
 /**
+ * Max consecutive node-less ("empty") rows kept when compacting the graph
+ * vertically. dagre spreads edge-endpoint nodes far apart on the rank axis to
+ * route edges; snapped 1:1 to terminal cells those empty bands read as
+ * enormous vertical edge runs. Capping each empty run to this many rows
+ * shrinks long vertical lines ~3-5x while preserving the DAG shape and the
+ * single blank row between stacked nodes (a run of length 1 ≤ cap). Tune here.
+ */
+const MAX_EMPTY_ROWS = 3;
+
+/**
  * Build a DAG layout using dagre (`rankdir:"LR"`) and snap all positions to
  * integer cell coordinates. Pure — no I/O, no React.
  *
@@ -387,13 +397,50 @@ export function layoutGraph(
   if (!isFinite(minCol)) minCol = 0;
   if (!isFinite(minRow)) minRow = 0;
 
+  // Vertical compaction: dagre inserts wide vertical gaps between edge-endpoint
+  // nodes to route edges; snapped 1:1 to cells those empty bands become huge
+  // vertical runs. Collapse every maximal run of node-less rows to at most
+  // MAX_EMPTY_ROWS. The remap is monotonic and leaves columns untouched, so
+  // node↔edge alignment, vertical-edge continuity and stacked-node spacing all
+  // survive — only the empty stretches shrink. Applied to node rows and edge
+  // waypoints alike (below) before rasterizing.
+  const rowHasNode = new Set<number>();
+  let lastRow = 0;
+  for (const n of rawNodes) {
+    const r = n.row - minRow;
+    rowHasNode.add(r);
+    if (r > lastRow) lastRow = r;
+  }
+  for (const e of g.edges()) {
+    const edge = g.edge(e);
+    if (!edge?.points) continue;
+    for (const p of edge.points) {
+      const r = Math.round(p.y - 0.5) - minRow;
+      if (r > lastRow) lastRow = r;
+    }
+  }
+  const rowRemap: number[] = [];
+  let outRow = 0;
+  let emptyRun = 0;
+  for (let r = 0; r <= lastRow; r++) {
+    if (rowHasNode.has(r)) {
+      emptyRun = 0;
+      rowRemap[r] = outRow++;
+    } else if (++emptyRun <= MAX_EMPTY_ROWS) {
+      rowRemap[r] = outRow++;
+    } else {
+      rowRemap[r] = outRow - 1;
+    }
+  }
+  const remapRow = (r: number): number => rowRemap[r] ?? r;
+
   // Normalize to 0-based and sort by backlog order
   const orderIdx = new Map(order.map((id, i) => [id, i]));
   const nodes: NodeCell[] = rawNodes
     .map((n) => ({
       id: n.id,
       col: n.col - minCol,
-      row: n.row - minRow,
+      row: remapRow(n.row - minRow),
       width: n.width,
     }))
     .sort(
@@ -408,10 +455,11 @@ export function layoutGraph(
     const edge = g.edge(e);
     if (!edge?.points) continue;
 
-    // Snap waypoints
+    // Snap waypoints (rows go through the same vertical-compaction remap so
+    // edges stay glued to their now-compacted node rows).
     const waypoints = edge.points.map((p: { x: number; y: number }) => ({
       col: Math.round(p.x) - minCol,
-      row: Math.round(p.y - 0.5) - minRow,
+      row: remapRow(Math.round(p.y - 0.5) - minRow),
     }));
 
     // Expand to cell path, convert to segments, filter node overlaps
