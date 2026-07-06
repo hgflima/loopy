@@ -197,14 +197,27 @@ export function createAgentStep(): Step {
         diff: ctx.resolve("${worktree.diff}"),
       };
 
+      // Resolve the agent/model/effort binding up front (pure) so mode errors can
+      // name the target agent.
+      const binding = resolveAgentBinding(step, ctx.config.resolvedAgents);
+
       // Mode persists on the session and survives /clear, so set it once up front.
+      // A rejected mode is a genuine config fault (wrong per-agent vocabulary), so
+      // it fails fast with the step + agent named — not swallowed (AD-5 reserves
+      // exceptions for genuine faults; the same bad mode would hit every task).
       if (step.mode !== undefined) {
-        await ctx.session.setMode(step.mode);
+        try {
+          await ctx.session.setMode(step.mode);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          throw new Error(
+            `[agent:${step.id}] agente "${binding.agentName}" recusou o mode "${step.mode}": ${detail}`,
+          );
+        }
       }
 
       // Model/effort: resolved via the agent registry (step overrides registry).
       // Applied once after mode, before the first prompt (best-effort, AD-5).
-      const binding = resolveAgentBinding(step, ctx.config.resolvedAgents);
       if (binding.model !== undefined) {
         await ctx.session.setModel(binding.model);
       }

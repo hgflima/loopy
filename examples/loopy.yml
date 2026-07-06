@@ -75,7 +75,9 @@ pipeline:
     agent: codex
     effort: low
     clear_context: true
-    mode: acceptEdits
+    # Modo é vocabulário POR-AGENTE: codex-acp expõe read-only|agent|agent-full-access
+    # (não os modos do claude, acceptEdits/plan). "agent" = ler/editar/rodar comandos.
+    mode: agent
     prompt: |
       /devy:code-simplify Simplifique o que está no worktree sem alterar comportamento: remova
       duplicação, clareie nomes, reduza complexidade. Não adicione dependências.

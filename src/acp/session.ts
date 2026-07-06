@@ -143,6 +143,13 @@ class SessionWrapper implements LoopySession {
   private readonly modelConfigId: string | undefined;
   /** `configId` for the `thought_level` category (discovered from `session/new`). */
   private readonly effortConfigId: string | undefined;
+  /**
+   * Mode ids the adapter announced in `session/new` (empty when none announced).
+   * Modes are **per-agent vocabulary** (claude-agent-acp: `acceptEdits`/`plan`;
+   * codex-acp: `read-only`/`agent`/`agent-full-access`), so a mode valid for one
+   * agent is invalid for another — {@link setMode} validates against this list.
+   */
+  private readonly availableModeIds: readonly string[];
 
   constructor(
     private readonly deps: SessionDeps,
@@ -151,6 +158,8 @@ class SessionWrapper implements LoopySession {
     const opts = active.newSessionResponse.configOptions;
     this.modelConfigId = findConfigId(opts, "model");
     this.effortConfigId = findConfigId(opts, "thought_level");
+    this.availableModeIds =
+      active.newSessionResponse.modes?.availableModes.map((m) => m.id) ?? [];
   }
 
   get sessionId(): string {
@@ -167,7 +176,28 @@ class SessionWrapper implements LoopySession {
     this.deps.onTraffic?.({ direction: "send", method, payload }, this.sessionId);
   }
 
+  /**
+   * Set the session mode via `session/set_mode`. Modes are per-agent vocabulary,
+   * so this validates `modeId` against the modes the adapter announced in
+   * `session/new` and **fails-closed** with an actionable message when it is not
+   * among them — the adapter would otherwise reject it with an opaque `-32602`
+   * "Invalid params" that gives no hint of the mismatch. Unlike `setModel`/
+   * `setEffort` the failure is NOT swallowed: mode governs the session's autonomy
+   * (read-only vs. write), so a wrong mode must not run under the wrong one.
+   * When the adapter announces no modes we cannot validate — the call is sent and
+   * the adapter decides.
+   */
   async setMode(modeId: string): Promise<void> {
+    if (
+      this.availableModeIds.length > 0 &&
+      !this.availableModeIds.includes(modeId)
+    ) {
+      throw new Error(
+        `mode "${modeId}" não é anunciado por este agente ` +
+          `(modos disponíveis: ${this.availableModeIds.join(", ")}). ` +
+          `Modos são vocabulário por-agente — cheque o mode do Step contra o agente-alvo.`,
+      );
+    }
     const params = { sessionId: this.sessionId, modeId };
     this.send("session/set_mode", params);
     await this.deps.ctx.request(AGENT_METHODS.session_set_mode, params);
