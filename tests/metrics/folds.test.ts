@@ -9,6 +9,7 @@ import type {
   TurnUsage,
 } from "../../src/types";
 import {
+  addCost,
   addUsage,
   foldSamples,
   summarizeChange,
@@ -118,6 +119,47 @@ describe("addUsage", () => {
     const a = mkUsage({ available: false });
     const b = mkUsage({ available: false });
     expect(addUsage(a, b)!.available).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addCost
+// ---------------------------------------------------------------------------
+
+describe("addCost", () => {
+  it("null + null = null", () => {
+    expect(addCost(null, null)).toBeNull();
+  });
+
+  it("null + cost = cost (identity)", () => {
+    const c = mkCost({ amount: 0.42 });
+    expect(addCost(null, c)).toEqual(c);
+  });
+
+  it("cost + null = cost (identity)", () => {
+    const c = mkCost({ amount: 0.42 });
+    expect(addCost(c, null)).toEqual(c);
+  });
+
+  it("sums amounts and preserves currency", () => {
+    const a = mkCost({ amount: 0.30, currency: "USD" });
+    const b = mkCost({ amount: 0.70, currency: "USD" });
+    const result = addCost(a, b)!;
+    expect(result.amount).toBeCloseTo(1.0);
+    expect(result.currency).toBe("USD");
+  });
+
+  it("available = true if any side is available", () => {
+    const a = mkCost({ amount: 0.10, available: false });
+    const b = mkCost({ amount: 0.20, available: true });
+    expect(addCost(a, b)!.available).toBe(true);
+    expect(addCost(b, a)!.available).toBe(true);
+  });
+
+  it("available = false only when both sides are unavailable", () => {
+    const a = mkCost({ amount: 0, available: false });
+    const b = mkCost({ amount: 0, available: false });
+    expect(addCost(a, b)!.available).toBe(false);
   });
 });
 

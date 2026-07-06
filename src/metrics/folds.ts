@@ -44,6 +44,24 @@ export function addUsage(
 }
 
 // ---------------------------------------------------------------------------
+// StepCost arithmetic
+// ---------------------------------------------------------------------------
+
+/** Sum two StepCost values. `null` is the identity element. */
+export function addCost(
+  a: StepCost | null,
+  b: StepCost | null,
+): StepCost | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return {
+    amount: a.amount + b.amount,
+    currency: a.currency,
+    available: a.available || b.available,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Sample → StepMetrics
 // ---------------------------------------------------------------------------
 

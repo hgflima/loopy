@@ -15,6 +15,7 @@ import type {
   GitPort,
   LoopyConfig,
   MergeConflictStrategy,
+  StepConfig,
   StepContext,
   StepResult,
   StepType,
@@ -582,6 +583,110 @@ describe("runLoop — metrics instrumentation", () => {
     // Two visits to s1 (fail + succeed), both generate samples
     expect(sm.visits).toBe(2);
     expect(sm.durationMs).toBe(200); // 100 + 100
+  });
+
+  // -- helpers for multi-session cost tests --
+
+  /** Minimal AgentSession with a custom readCost; all other methods are inert. */
+  const sessionWith = (
+    readCost: AgentSession["readCost"],
+    id = "test",
+  ): AgentSession => ({
+    sessionId: id,
+    setMode: async () => {},
+    setModel: async () => {},
+    setEffort: async () => {},
+    clear: async () => {},
+    prompt: async () => "end_turn",
+    readText: () => "",
+    cancel: async () => {},
+    drainUsage: () => null,
+    readCost,
+  });
+
+  /** Config with two agent steps bound to claude + codex. */
+  const dualAgentConfig = (): LoopyConfig => ({
+    ...makeLoopConfig([
+      { id: "implement", type: "agent", prompt: "do it", agent: "claude" } as StepConfig,
+      { id: "simplify", type: "agent", prompt: "simplify", agent: "codex" } as StepConfig,
+    ]),
+    resolvedAgents: {
+      byName: {
+        claude: { command: ["echo"] },
+        codex: { command: ["echo"] },
+      },
+      default: "claude",
+    },
+  });
+
+  /** Registry with an agent interpreter that opens the lazy session. */
+  const agentThatOpensSession = (onExecute: () => void) =>
+    createStepRegistry([
+      {
+        type: "agent" as StepType,
+        async execute(ctx: StepContext): Promise<StepResult> {
+          onExecute();
+          await ctx.session.prompt("go");
+          return { ok: true };
+        },
+      },
+    ]);
+
+  it("multi-session task cost = sum of readCost() from each session", async () => {
+    let tick = 0;
+    const costs = new Map([["claude", 0.30], ["codex", 0.70]]);
+
+    const result = await runLoop(dualAgentConfig(), [makeTask("T-1")], {
+      ...makeDeps({ registry: agentThatOpensSession(() => { tick += 100; }), markDone: recordingMarkDone().port }),
+      now: () => tick,
+      sessionProvider: async (name) =>
+        sessionWith(() => ({ amount: costs.get(name) ?? 0, currency: "USD", available: true }), `sess-${name}`),
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    expect(result.metrics.tasks["T-1"]!.cost!.amount).toBeCloseTo(1.0);
+    expect(result.metrics.tasks["T-1"]!.cost!.currency).toBe("USD");
+  });
+
+  it("single-session task cost is identical to before (no regression)", async () => {
+    let tick = 0;
+    const reg = createStepRegistry([
+      {
+        type: "agent" as StepType,
+        async execute(): Promise<StepResult> {
+          tick += 100;
+          return { ok: true };
+        },
+      },
+    ]);
+
+    const result = await runLoop(makeLoopConfig([agent("a1")]), [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: recordingMarkDone().port }),
+      now: () => tick,
+      session: sessionWith(() => ({ amount: 0.42, currency: "USD", available: true })),
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    expect(result.metrics.tasks["T-1"]!.cost).toEqual({
+      amount: 0.42, currency: "USD", available: true,
+    });
+  });
+
+  it("agent without cost reporting → sum whatever is available", async () => {
+    let tick = 0;
+
+    const result = await runLoop(dualAgentConfig(), [makeTask("T-1")], {
+      ...makeDeps({ registry: agentThatOpensSession(() => { tick += 100; }), markDone: recordingMarkDone().port }),
+      now: () => tick,
+      sessionProvider: async (name) =>
+        sessionWith(
+          () => name === "claude" ? { amount: 0.50, currency: "USD", available: true } : null,
+          `sess-${name}`,
+        ),
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    expect(result.metrics.tasks["T-1"]!.cost!.amount).toBeCloseTo(0.50);
   });
 });
 
