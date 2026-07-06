@@ -7,7 +7,7 @@
  * {@link ../view#streamTail}.
  */
 import { Box, Text } from "ink";
-import { streamTail } from "../view";
+import { prefixAgentLines, streamTail } from "../view";
 
 export function StreamPane({
   title,
@@ -15,6 +15,8 @@ export function StreamPane({
   width,
   height,
   maxLines = 8,
+  agent,
+  multiAgent = false,
 }: {
   readonly title: string;
   readonly stream: string;
@@ -24,10 +26,14 @@ export function StreamPane({
   readonly height?: number;
   /** Explicit content-line cap; else derived from `height` (or the default). */
   readonly maxLines?: number;
+  /** Agent producing this stream (T-008: multi-agent prefix). */
+  readonly agent?: string;
+  /** Whether >1 agent is active in the run (T-008). */
+  readonly multiAgent?: boolean;
 }) {
   const cap =
     height !== undefined ? Math.max(1, height - 3) : maxLines;
-  const lines = streamTail(stream, cap);
+  const lines = prefixAgentLines(streamTail(stream, cap), agent, multiAgent);
 
   return (
     <Box

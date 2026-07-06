@@ -78,6 +78,7 @@ export function App({
   const running = state.tasks.filter((t) => t.status === "running");
   const doneCount = state.tasks.filter((t) => t.status === "done").length;
   const total = state.tasks.length;
+  const multiAgent = state.activeAgents.size > 1;
 
   // Single pulse timer — only active while there are running tasks.
   useEffect(() => {
@@ -159,6 +160,8 @@ export function App({
                 key={task.id}
                 title={task.id}
                 stream={task.stream}
+                agent={task.streamAgent}
+                multiAgent={multiAgent}
                 width={rightW}
                 height={paneH}
               />
