@@ -46,7 +46,7 @@
   Deps: T-001, T-002
   Files: src/loop/orchestrator.ts, src/index.ts
 
-- [ ] T-005: Step de Agente aplica setModel/setEffort (paridade)
+- [x] T-005: Step de Agente aplica setModel/setEffort (paridade)
   Após `setMode`, aplica `setModel(modelEfetivo)` → `setEffort(effortEfetivo)` (via
   `resolveAgentBinding`), condicional/best-effort, cru (mirror do `mode`); cada Step reafirma
   (determinismo sob Sessão reusada). Resto do interpreter **inalterado** (paridade): verify/
