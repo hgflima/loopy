@@ -17,6 +17,7 @@ import type {
   GitPort,
   LoggerPort,
   LoopyConfig,
+  ResolvedAgents,
   RunFlags,
   StepConfig,
   StepContext,
@@ -155,12 +156,17 @@ export interface StepContextOverrides {
   readonly session?: AgentSession;
   /** Event sink for TUI progress (check, attempt_started, stream_chunk events); defaults to absent. */
   readonly emit?: (event: StoreEvent) => void;
+  /** Override the resolved agents registry (for multi-agent tests). */
+  readonly resolvedAgents?: ResolvedAgents;
 }
 
 /** Assemble a {@link StepContext} for a step interpreter under test. */
 export function makeStepContext(overrides: StepContextOverrides): StepContext {
+  const config = defaultConfig(overrides.checksConfig);
   return {
-    config: defaultConfig(overrides.checksConfig),
+    config: overrides.resolvedAgents
+      ? { ...config, resolvedAgents: overrides.resolvedAgents }
+      : config,
     flags: { ...DEFAULT_FLAGS, ...overrides.flags },
     task: overrides.task ?? SAMPLE_TASK,
     iteration: overrides.iteration ?? 1,

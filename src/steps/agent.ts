@@ -48,7 +48,7 @@
  * checks list that does not exist, or being handed a step of the wrong `type`.
  */
 import { createResolver, createScope, selectPrompt } from "../interp/resolver";
-import { buildScopeVars, formatOnFail } from "../loop/orchestrator";
+import { buildScopeVars, formatOnFail, resolveAgentBinding } from "../loop/orchestrator";
 import { classifyStopReason } from "../acp/session";
 import type {
   AgentStep,
@@ -195,6 +195,16 @@ export function createAgentStep(): Step {
       // Mode persists on the session and survives /clear, so set it once up front.
       if (step.mode !== undefined) {
         await ctx.session.setMode(step.mode);
+      }
+
+      // Model/effort: resolved via the agent registry (step overrides registry).
+      // Applied once after mode, before the first prompt (best-effort, AD-5).
+      const binding = resolveAgentBinding(step, ctx.config.resolvedAgents);
+      if (binding.model !== undefined) {
+        await ctx.session.setModel(binding.model);
+      }
+      if (binding.effort !== undefined) {
+        await ctx.session.setEffort(binding.effort);
       }
 
       let lastReport: ChecksReport | undefined;
