@@ -25,6 +25,7 @@ import {
 import type {
   ContentBlock,
   PermissionOption,
+  SessionConfigOption,
   SessionModeState,
   StopReason,
 } from "@agentclientprotocol/sdk";
@@ -70,6 +71,10 @@ export interface FakeScenario {
   readonly agentInfo?: { readonly name: string; readonly version: string };
   readonly protocolVersion?: number;
   readonly modes?: SessionModeState;
+  /** Config options announced in `session/new` (T-002: model/effort discovery). */
+  readonly configOptions?: readonly SessionConfigOption[];
+  /** When `true`, `session/set_config_option` throws method-not-found (T-002). */
+  readonly failSetConfigOption?: boolean;
   /** Behavior per prompt turn (0-based); turns past the end use `defaultTurn`. */
   readonly turns?: readonly FakeTurn[];
   readonly defaultTurn?: FakeTurn;
@@ -115,13 +120,24 @@ async function main(): Promise<void> {
     }))
     .onRequest(AGENT_METHODS.session_new, () => {
       sessionSeq += 1;
-      const response: { sessionId: string; modes?: SessionModeState } = {
+      const response: {
+        sessionId: string;
+        modes?: SessionModeState;
+        configOptions?: SessionConfigOption[];
+      } = {
         sessionId: `fake-session-${sessionSeq}`,
       };
       if (scenario.modes) response.modes = scenario.modes;
+      if (scenario.configOptions) response.configOptions = [...scenario.configOptions];
       return response;
     })
     .onRequest(AGENT_METHODS.session_set_mode, () => ({}))
+    .onRequest(AGENT_METHODS.session_set_config_option, () => {
+      if (scenario.failSetConfigOption) {
+        throw new Error("method not found: session/set_config_option");
+      }
+      return { configOptions: [...(scenario.configOptions ?? [])] };
+    })
     .onRequest(AGENT_METHODS.session_prompt, async ({ params, client }) => {
       // `/clear` resets context: it completes immediately, streams no text, and
       // does NOT consume a scripted turn (it is not a prompt turn).

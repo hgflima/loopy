@@ -21,8 +21,9 @@ import {
   type LoopySession,
   type SessionDeps,
 } from "../../src/acp/session";
+import type { SessionConfigOption, SessionConfigOptionCategory } from "@agentclientprotocol/sdk";
 import type { AcpTrafficEntry } from "../../src/logging/logger";
-import type { StopReason } from "../../src/types";
+import type { LoggerPort, StopReason } from "../../src/types";
 import type { FakeScenario } from "../fixtures/fake-agent";
 
 const FAKE_AGENT = fileURLToPath(
@@ -392,6 +393,143 @@ describe("buildSession / session pool (against the fake agent)", () => {
     const promptEntry = sends.find((t) => t.entry.method === "session/prompt");
     expect((promptEntry!.entry.payload as Record<string, unknown>)?.text).toBe("implement it");
 
+    session.dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // T-002: setModel / setEffort (best-effort, config option discovery)
+  // -------------------------------------------------------------------------
+
+  /** Build a minimal `SessionConfigOption` for a given category (test helper). */
+  function selectOption(
+    id: string,
+    category: SessionConfigOptionCategory,
+    value: string,
+  ): SessionConfigOption {
+    return {
+      id,
+      name: id,
+      category,
+      type: "select" as const,
+      currentValue: value,
+      options: [{ value, name: value }],
+    };
+  }
+
+  /** Logger spy that captures debug lines (test helper). */
+  function spyLogger(): { logs: string[]; logger: LoggerPort } {
+    const logs: string[] = [];
+    return {
+      logs,
+      logger: { info: () => {}, debug: (msg) => logs.push(msg), error: () => {} },
+    };
+  }
+
+  /** Open a session with traffic capture and return both (test helper). */
+  async function startWithTraffic(scenario: FakeScenario) {
+    const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
+    handle = await openAgent({
+      command: fakeCommand(scenario),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+    });
+    const deps: SessionDeps = {
+      ctx: handle.ctx,
+      text: handle.text,
+      cost: handle.cost,
+      onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
+    };
+    const session = await buildSession(deps, PROJECT_ROOT).start();
+    const configSends = () =>
+      traffic
+        .filter((t) => t.entry.direction === "send" && t.entry.method === "session/set_config_option")
+        .map((t) => t.entry.payload as Record<string, unknown>);
+    return { session, configSends };
+  }
+
+  /** Open a session with a logger spy (test helper). */
+  async function startWithLogger(scenario: FakeScenario) {
+    const { logs, logger } = spyLogger();
+    handle = await openAgent({
+      command: fakeCommand(scenario),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+    });
+    const deps: SessionDeps = { ctx: handle.ctx, text: handle.text, logger };
+    const session = await buildSession(deps, PROJECT_ROOT).start();
+    return { session, logs };
+  }
+
+  it("setModel calls set_config_option when model capability is announced", async () => {
+    const { session, configSends } = await startWithTraffic({
+      configOptions: [selectOption("model-selector", "model", "gpt-4")],
+      defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+    });
+
+    await session.setModel("gpt-5-codex");
+
+    const sends = configSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]!.configId).toBe("model-selector");
+    expect(sends[0]!.value).toBe("gpt-5-codex");
+    session.dispose();
+  });
+
+  it("setEffort calls set_config_option when thought_level capability is announced", async () => {
+    const { session, configSends } = await startWithTraffic({
+      configOptions: [selectOption("thought-level", "thought_level", "high")],
+      defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+    });
+
+    await session.setEffort("high");
+
+    const sends = configSends();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]!.configId).toBe("thought-level");
+    expect(sends[0]!.value).toBe("high");
+    session.dispose();
+  });
+
+  it("setModel is a no-op when the adapter does not announce model capability", async () => {
+    const { session, logs } = await startWithLogger({
+      defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+    });
+
+    await session.setModel("gpt-5-codex");
+    expect(logs.some((l) => l.includes("skipped") && l.includes("model"))).toBe(true);
+    session.dispose();
+  });
+
+  it("setEffort is a no-op when the adapter does not announce thought_level capability", async () => {
+    const { session, logs } = await startWithLogger({});
+
+    await session.setEffort("low");
+    expect(logs.some((l) => l.includes("skipped") && l.includes("thought_level"))).toBe(true);
+    session.dispose();
+  });
+
+  it("setModel swallows adapter errors (AD-5 — never throws)", async () => {
+    const { session, logs } = await startWithLogger({
+      configOptions: [selectOption("model-selector", "model", "gpt-4")],
+      failSetConfigOption: true,
+    });
+
+    await expect(session.setModel("bad-model")).resolves.toBeUndefined();
+    expect(logs.some((l) => l.includes("failed") && l.includes("model"))).toBe(true);
+    session.dispose();
+  });
+
+  it("setModel with effort embedded in ModelId works naturally (e.g. gpt-5-codex[high])", async () => {
+    const { session, configSends } = await startWithTraffic({
+      configOptions: [selectOption("model-selector", "model", "gpt-5-codex[high]")],
+    });
+
+    await session.setModel("gpt-5-codex[high]");
+
+    const sends = configSends();
+    expect(sends).toHaveLength(1);
+    // Value passed raw — the engine does NOT parse the embedded effort (AD-1).
+    expect(sends[0]!.value).toBe("gpt-5-codex[high]");
     session.dispose();
   });
 

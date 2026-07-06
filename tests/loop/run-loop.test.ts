@@ -387,6 +387,8 @@ describe("runLoop — agent session wiring", () => {
       return {
         sessionId: `sess:${cwd}`,
         setMode: async () => {},
+        setModel: async () => {},
+        setEffort: async () => {},
         clear: async () => {},
         prompt: async () => "end_turn",
         readText: () => "",
@@ -869,6 +871,8 @@ describe("runLoop — program counter (goto flow)", () => {
     const sessionProvider = async (): Promise<AgentSession> => ({
       sessionId: "sess",
       setMode: async () => {},
+      setModel: async () => {},
+      setEffort: async () => {},
       clear: async () => {},
       prompt: async (text) => {
         sentPrompts.push(text);
@@ -944,6 +948,8 @@ describe("runLoop — program counter (goto flow)", () => {
     const sessionProvider = async (): Promise<AgentSession> => ({
       sessionId: "sess",
       setMode: async () => {},
+      setModel: async () => {},
+      setEffort: async () => {},
       clear: async () => {},
       prompt: async (text) => {
         sentPrompts.push(text);

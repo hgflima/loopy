@@ -48,6 +48,8 @@ function scriptedSession(script: {
     setMode: async (m) => {
       modes.push(m);
     },
+    setModel: async () => {},
+    setEffort: async () => {},
     clear: async () => {
       clears += 1;
     },

@@ -105,6 +105,8 @@ export function defaultConfig(checks: ChecksConfig = {}): LoopyConfig {
 const inertSession: AgentSession = {
   sessionId: "sess-1",
   setMode: async () => {},
+  setModel: async () => {},
+  setEffort: async () => {},
   clear: async () => {},
   prompt: async () => "end_turn",
   readText: () => "",
