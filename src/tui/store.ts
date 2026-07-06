@@ -81,6 +81,8 @@ export interface TaskState {
   readonly steps: readonly StepState[];
   /** Accumulated agent stream text for the current turn (reset each attempt). */
   readonly stream: string;
+  /** Name of the agent producing the current stream (T-008: multi-agent prefix). */
+  readonly streamAgent?: string;
   /** Terminal reason (e.g. the escalation cause) when done/escalated/failed. */
   readonly reason?: string;
 }
@@ -94,6 +96,8 @@ export interface AcpLogLine {
   readonly direction: AcpDirection;
   readonly method?: string;
   readonly summary: string;
+  /** Agent name that produced this entry (T-008: multi-agent prefix). */
+  readonly agent?: string;
   /**
    * How many identical entries this line stands for. Absent (≡ 1) for a single
    * event; set to N when N consecutive identical events were collapsed into one
@@ -113,6 +117,8 @@ export interface StoreState {
   readonly edges: readonly [string, string][];
   /** Global ACP traffic log — ring bounded to {@link ACP_LOG_CAP} entries. */
   readonly acpLog: readonly AcpLogLine[];
+  /** Distinct agent names seen so far (T-008: prefix when size > 1). */
+  readonly activeAgents: ReadonlySet<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +174,8 @@ export type StoreEvent =
       readonly type: "stream_chunk";
       readonly taskId: string;
       readonly text: string;
+      /** Agent producing this chunk (T-008: multi-agent prefix). */
+      readonly agent?: string;
     }
   | {
       readonly type: "step_finished";
@@ -188,6 +196,8 @@ export type StoreEvent =
       readonly direction: AcpDirection;
       readonly method?: string;
       readonly summary: string;
+      /** Agent producing this entry (T-008: multi-agent prefix). */
+      readonly agent?: string;
     };
 
 // ---------------------------------------------------------------------------
@@ -196,7 +206,7 @@ export type StoreEvent =
 
 /** The empty starting state (no tasks, no edges). */
 export function initialState(): StoreState {
-  return { tasks: [], edges: [], acpLog: [] };
+  return { tasks: [], edges: [], acpLog: [], activeAgents: new Set<string>() };
 }
 
 /**
@@ -270,6 +280,19 @@ function upsertCheck(
 // ---------------------------------------------------------------------------
 
 /**
+ * Return an updated `activeAgents` set if `agent` is new, or the same
+ * reference if already tracked (or absent). Shared by `stream_chunk` and
+ * `acp_traffic` (T-008).
+ */
+function trackAgent(
+  current: ReadonlySet<string>,
+  agent: string | undefined,
+): ReadonlySet<string> {
+  if (!agent || current.has(agent)) return current;
+  return new Set([...current, agent]);
+}
+
+/**
  * The pure state transition. Given the current state and one event, return the
  * next state — or the same reference when the event is a no-op (unknown task,
  * step-scoped event before `step_started`, or a duplicate registration).
@@ -338,11 +361,15 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         upsertCheck(step, event.name, event.ok ? "passed" : "failed"),
       );
 
-    case "stream_chunk":
-      return updateTask(state, event.taskId, (task) => ({
+    case "stream_chunk": {
+      const next = updateTask(state, event.taskId, (task) => ({
         ...task,
         stream: task.stream + event.text,
+        streamAgent: event.agent ?? task.streamAgent,
       }));
+      const agents = trackAgent(state.activeAgents, event.agent);
+      return agents === state.activeAgents ? next : { ...next, activeAgents: agents };
+    }
 
     case "step_finished":
       return updateTask(state, event.taskId, (task) => {
@@ -371,7 +398,10 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         direction: event.direction,
         method: event.method,
         summary: event.summary,
+        agent: event.agent,
       };
+      const nextAgents = trackAgent(state.activeAgents, event.agent);
+
       // Collapse a run of identical events into a single line with a `count`, so
       // the flood of `session/update` chunks reads as `agent_message_chunk ×N`
       // rather than N indistinguishable rows.
@@ -387,12 +417,14 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         return {
           ...state,
           acpLog: [...state.acpLog.slice(0, -1), merged],
+          activeAgents: nextAgents,
         };
       }
       const log = [...state.acpLog, line];
       return {
         ...state,
         acpLog: log.length > ACP_LOG_CAP ? log.slice(-ACP_LOG_CAP) : log,
+        activeAgents: nextAgents,
       };
     }
   }

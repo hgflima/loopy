@@ -270,3 +270,77 @@ describe("createLineReporter · acp_traffic", () => {
     expect(lines[2]).toContain("iniciada");
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-008: multi-agent prefix — [agent] only when >1 agent active
+// ---------------------------------------------------------------------------
+
+describe("createLineReporter · multi-agent prefix (T-008)", () => {
+  it("prefixes stream lines with [agent] when >1 agent active", () => {
+    const lines = capture(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      // Two distinct agents → multi-agent mode.
+      { type: "stream_chunk", taskId: "T-001", text: "from claude\n", agent: "claude" },
+      { type: "stream_chunk", taskId: "T-001", text: "from codex\n", agent: "codex" },
+    );
+    const streamed = lines.filter((l) => l.includes("│"));
+    // First line: only 1 agent was seen → no prefix.
+    expect(streamed[0]).not.toContain("[claude]");
+    // Second line: now 2 agents seen → prefix.
+    expect(streamed[1]).toContain("[codex]");
+  });
+
+  it("does not prefix stream lines with single agent (byte-identical)", () => {
+    const lines = capture(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "hello\n", agent: "claude" },
+      { type: "stream_chunk", taskId: "T-001", text: "world\n", agent: "claude" },
+    );
+    const streamed = lines.filter((l) => l.includes("│"));
+    for (const line of streamed) {
+      expect(line).not.toContain("[claude]");
+    }
+  });
+
+  it("does not prefix when agent is omitted (backward compat)", () => {
+    const lines = capture(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "old style\n" },
+    );
+    const streamed = lines.filter((l) => l.includes("│"));
+    expect(streamed[0]).toBe("    │ old style");
+  });
+
+  it("prefixes acp_traffic lines with [agent] when >1 agent active (verbose)", () => {
+    const lines = captureVerbose(
+      // Inject two agents via stream_chunk to populate activeAgents.
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "x", agent: "claude" },
+      { type: "stream_chunk", taskId: "T-001", text: "y", agent: "codex" },
+      {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "send",
+        summary: "msg",
+        agent: "codex",
+      },
+    );
+    const trafficLine = lines.find((l) => l.includes("→"));
+    expect(trafficLine).toContain("[codex]");
+  });
+
+  it("does not prefix acp_traffic with single agent", () => {
+    const lines = captureVerbose(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "acp_traffic",
+        taskId: "T-001",
+        direction: "send",
+        summary: "msg",
+        agent: "claude",
+      },
+    );
+    const trafficLine = lines.find((l) => l.includes("→"));
+    expect(trafficLine).not.toContain("[claude]");
+  });
+});

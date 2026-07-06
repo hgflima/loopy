@@ -76,12 +76,17 @@ describe("reduce · task registration", () => {
       taskId: "T-001",
       title: "Primeira",
     });
+    // Snapshot fields that round-trip through JSON; Set is checked separately.
     const snapshot = JSON.parse(JSON.stringify(before));
+    const agentsBefore = new Set(before.activeAgents);
 
     const after = reduce(before, { type: "task_started", taskId: "T-001" });
 
     expect(after).not.toBe(before);
-    expect(before).toEqual(snapshot);
+    // Structural fields unchanged.
+    expect(JSON.parse(JSON.stringify(before))).toEqual(snapshot);
+    // Set unchanged.
+    expect(before.activeAgents).toEqual(agentsBefore);
   });
 
   it("ignores events referencing an unregistered task", () => {
@@ -916,6 +921,103 @@ describe("reduce · acp_traffic", () => {
       summary: "solo",
     });
     expect(state.acpLog[0]?.count).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reduce — agent tracking (T-008: prefixing by agent when >1)
+// ---------------------------------------------------------------------------
+
+describe("reduce · agent tracking (T-008)", () => {
+  it("initialState has an empty activeAgents set", () => {
+    const state = initialState();
+    expect(state.activeAgents).toBeInstanceOf(Set);
+    expect(state.activeAgents.size).toBe(0);
+  });
+
+  it("stream_chunk with agent populates activeAgents", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "hi", agent: "claude" },
+    );
+    expect(state.activeAgents.has("claude")).toBe(true);
+    expect(state.activeAgents.size).toBe(1);
+  });
+
+  it("acp_traffic with agent populates activeAgents", () => {
+    const state = play({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      summary: "msg",
+      agent: "codex",
+    });
+    expect(state.activeAgents.has("codex")).toBe(true);
+  });
+
+  it("tracks multiple distinct agents", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "a", agent: "claude" },
+      { type: "stream_chunk", taskId: "T-001", text: "b", agent: "codex" },
+    );
+    expect(state.activeAgents.size).toBe(2);
+    expect(state.activeAgents.has("claude")).toBe(true);
+    expect(state.activeAgents.has("codex")).toBe(true);
+  });
+
+  it("does not grow activeAgents for duplicate agent names", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "a", agent: "claude" },
+      { type: "stream_chunk", taskId: "T-001", text: "b", agent: "claude" },
+    );
+    expect(state.activeAgents.size).toBe(1);
+  });
+
+  it("stream_chunk without agent does not affect activeAgents (backward compat)", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "hi" },
+    );
+    expect(state.activeAgents.size).toBe(0);
+  });
+
+  it("stores streamAgent on TaskState from stream_chunk", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "x", agent: "codex" },
+    );
+    expect(findTask(state, "T-001").streamAgent).toBe("codex");
+  });
+
+  it("streamAgent is undefined when no agent in stream_chunk (backward compat)", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "x" },
+    );
+    expect(findTask(state, "T-001").streamAgent).toBeUndefined();
+  });
+
+  it("acp_traffic with agent stores agent on AcpLogLine", () => {
+    const state = play({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      summary: "msg",
+      agent: "codex",
+    });
+    expect(state.acpLog[0]?.agent).toBe("codex");
+  });
+
+  it("acp_traffic without agent has no agent on AcpLogLine (backward compat)", () => {
+    const state = play({
+      type: "acp_traffic",
+      taskId: "T-001",
+      direction: "send",
+      summary: "msg",
+    });
+    expect(state.acpLog[0]?.agent).toBeUndefined();
   });
 });
 

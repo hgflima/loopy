@@ -58,12 +58,17 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
   // Partial (newline-less) stream text per task, awaiting the rest of its line.
   const streamBuffers = new Map<string, string>();
 
+  /** T-008: prefix a line with `[agent]` when >1 agent active. */
+  const agentPrefix = (agent: string | undefined): string =>
+    agent !== undefined && state.activeAgents.size > 1 ? `[${agent}] ` : "";
+
   /** Emit any completed lines in a task's stream chunk; buffer the remainder. */
-  const pushStream = (taskId: string, text: string): void => {
+  const pushStream = (taskId: string, text: string, agent?: string): void => {
     let buffer = (streamBuffers.get(taskId) ?? "") + text;
+    const pfx = agentPrefix(agent);
     let newline = buffer.indexOf("\n");
     while (newline !== -1) {
-      print(`    ${STREAM_PREFIX} ${buffer.slice(0, newline)}`);
+      print(`    ${STREAM_PREFIX} ${pfx}${buffer.slice(0, newline)}`);
       buffer = buffer.slice(newline + 1);
       newline = buffer.indexOf("\n");
     }
@@ -119,7 +124,7 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
         }
 
         case "stream_chunk":
-          pushStream(event.taskId, event.text);
+          pushStream(event.taskId, event.text, event.agent);
           return;
 
         case "step_finished": {
@@ -144,7 +149,8 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
           if (!verbose) return;
           const arrow = event.direction === "send" ? "→" : "←";
           const method = event.method ? `${event.method} ` : "";
-          print(`    ${arrow} ${method}${event.summary}`);
+          const pfx = agentPrefix(event.agent);
+          print(`    ${arrow} ${pfx}${method}${event.summary}`);
           return;
         }
       }

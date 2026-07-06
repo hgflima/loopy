@@ -83,6 +83,21 @@ export function streamTail(text: string, maxLines = 8): string[] {
 }
 
 /**
+ * Prefix each line with `[agent]` when more than one agent is active in the
+ * run (T-008). Returns lines unchanged when `multiAgent` is false or `agent`
+ * is undefined — single-agent output stays byte-identical.
+ */
+export function prefixAgentLines(
+  lines: readonly string[],
+  agent: string | undefined,
+  multiAgent: boolean,
+): readonly string[] {
+  if (!multiAgent || agent === undefined) return lines;
+  const prefix = `[${agent}] `;
+  return lines.map((line) => prefix + line);
+}
+
+/**
  * Deterministic pulse phase for running-task animation. The `.tsx` component
  * maps `"on"` → `bold` and `"off"` → `dimColor` (or similar emphasis toggle).
  * Pure — no timer, no state; the caller drives the tick counter.

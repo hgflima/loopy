@@ -362,13 +362,15 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   // Gate ACP capture by --verbose / capture_acp_traffic.
   const captureAcp = flags.verbose || config.logging.capture_acp_traffic;
 
-  /** Resolve sessionId to taskId (falls back to sessionId when not yet mapped). */
-  const taskFor = (sessionId: string): string =>
-    sessionToTask.get(sessionId)?.taskId ?? sessionId;
+  /** Resolve sessionId to {taskId, agent} (falls back when not yet mapped). */
+  const infoFor = (sessionId: string): { taskId: string; agent: string | undefined } => {
+    const entry = sessionToTask.get(sessionId);
+    return { taskId: entry?.taskId ?? sessionId, agent: entry?.agent };
+  };
 
   /** Dispatch one ACP traffic event to the store and log it to file. */
-  const logTraffic = (taskId: string, entry: AcpTrafficEntry, summary: string): void => {
-    ui.dispatch({ type: "acp_traffic", taskId, direction: entry.direction, method: entry.method, summary });
+  const logTraffic = (taskId: string, agent: string | undefined, entry: AcpTrafficEntry, summary: string): void => {
+    ui.dispatch({ type: "acp_traffic", taskId, direction: entry.direction, method: entry.method, summary, agent });
     fileLogger.acp(entry);
   };
 
@@ -390,7 +392,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   // Eager spawn — one process per referenced agent; spawn-fail = Run fail-fast.
   const pool = await createAgentProcessPool(
     agentOptions,
-    async (_name, opts) =>
+    async (agentName, opts) =>
       openAgent({
         command: opts.command,
         cwd: root,
@@ -400,12 +402,14 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
         onUpdate: (notification) => {
           const text = agentChunkText(notification.update);
           if (text !== undefined) {
-            ui.dispatch({ type: "stream_chunk", taskId: taskFor(notification.sessionId), text });
+            const info = infoFor(notification.sessionId);
+            ui.dispatch({ type: "stream_chunk", taskId: info.taskId, text, agent: info.agent ?? agentName });
           }
         },
         onTraffic: captureAcp
           ? (entry, sessionId) => {
-              logTraffic(taskFor(sessionId), entry, acpTrafficSummary(entry));
+              const info = infoFor(sessionId);
+              logTraffic(info.taskId, info.agent ?? agentName, entry, acpTrafficSummary(entry));
             }
           : undefined,
       }),

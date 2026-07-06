@@ -5,6 +5,7 @@ import {
   COLORS,
   layoutGraph,
   nodeLabel,
+  prefixAgentLines,
   pulseFrame,
   renderGraph,
   streamTail,
@@ -99,6 +100,33 @@ describe("streamTail", () => {
 
   it("preserves interior blank lines", () => {
     expect(streamTail("a\n\nb", 8)).toEqual(["a", "", "b"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// prefixAgentLines — T-008: prefix stream lines with [agent] when multi-agent
+// ---------------------------------------------------------------------------
+
+describe("prefixAgentLines", () => {
+  it("prefixes each line with [agent] when multiAgent is true", () => {
+    expect(prefixAgentLines(["a", "b"], "codex", true)).toEqual([
+      "[codex] a",
+      "[codex] b",
+    ]);
+  });
+
+  it("returns lines unchanged when multiAgent is false (single-agent)", () => {
+    const lines = ["hello", "world"];
+    expect(prefixAgentLines(lines, "claude", false)).toEqual(lines);
+  });
+
+  it("returns lines unchanged when agent is undefined", () => {
+    const lines = ["foo"];
+    expect(prefixAgentLines(lines, undefined, true)).toEqual(lines);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(prefixAgentLines([], "codex", true)).toEqual([]);
   });
 });
 
