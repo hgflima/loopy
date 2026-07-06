@@ -30,6 +30,10 @@ interface ScriptedSession extends AgentSession {
   modeCalls(): readonly string[];
   /** Prompts sent (fully interpolated), in order. */
   promptCalls(): readonly string[];
+  /** Models applied via `setModel`, in order. */
+  modelCalls(): readonly string[];
+  /** Effort levels applied via `setEffort`, in order. */
+  effortCalls(): readonly string[];
 }
 
 /** Build a scripted session; `stopReasons`/`texts` are indexed by prompt turn. */
@@ -41,6 +45,8 @@ function scriptedSession(script: {
   const texts = script.texts ?? [];
   const prompts: string[] = [];
   const modes: string[] = [];
+  const models: string[] = [];
+  const efforts: string[] = [];
   let clears = 0;
   let turn = -1; // index of the last prompt turn (readText is turn-scoped, OQ3)
   return {
@@ -48,8 +54,12 @@ function scriptedSession(script: {
     setMode: async (m) => {
       modes.push(m);
     },
-    setModel: async () => {},
-    setEffort: async () => {},
+    setModel: async (m) => {
+      models.push(m);
+    },
+    setEffort: async (e) => {
+      efforts.push(e);
+    },
     clear: async () => {
       clears += 1;
     },
@@ -65,6 +75,8 @@ function scriptedSession(script: {
     clearCount: () => clears,
     modeCalls: () => modes,
     promptCalls: () => prompts,
+    modelCalls: () => models,
+    effortCalls: () => efforts,
   };
 }
 
@@ -520,5 +532,150 @@ describe("agent step — live progress events (T-005)", () => {
 
     const result = await createAgentStep().execute(ctx);
     expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setModel / setEffort — T-005 (paridade: applied after setMode, before prompt)
+// ---------------------------------------------------------------------------
+
+/** Registry with a `codex` agent carrying model+effort defaults. */
+const CODEX_AGENTS = {
+  byName: {
+    default: { command: ["claude-acp"] },
+    codex: { command: ["codex-acp"], model: "codex-mini", effort: "low" },
+  },
+  default: "default",
+} as const;
+
+describe("agent step — setModel / setEffort (T-005)", () => {
+  it("calls setModel then setEffort when step has model and effort", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: verifyStep({ model: "o3", effort: "high" }),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(session.modelCalls()).toEqual(["o3"]);
+    expect(session.effortCalls()).toEqual(["high"]);
+  });
+
+  it("resolves model/effort from agent registry when step omits them", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: verifyStep({ agent: "codex" }),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+      resolvedAgents: CODEX_AGENTS,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(session.modelCalls()).toEqual(["codex-mini"]);
+    expect(session.effortCalls()).toEqual(["low"]);
+  });
+
+  it("step-level model/effort overrides agent registry defaults", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: verifyStep({ agent: "codex", model: "o3", effort: "medium" }),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+      resolvedAgents: CODEX_AGENTS,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(session.modelCalls()).toEqual(["o3"]);
+    expect(session.effortCalls()).toEqual(["medium"]);
+  });
+
+  it("does not call setModel/setEffort when neither step nor registry defines them", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(session.modelCalls()).toEqual([]);
+    expect(session.effortCalls()).toEqual([]);
+  });
+
+  it("applies setMode before setModel before setEffort (order)", async () => {
+    const callOrder: string[] = [];
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    // Wrap to capture call order
+    const origSetMode = session.setMode.bind(session);
+    const origSetModel = session.setModel.bind(session);
+    const origSetEffort = session.setEffort.bind(session);
+    session.setMode = async (m) => {
+      callOrder.push("setMode");
+      await origSetMode(m);
+    };
+    session.setModel = async (m) => {
+      callOrder.push("setModel");
+      await origSetModel(m);
+    };
+    session.setEffort = async (e) => {
+      callOrder.push("setEffort");
+      await origSetEffort(e);
+    };
+    const ctx = makeStepContext({
+      step: verifyStep({ mode: "acceptEdits", model: "o3", effort: "high" }),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    expect(callOrder).toEqual(["setMode", "setModel", "setEffort"]);
+  });
+
+  it("calls setModel only (no setEffort) when only model is resolved", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const ctx = makeStepContext({
+      step: verifyStep({ model: "o3" }),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    expect(session.modelCalls()).toEqual(["o3"]);
+    expect(session.effortCalls()).toEqual([]);
+  });
+
+  it("StepResult is unchanged when model/effort are omitted (parity)", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn"],
+      texts: ["done"],
+    });
+    const checks = scriptedChecks([GREEN]);
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result).toEqual({ ok: true, output: "done" });
   });
 });
