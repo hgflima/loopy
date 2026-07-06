@@ -9,8 +9,9 @@
  */
 import { readFileSync } from "node:fs";
 import { parse as parseYaml, YAMLParseError } from "yaml";
-import type { LoopyConfig } from "../types";
+import type { LoopyConfig, ResolvedAgents } from "../types";
 import { loopyConfigSchema } from "./schema";
+import type { LoopyConfigParsed } from "./schema";
 import type { ZodError, ZodIssue } from "zod";
 
 /** Raised when a config file cannot be read, parsed, or validated. */
@@ -103,6 +104,24 @@ function scanRemovedKeys(raw: unknown, sourcePath?: string): void {
 }
 
 /**
+ * Build `ResolvedAgents` from either the explicit `agents:` registry or by
+ * synthesizing a `default` agent from the legacy `acp.command`. Pure function.
+ */
+function resolveAgents(parsed: LoopyConfigParsed): ResolvedAgents {
+  if (parsed.agents !== undefined && Object.keys(parsed.agents).length > 0) {
+    const agentNames = Object.keys(parsed.agents);
+    const defaultName = parsed.acp.default_agent ?? agentNames[0]!;
+    return { byName: { ...parsed.agents }, default: defaultName };
+  }
+
+  // Legacy path: synthesize from acp.command
+  return {
+    byName: { default: { command: parsed.acp.command! } },
+    default: "default",
+  };
+}
+
+/**
  * Validate an in-memory `loopy.yml` document and return a typed `LoopyConfig`
  * with defaults applied. Throws {@link ConfigError} on malformed YAML or on any
  * schema violation (unknown keys, wrong step fields, missing values, …).
@@ -135,7 +154,8 @@ export function parseConfig(
     throw new ConfigError(formatValidationError(result.error, sourcePath));
   }
 
-  return result.data;
+  const resolved = resolveAgents(result.data);
+  return { ...result.data, resolvedAgents: resolved };
 }
 
 /**

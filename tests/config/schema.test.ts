@@ -466,3 +466,178 @@ describe("metrics — bloco opt-in (C-0005 T-001)", () => {
     expect(() => parseConfig(yaml)).toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// C-0008 T-001 — agents registry + agent/model/effort per step
+// ---------------------------------------------------------------------------
+
+/** Helper: config com agents registry (sem acp.command legado). */
+function agentsConfigYaml(
+  mutate?: (c: Record<string, unknown>) => void,
+): string {
+  return configYaml((c) => {
+    // Replace acp.command with agents registry
+    c.agents = {
+      claude: { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+    };
+    delete (c.acp as Record<string, unknown>).command;
+    mutate?.(c);
+  });
+}
+
+describe("agents registry — schema (C-0008 T-001)", () => {
+  it("aceita agents: com um agente (default implícito)", () => {
+    const yaml = agentsConfigYaml();
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+
+  it("aceita agents: com vários agentes + default_agent", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.agents as Record<string, unknown>).codex = {
+        command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
+        model: "gpt-5-codex",
+        effort: "medium",
+      };
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+    });
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+
+  it("aceita agent env opcional", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.agents as Record<string, unknown>).codex = {
+        command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
+        env: { CODEX_API_KEY: "${env.CODEX_API_KEY}" },
+      };
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+    });
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+
+  it("rejeita agents: + acp.command (mutuamente exclusivos)", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        claude: { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+      };
+      // acp.command is still there from base config
+    });
+    expect(() => parseConfig(yaml)).toThrow(/mutuamente exclusivos/);
+  });
+
+  it("rejeita sem agents: nem acp.command (nenhum agente resolvível)", () => {
+    const yaml = configYaml((c) => {
+      delete (c.acp as Record<string, unknown>).command;
+    });
+    expect(() => parseConfig(yaml)).toThrow(/[Nn]enhum agente resolvível/);
+  });
+
+  it("rejeita default_agent inexistente no registry", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.acp as Record<string, unknown>).default_agent = "fantasma";
+    });
+    expect(() => parseConfig(yaml)).toThrow(/fantasma/);
+  });
+
+  it("rejeita step.agent inexistente no registry", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.pipeline as Record<string, unknown>[])[0] = {
+        id: "implement",
+        type: "agent",
+        prompt: "do it",
+        agent: "nao-existe",
+        verify: { run: "ci", max_attempts: 3 },
+      };
+    });
+    expect(() => parseConfig(yaml)).toThrow(/nao-existe/);
+  });
+
+  it("rejeita >1 agente sem default_agent quando step omite agent:", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.agents as Record<string, unknown>).codex = {
+        command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
+      };
+      // No default_agent, step[0] (type: agent) omits agent:
+    });
+    expect(() => parseConfig(yaml)).toThrow(/obrigatório/);
+  });
+
+  it("aceita >1 agente sem default_agent se todos os steps tem agent:", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.agents as Record<string, unknown>).codex = {
+        command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
+      };
+      c.pipeline = [
+        {
+          id: "implement",
+          type: "agent",
+          prompt: "do it",
+          agent: "claude",
+          verify: { run: "ci", max_attempts: 3 },
+        },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+
+  it("rejeita chave desconhecida em agentDef (strict)", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.agents as Record<string, unknown>).claude = {
+        command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"],
+        bogus: true,
+      };
+    });
+    expect(() => parseConfig(yaml)).toThrow(/bogus/);
+  });
+});
+
+describe("agentStepSchema — agent/model/effort (C-0008 T-001)", () => {
+  it("aceita agent/model/effort em step agent", () => {
+    const yaml = agentsConfigYaml((c) => {
+      (c.agents as Record<string, unknown>).codex = {
+        command: ["npx", "-y", "@agentclientprotocol/codex-acp"],
+      };
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+      (c.pipeline as Record<string, unknown>[])[0] = {
+        id: "implement",
+        type: "agent",
+        prompt: "do it",
+        agent: "codex",
+        model: "gpt-5-codex",
+        effort: "high",
+        verify: { run: "ci", max_attempts: 3 },
+      };
+    });
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+
+  it("rejeita agent em step shell (strict discriminated union)", () => {
+    const yaml = agentsConfigYaml((c) => {
+      c.pipeline = [
+        { id: "build", type: "shell", run: ["npm run build"], agent: "claude" },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+
+  it("rejeita model em step checks (strict discriminated union)", () => {
+    const yaml = agentsConfigYaml((c) => {
+      c.pipeline = [
+        { id: "ci", type: "checks", run: "ci", model: "gpt-5" },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+
+  it("rejeita effort em step approval (strict discriminated union)", () => {
+    const yaml = agentsConfigYaml((c) => {
+      c.pipeline = [
+        { id: "approve", type: "approval", prompt: "ok?", effort: "high" },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+});

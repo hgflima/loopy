@@ -3,6 +3,7 @@ import { parseConfig } from "../../src/config/load";
 import {
   collectPipelineWarnings,
   formatWarnings,
+  referencedAgents,
 } from "../../src/config/warnings";
 import { configYaml } from "./_helpers";
 
@@ -379,5 +380,102 @@ describe("formatWarnings", () => {
     expect(result).toContain("Aviso(s) no config:");
     expect(result).toContain("algo errado");
     expect(result).not.toContain('em "');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-0008 T-001 — referencedAgents helper
+// ---------------------------------------------------------------------------
+
+describe("referencedAgents — helper puro (C-0008 T-001)", () => {
+  it("inclui o default quando step omite agent:", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    const refs = referencedAgents(config.pipeline, "default");
+    expect(refs.has("default")).toBe(true);
+  });
+
+  it("inclui o agente explícito do step", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        claude: { command: ["claude-acp"] },
+        codex: { command: ["codex-acp"] },
+      };
+      delete (c.acp as Record<string, unknown>).command;
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+      c.pipeline = [
+        { id: "impl", type: "agent", prompt: "do it", agent: "codex", verify: { run: "ci", max_attempts: 3 } },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    const config = parseConfig(yaml);
+    const refs = referencedAgents(config.pipeline, config.resolvedAgents.default);
+    expect(refs.has("codex")).toBe(true);
+    expect(refs.has("claude")).toBe(false);
+  });
+
+  it("ignora steps não-agent", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    const refs = referencedAgents(config.pipeline, "default");
+    // Only the implement step (agent) contributes; cleanup (shell) does not
+    expect(refs.size).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-0008 T-001 — dead-profile warning
+// ---------------------------------------------------------------------------
+
+describe("collectPipelineWarnings — dead agent profile (C-0008 T-001)", () => {
+  it("avisa sobre agente no registry nunca referenciado", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        claude: { command: ["claude-acp"] },
+        codex: { command: ["codex-acp"] },
+      };
+      delete (c.acp as Record<string, unknown>).command;
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+      c.pipeline = [
+        { id: "impl", type: "agent", prompt: "do it", verify: { run: "ci", max_attempts: 3 } },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline, config.resolvedAgents);
+    expect(warnings.some((w) => w.includes("codex") && w.includes("perfil morto"))).toBe(true);
+  });
+
+  it("sem warning quando todos os agentes são referenciados", () => {
+    const yaml = configYaml((c) => {
+      c.agents = {
+        claude: { command: ["claude-acp"] },
+        codex: { command: ["codex-acp"] },
+      };
+      delete (c.acp as Record<string, unknown>).command;
+      (c.acp as Record<string, unknown>).default_agent = "claude";
+      c.pipeline = [
+        { id: "impl", type: "agent", prompt: "do it", agent: "codex", verify: { run: "ci", max_attempts: 3 } },
+        { id: "review", type: "agent", prompt: "review", expect: "PASS", on_fail: { goto: "impl" } },
+        { id: "cleanup", type: "shell", always: true, run: ["echo done"] },
+      ];
+    });
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline, config.resolvedAgents);
+    expect(warnings.some((w) => w.includes("perfil morto"))).toBe(false);
+  });
+
+  it("sem warning de dead-profile para legado single-agent", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline, config.resolvedAgents);
+    expect(warnings.some((w) => w.includes("perfil morto"))).toBe(false);
+  });
+
+  it("sem warning de dead-profile sem resolvedAgents (backward compat)", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    const warnings = collectPipelineWarnings(config.pipeline);
+    expect(warnings.some((w) => w.includes("perfil morto"))).toBe(false);
   });
 });

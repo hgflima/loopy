@@ -10,7 +10,7 @@
  * Called after `parseConfig`; the CLI surfaces the lines on stderr (non-fatal,
  * mirrors `formatValidationError` without throwing). AD-6: pure & testable.
  */
-import type { StepConfig } from "../types";
+import type { ResolvedAgents, StepConfig } from "../types";
 
 // ---------------------------------------------------------------------------
 // (a) Cycle detection via DFS on the flow graph
@@ -148,6 +148,50 @@ function detectParallelSafeMutators(steps: readonly StepConfig[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// (d) Dead agent profile (never referenced by any Step)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute the set of agent names actually referenced by the pipeline.
+ * Includes the default agent name when any Step omits `agent:`.
+ * Pure function — AD-6.
+ */
+export function referencedAgents(
+  pipeline: readonly StepConfig[],
+  defaultName: string,
+): Set<string> {
+  const refs = new Set<string>();
+  for (const step of pipeline) {
+    if (step.type === "agent") {
+      refs.add(step.agent ?? defaultName);
+    }
+  }
+  return refs;
+}
+
+/** Detect agents in the registry that are never referenced by any Step. */
+function detectDeadProfiles(
+  pipeline: readonly StepConfig[],
+  resolved?: ResolvedAgents,
+): string[] {
+  if (resolved === undefined) return [];
+  const registryNames = Object.keys(resolved.byName);
+  // Skip warning for legacy single-agent (synthesized "default")
+  if (registryNames.length <= 1) return [];
+
+  const refs = referencedAgents(pipeline, resolved.default);
+  const warnings: string[] = [];
+  for (const name of registryNames) {
+    if (!refs.has(name)) {
+      warnings.push(
+        `agente "${name}" declarado em 'agents' mas nunca referenciado no pipeline — perfil morto.`,
+      );
+    }
+  }
+  return warnings;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -157,11 +201,13 @@ function detectParallelSafeMutators(steps: readonly StepConfig[]): string[] {
  */
 export function collectPipelineWarnings(
   pipeline: readonly StepConfig[],
+  resolved?: ResolvedAgents,
 ): string[] {
   return [
     ...detectCycles(pipeline),
     ...detectAlwaysGoto(pipeline),
     ...detectParallelSafeMutators(pipeline),
+    ...detectDeadProfiles(pipeline, resolved),
   ];
 }
 

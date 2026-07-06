@@ -94,6 +94,10 @@ export function defaultConfig(checks: ChecksConfig = {}): LoopyConfig {
       git: { require_clean_parent: true, on_merge_conflict: "escalate" as const },
     },
     logging: { dir: ".loopy/logs", per_task: true, capture_acp_traffic: true },
+    resolvedAgents: {
+      byName: { default: { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] } },
+      default: "default",
+    },
   };
 }
 
