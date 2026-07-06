@@ -1,14 +1,15 @@
 /**
- * ACP subprocess + connection lifecycle — the engine's single link to the agent.
+ * ACP subprocess + connection lifecycle — the engine's link to an agent.
  *
- * Per AD-3, `loopy` spawns **one** `claude-agent-acp` process for the whole run
- * (the `npx` cold start is paid once) and it hosts N sessions over its lifetime
- * (one per task). This module owns that process and the JSON-RPC connection on
- * top of it: it wires the child's stdio into an ndjson {@link ndJsonStream},
- * builds the {@link ClientApp} with all handlers registered *before* connecting
- * (`acp/client.ts`), performs the `initialize` handshake, and exposes a
- * long-lived {@link ClientContext} (`ctx`) that the session layer (T-012) uses to
- * `buildSession(cwd)`.
+ * Per AD-3 (evolved by ADR-0006), `loopy` spawns **one process per Agent
+ * referenced** by the pipeline (the `npx` cold start is paid once per agent
+ * type) and each process hosts N sessions over its lifetime (one per
+ * agent+worktree pair). This module owns a single process and the JSON-RPC
+ * connection on top of it: it wires the child's stdio into an ndjson
+ * {@link ndJsonStream}, builds the {@link ClientApp} with all handlers
+ * registered *before* connecting (`acp/client.ts`), performs the `initialize`
+ * handshake, and exposes a long-lived {@link ClientContext} (`ctx`) that the
+ * session layer uses to `buildSession(cwd)`.
  *
  * Keeping the connection open with `connectWith`: the SDK closes a `connectWith`
  * connection as soon as its callback settles. Since our connection must outlive

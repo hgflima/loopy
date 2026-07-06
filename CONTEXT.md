@@ -13,7 +13,7 @@ O comportamento do loop, definido inteiramente pelo usuário no `loopy.yml`. É 
 _Avoid_: yml (quando referindo-se ao comportamento, não ao arquivo)
 
 **Run**:
-Uma execução completa do motor, do início ao esvaziamento do backlog (ou parada). Uma Run tem exatamente um processo de Agente ACP.
+Uma execução completa do motor, do início ao esvaziamento do backlog (ou parada). Uma Run tem **um Processo de Agente por Agente referenciado** pelo Pipeline (ADR-0006).
 _Avoid_: execução, sessão, invocação. (Reserve "Run" para a execução inteira; o campo `run:` de um Step é config, não este conceito.)
 
 **Loop externo**:
@@ -114,15 +114,35 @@ A integração do Worktree de uma Task na Parent branch, atrás de um Gate de Ap
 ## ACP e contexto do agente
 
 **ACP** (Agent Client Protocol):
-O protocolo pelo qual o motor dirige o Agente de código.
+O protocolo pelo qual o motor dirige os Agentes de código.
 
-**Agente**:
-O subprocesso de código que o motor dirige via ACP. Há um Agente por Run. Distinto do Step de Agente (que é um turno de conversa com este processo).
-_Avoid_: modelo, LLM, assistente; e não use "agente" para o Step
+**Agente** (precisão — ADR-0006):
+Um agente de código **nomeado** que o motor pode dirigir via ACP (ex.: `claude`, `codex`). É o *perfil/tipo* declarado no Registry de Agentes, não o subprocesso em si (esse é o **Processo de Agente**). Um Run pode usar **N Agentes**.
+_Avoid_: modelo, LLM, assistente; e não use "agente" para o Step nem para o subprocesso (use Processo de Agente)
 
-**Sessão**:
-Uma conversa ACP vinculada ao Worktree de uma Task; seu diretório de trabalho é imutável. Uma Sessão por Task.
+**Processo de Agente** (ADR-0006):
+O subprocesso adapter stdio de **um** Agente nomeado (ex.: `codex-acp`, `claude-agent-acp`). **Um por Agente referenciado** pelo Pipeline, spawned **eager** no início do Run (conjunto referenciado é estático; Agentes não referenciados nunca sobem; falha de spawn = Run falha rápido). Hospeda N Sessões (AD-3 evoluído).
+_Avoid_: agente (é o perfil, não o subprocesso), processo (sem qualificar)
+
+**Registry de Agentes** (`agents:`, ADR-0006):
+O mapa top-level `agents:` (nome → definição) resolvido/normalizado no `load`. Definição de Agente = `{ command, env?, model?, effort? }`. Fonte única do que o motor spawna e dos defaults de modelo/effort. `acp.command` legado sintetiza o Agente `default`. `agents:` e `acp.command` são mutuamente exclusivos.
+_Avoid_: config de agente (colide com Configuração do loop)
+
+**Agente default**:
+O Agente usado por um Step `agent` que **omite** `agent:`. Vem de `acp.default_agent` (se declarado) ou do único Agente do Registry (quando há exatamente 1). Com >1 Agente sem `default_agent`, `agent:` é obrigatório em todo Step de agente.
+_Avoid_: agente implícito, fallback
+
+**Sessão** (precisão — ADR-0006):
+Uma conversa ACP vinculada a um **`(Agente, Worktree)`**; seu diretório de trabalho é imutável (AD-3). Uma Task pode ter **mais de uma** Sessão se Steps distintos usam Agentes distintos — cada uma no seu Processo de Agente, todas com o mesmo cwd (o Worktree da Task). Sessões lazy por-`(Agente, Worktree)`.
 _Avoid_: conexão, contexto
+
+**Model** (ADR-0006):
+O modelo do Agente para um Step (`model:`), aplicado via `session/set_config_option` (categoria `model`) / `session/set_model` (legado). String open-ended, repassada crua (AD-1). **Best-effort**: capability ausente → no-op + log.
+_Avoid_: LLM, provedor
+
+**Effort** (ADR-0006):
+O reasoning effort do Agente para um Step (`effort:`), aplicado via config option (categoria `thought_level`/reasoning). String open-ended, repassada crua. **Best-effort e por-Agente** — Agente sem a capability (ex.: Claude) ⇒ no-op + log. Distinto de **Modo** (autonomia: `acceptEdits`/`plan`) e de **Model**.
+_Avoid_: nível de raciocínio (use "effort" direto), intensidade
 
 **Contexto fresco** (`clear_context`):
 O princípio de zerar o histórico da conversa antes de um prompt, apoiado na ideia de que a memória vive no disco (Worktree, diff, Spec) — não na conversa.

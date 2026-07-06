@@ -13,7 +13,7 @@ Tudo via barrel `index.ts`:
 
 ## Usage Patterns
 - Só duas funções tocam disco: `saveMetrics` e `persistChangeReport`. Todo o resto é puro (AD-6) e testável isolado.
-- `usage` é **somado** entre turnos (`addUsage` trata `null` como identidade); `cost` a nível Task/Run/Change é sempre o **último snapshot não-nulo** (cumulativo por Sessão — somar duplicaria).
+- `usage` é **somado** entre turnos (`addUsage` trata `null` como identidade); `cost` a nível Task/Run/Change é sempre o **último snapshot não-nulo** (cumulativo por Sessão — somar duplicaria). **Multi-Sessão (ADR-0006):** custo por-Task = soma dos snapshots finais de **cada** Sessão da Task (uma por Agente), best-effort (`n/d` quando um Agente não reporta). Forma persistida de `.loopy/metrics.json` inalterada.
 - Rollup é 4 folds encadeados; o total da Change é fold puro sobre `runs[]`, nunca contador mutável escondido.
 
 ## Anti-patterns

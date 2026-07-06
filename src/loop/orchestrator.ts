@@ -602,13 +602,13 @@ export type SessionProvider = (agentName: string, worktreeCwd: string) => Promis
 
 /**
  * Wrap a {@link SessionProvider} in an {@link AgentSession} that opens the real
- * session lazily and at most once (AD-3: one session per task/worktree). The
- * open is deferred to the first `setMode`/`clear`/`prompt`, so a task with no
- * agent step never opens a session at all; `readText`/`sessionId` read from the
- * resolved session (safe because the agent step always awaits a prompt turn
- * before reading its text). This keeps the orchestrator agnostic to step type
- * (AD-2): any step may reach for `ctx.session`, but the cost is only paid when
- * one actually does.
+ * session lazily and at most once per (agent, worktree) pair (AD-3 evolved,
+ * ADR-0006). The open is deferred to the first `setMode`/`clear`/`prompt`, so a
+ * task with no agent step never opens a session at all; `readText`/`sessionId`
+ * read from the resolved session (safe because the agent step always awaits a
+ * prompt turn before reading its text). This keeps the orchestrator agnostic to
+ * step type (AD-2): any step may reach for `ctx.session`, but the cost is only
+ * paid when one actually does.
  */
 function createLazySession(open: () => Promise<AgentSession>): AgentSession {
   let opened: AgentSession | undefined;

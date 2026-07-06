@@ -6,8 +6,21 @@ workspace:
   parent_branch: "main"
   worktrees_dir: ".worktrees"
 
+# Registry de agentes nomeados (AD-3 evoluído — um Processo por Agente referenciado).
+# Claude implementa (default) + Codex simplifica (effort: low) + Claude audita (mode: plan).
+agents:
+  claude:
+    command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  codex:
+    command: ["npx", "-y", "@agentclientprotocol/codex-acp"]
+    # SEM env → auth por subscription (login ChatGPT via `codex login`; é o default).
+    # Para API key opt-in, descomente:
+    # env:
+    #   CODEX_API_KEY: "${env.CODEX_API_KEY}"
+    effort: low
+
 acp:
-  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  default_agent: claude
   request_timeout_seconds: 1800
   permissions:
     default_mode: acceptEdits
@@ -59,6 +72,8 @@ pipeline:
 
   - id: simplify
     type: agent
+    agent: codex
+    effort: low
     clear_context: true
     mode: acceptEdits
     prompt: |
@@ -72,7 +87,7 @@ pipeline:
   - id: review
     type: agent
     clear_context: true
-    mode: default
+    mode: plan
     prompt: |
       /devy:review Reveja a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}
       **CRITICAL:** NUNCA EDITE NADA!

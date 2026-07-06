@@ -1,12 +1,13 @@
 /**
- * Per-task ACP session — one session bound to one worktree (AD-3, T-012).
+ * Per-task ACP session — one session bound to one (agent, worktree) pair (AD-3
+ * evolved by ADR-0006).
  *
- * The run owns a single ACP process/connection (`acp/agent.ts`); this layer
- * turns its long-lived {@link ClientContext} into task-sized sessions. Per AD-3
- * a session's `cwd` is fixed at `session/new` and immutable for its lifetime, so
- * each worktree needs its own session — which is exactly why sessions are pooled
- * by worktree path ({@link createSessionPool}, parallel-ready even though v1 runs
- * `concurrency: 1`).
+ * The run owns one ACP process per agent referenced by the pipeline
+ * (`acp/agent.ts`); this layer turns each process's long-lived
+ * {@link ClientContext} into task-sized sessions. Per AD-3 a session's `cwd` is
+ * fixed at `session/new` and immutable for its lifetime, so each
+ * (agent, worktree) pair needs its own session — which is exactly why sessions
+ * are pooled by `${agent}::${worktree}` ({@link createSessionPool}).
  *
  * A {@link LoopySession} wraps the SDK's `ActiveSession` and exposes the mechanics
  * the `agent` step (T-014) drives, nothing more (AD-1 — no loop behavior here):
