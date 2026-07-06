@@ -26,7 +26,7 @@
   Deps: T-001
   Files: src/types.ts, src/acp/session.ts, src/loop/orchestrator.ts
 
-- [ ] T-003: AgentProcessPool + session pool re-keyed + resolução de env
+- [x] T-003: AgentProcessPool + session pool re-keyed + resolução de env
   `openAgent` recebe `command`+`env` por-Agente. `AgentProcessPool` novo (keyed por nome, **eager**
   sobre `referencedAgents`; spawn no início; falha de spawn = Run falha rápido; Agente não
   referenciado não sobe). `createSessionPool` re-keyed por `${agent}::${worktree}`; `session(agent,
