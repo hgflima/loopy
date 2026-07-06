@@ -4,7 +4,7 @@
 > (`typecheck`/`lint`/`test`) e mantém **regressão zero**. Ver `plan.md` para o
 > detalhe de cada Task, os Checkpoints e o grafo de dependências.
 
-- [ ] T-001: Contrato + schema + normalização ResolvedAgents
+- [x] T-001: Contrato + schema + normalização ResolvedAgents
   Aditivo e `.strict()` em sincronia. `types.ts`: `AgentDef`, `LoopyConfig.agents?` +
   `resolvedAgents`, `AcpConfig.command?/default_agent?`, `AgentStep.agent?/model?/effort?`.
   `schema.ts`: `agentDefSchema`/`agentsSchema` (opcional), `acp.command` opcional, superRefine
