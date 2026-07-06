@@ -36,7 +36,7 @@
   Deps: T-001, T-002
   Files: src/acp/agent.ts, src/acp/session.ts, src/acp/pool.ts, src/config/env.ts
 
-- [ ] T-004: Roteamento Agente→Sessão + dry-run + helper de binding
+- [x] T-004: Roteamento Agente→Sessão + dry-run + helper de binding
   Helper puro `resolveAgentBinding(step, resolvedAgents) → { agentName, model?, effort? }` (fonte
   única, reusada por orquestrador+step+dry-run). `SessionProvider` ganha `agentName`; `runTaskPipeline`
   mantém `Map<agentName, lazySession>` por Task; `buildTaskStepContext` recebe a Sessão do Agente
