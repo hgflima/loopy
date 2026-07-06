@@ -412,7 +412,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     git,
     notify,
     // Wrap sessionProvider to register sessionId→taskId when a session opens.
-    sessionProvider: async (cwd) => {
+    sessionProvider: async (_agentName, cwd) => {
       const session = await pool.session(cwd);
       sessionToTask.set(session.sessionId, basename(cwd));
       return session;

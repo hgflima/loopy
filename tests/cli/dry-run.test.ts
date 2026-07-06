@@ -249,6 +249,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
         [1] create-worktree (shell)
             $ git worktree add -b "T-002-primeira-task-pendente" ".worktrees/T-002" "main"
         [2] implement (agent)
+            agent: default
             mode: acceptEdits
             clear_context: true
             prompt:
@@ -256,6 +257,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
               Implementar o parser do backlog conforme a spec.
             verify: run=ci max_attempts=3
         [3] audit (agent)
+            agent: default
             mode: plan
             clear_context: true
             prompt:
@@ -279,6 +281,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
         [1] create-worktree (shell)
             $ git worktree add -b "T-003-segunda-task-pendente" ".worktrees/T-003" "main"
         [2] implement (agent)
+            agent: default
             mode: acceptEdits
             clear_context: true
             prompt:
@@ -286,6 +289,7 @@ describe("formatDryRunPlan — resolved pipeline snapshot", () => {
               Deps: T-002
             verify: run=ci max_attempts=3
         [3] audit (agent)
+            agent: default
             mode: plan
             clear_context: true
             prompt:
@@ -448,5 +452,55 @@ describe("--task warns non-done deps (T-011)", () => {
     });
 
     expect(capturedConcurrency).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-004: dry-run shows resolved agent/model/effort per step
+// ---------------------------------------------------------------------------
+
+describe("dry-run — agent binding resolution (T-004)", () => {
+  it("shows agent/model/effort resolved from the registry + step overrides", () => {
+    const config = loadConfig(join(PROJECT, "loopy.yml"));
+    const tasks = pendingTasks(
+      loadBacklog(
+        join(PROJECT, "tasks/todo.md"),
+        backlogOptionsFrom(config.inputs.backlog),
+      ),
+    );
+    // Override resolvedAgents to simulate a multi-agent registry.
+    const multiConfig = {
+      ...config,
+      resolvedAgents: {
+        byName: {
+          claude: { command: ["claude-agent-acp"], model: "sonnet-4" },
+          codex: { command: ["codex-acp"], model: "gpt-5-codex", effort: "medium" },
+        },
+        default: "claude",
+      },
+      pipeline: [
+        { id: "implement", type: "agent" as const, prompt: "build ${task.id}", agent: "codex", effort: "high" },
+        { id: "review", type: "agent" as const, prompt: "review ${task.id}", agent: "claude" },
+      ],
+    };
+
+    const plan = planDryRun(multiConfig, [tasks[0]!]);
+
+    /** Extract the value of a setting field by label, or `undefined` if absent. */
+    const settingValue = (stepId: string, label: string): string | undefined =>
+      plan.tasks[0]!.steps
+        .find((s) => s.id === stepId)!
+        .fields.find((f) => f.kind === "setting" && "label" in f && f.label === label)
+        ?.value;
+
+    // implement: agent=codex, model=gpt-5-codex (registry), effort=high (step override)
+    expect(settingValue("implement", "agent")).toBe("codex");
+    expect(settingValue("implement", "model")).toBe("gpt-5-codex");
+    expect(settingValue("implement", "effort")).toBe("high");
+
+    // review: agent=claude, model=sonnet-4 (registry), no effort
+    expect(settingValue("review", "agent")).toBe("claude");
+    expect(settingValue("review", "model")).toBe("sonnet-4");
+    expect(settingValue("review", "effort")).toBeUndefined();
   });
 });

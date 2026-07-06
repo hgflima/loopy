@@ -21,6 +21,7 @@ import { createGit } from "../../src/git/worktree";
 import {
   createMarkDonePort,
   decideEscalation,
+  resolveAgentBinding,
   runLoop,
   worktreePathFor,
   type OrchestratorDeps,
@@ -41,6 +42,7 @@ import type {
   AgentSession,
   ChecksReport,
   ChecksRunnerPort,
+  ResolvedAgents,
   Step,
   StepConfig,
   StepContext,
@@ -382,7 +384,7 @@ describe("runLoop — agent session wiring", () => {
   it("supplies agent steps the sessionProvider session, opened once per task keyed by worktree cwd", async () => {
     // Records which worktree cwd the provider was asked to open a session for.
     const providerCalls: string[] = [];
-    const sessionProvider = async (cwd: string): Promise<AgentSession> => {
+    const sessionProvider = async (_agentName: string, cwd: string): Promise<AgentSession> => {
       providerCalls.push(cwd);
       return {
         sessionId: `sess:${cwd}`,
@@ -433,7 +435,7 @@ describe("runLoop — agent session wiring", () => {
 
   it("never opens a session for a task with no agent steps (lazy)", async () => {
     const providerCalls: string[] = [];
-    const sessionProvider = async (cwd: string): Promise<AgentSession> => {
+    const sessionProvider = async (_agentName: string, cwd: string): Promise<AgentSession> => {
       providerCalls.push(cwd);
       throw new Error("must not be called for a non-agent pipeline");
     };
@@ -1139,5 +1141,172 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     expect(log.stdout).toContain("conclui T-100");
     // Parent working tree is clean after a successful run.
     expect(await g.isParentClean()).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-004: resolveAgentBinding — pure helper
+// ---------------------------------------------------------------------------
+
+describe("resolveAgentBinding", () => {
+  const agents: ResolvedAgents = {
+    byName: {
+      claude: { command: ["claude-agent-acp"], model: "sonnet-4", effort: "high" },
+      codex: { command: ["codex-acp"], model: "gpt-5-codex" },
+    },
+    default: "claude",
+  };
+
+  it("resolves agent step with explicit agent + step overrides", () => {
+    const step: StepConfig = {
+      id: "impl", type: "agent", prompt: "do it",
+      agent: "codex", model: "gpt-5.2", effort: "low",
+    };
+    expect(resolveAgentBinding(step, agents)).toEqual({
+      agentName: "codex",
+      model: "gpt-5.2",
+      effort: "low",
+    });
+  });
+
+  it("falls back to registry defaults when step omits model/effort", () => {
+    const step: StepConfig = {
+      id: "impl", type: "agent", prompt: "do it", agent: "claude",
+    };
+    expect(resolveAgentBinding(step, agents)).toEqual({
+      agentName: "claude",
+      model: "sonnet-4",
+      effort: "high",
+    });
+  });
+
+  it("uses default agent when step omits agent:", () => {
+    const step: StepConfig = { id: "impl", type: "agent", prompt: "do it" };
+    expect(resolveAgentBinding(step, agents)).toEqual({
+      agentName: "claude",
+      model: "sonnet-4",
+      effort: "high",
+    });
+  });
+
+  it("returns default agent for non-agent steps", () => {
+    const step: StepConfig = { id: "s", type: "shell", run: ["echo"] };
+    expect(resolveAgentBinding(step, agents)).toEqual({
+      agentName: "claude",
+    });
+  });
+
+  it("returns undefined model/effort when neither step nor registry define them", () => {
+    const sparseAgents: ResolvedAgents = {
+      byName: { default: { command: ["agent"] } },
+      default: "default",
+    };
+    const step: StepConfig = { id: "impl", type: "agent", prompt: "do it" };
+    expect(resolveAgentBinding(step, sparseAgents)).toEqual({
+      agentName: "default",
+      model: undefined,
+      effort: undefined,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-004: multi-agent session routing — pipeline with two agents gets two sessions
+// ---------------------------------------------------------------------------
+
+/** Session provider that records `{agent, cwd}` and stamps a deterministic id. */
+function trackingProvider() {
+  const calls: Array<{ agent: string; cwd: string }> = [];
+  const seen: string[] = [];
+  const provider = async (agentName: string, cwd: string): Promise<AgentSession> => {
+    calls.push({ agent: agentName, cwd });
+    return {
+      sessionId: `sess:${agentName}:${cwd}`,
+      setMode: async () => {},
+      setModel: async () => {},
+      setEffort: async () => {},
+      clear: async () => {},
+      prompt: async () => "end_turn",
+      readText: () => "",
+      cancel: async () => {},
+      drainUsage: () => null,
+      readCost: () => null,
+    };
+  };
+  /** Agent interpreter that triggers the lazy open and records the sessionId. */
+  const interpreter: Step = {
+    type: "agent",
+    async execute(ctx: StepContext): Promise<StepResult> {
+      await ctx.session.setMode("acceptEdits");
+      seen.push(ctx.session.sessionId);
+      return { ok: true };
+    },
+  };
+  return { calls, seen, provider, interpreter };
+}
+
+describe("runLoop — multi-agent session routing (T-004)", () => {
+  it("creates separate lazy sessions per agent for the same task", async () => {
+    const { calls, seen, provider, interpreter } = trackingProvider();
+    const { port, marked } = recordingMarkDone();
+
+    const config = {
+      ...makeConfig([
+        { id: "implement", type: "agent", prompt: "build", agent: "codex" } as StepConfig,
+        { id: "review", type: "agent", prompt: "review", agent: "claude" } as StepConfig,
+      ]),
+      resolvedAgents: {
+        byName: {
+          claude: { command: ["claude-agent-acp"] },
+          codex: { command: ["codex-acp"] },
+        },
+        default: "claude",
+      },
+    };
+    const root = "/abs/workspace";
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({
+        registry: createStepRegistry([interpreter]),
+        markDone: port,
+        root,
+      }),
+      sessionProvider: provider,
+    });
+
+    const expectedCwd = resolve(root, worktreePathFor(config, makeTask("T-1")));
+    expect(calls).toEqual([
+      { agent: "codex", cwd: expectedCwd },
+      { agent: "claude", cwd: expectedCwd },
+    ]);
+    expect(seen).toEqual([
+      `sess:codex:${expectedCwd}`,
+      `sess:claude:${expectedCwd}`,
+    ]);
+    expect(marked).toEqual(["T-1"]);
+    expect(result.completed).toEqual(["T-1"]);
+  });
+
+  it("single-agent pipeline opens one session (byte-identical)", async () => {
+    const { calls, seen, provider, interpreter } = trackingProvider();
+    const { port } = recordingMarkDone();
+    const config = makeConfig([agent("implement"), agent("audit")]);
+    const root = "/abs/workspace";
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({
+        registry: createStepRegistry([interpreter]),
+        markDone: port,
+        root,
+      }),
+      sessionProvider: provider,
+    });
+
+    const expectedCwd = resolve(root, worktreePathFor(config, makeTask("T-1")));
+    expect(calls).toEqual([{ agent: "default", cwd: expectedCwd }]);
+    expect(seen).toEqual([
+      `sess:default:${expectedCwd}`,
+      `sess:default:${expectedCwd}`,
+    ]);
   });
 });
