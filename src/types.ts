@@ -517,6 +517,16 @@ export interface AgentSession {
   readText(): string;
   /** Cancel the current turn (`session/cancel`). */
   cancel(): Promise<void>;
+  /**
+   * Apply a model override via `session/set_config_option` (category `model`).
+   * Best-effort (AD-5): capability absent ⇒ no-op + log; adapter error ⇒ swallowed.
+   */
+  setModel(modelId: string): Promise<void>;
+  /**
+   * Apply a reasoning-effort override via `session/set_config_option` (category `thought_level`).
+   * Best-effort (AD-5): capability absent ⇒ no-op + log; adapter error ⇒ swallowed.
+   */
+  setEffort(level: string): Promise<void>;
   /** Sum of per-turn usage since last drain; resets the accumulator. `null` when ACP did not report. */
   drainUsage(): TurnUsage | null;
   /** Cumulative cost snapshot of the Session. `null` when ACP did not report. */

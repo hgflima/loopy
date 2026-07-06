@@ -34,7 +34,12 @@
  * (`cancelled`). Exceptions are reserved for infra/transport faults.
  */
 import { AGENT_METHODS } from "@agentclientprotocol/sdk";
-import type { ActiveSession, ClientContext } from "@agentclientprotocol/sdk";
+import type {
+  ActiveSession,
+  ClientContext,
+  SessionConfigOption,
+  SessionConfigOptionCategory,
+} from "@agentclientprotocol/sdk";
 import type {
   AgentSession,
   LoggerPort,
@@ -115,15 +120,37 @@ const ZERO_USAGE = {
   totalTokens: 0,
 };
 
+/**
+ * Find the `configId` for a given {@link SessionConfigOptionCategory} from the
+ * config options announced in `session/new`. Returns `undefined` when the
+ * adapter does not announce the category (best-effort — the caller no-ops).
+ */
+function findConfigId(
+  options: readonly SessionConfigOption[] | null | undefined,
+  category: SessionConfigOptionCategory,
+): string | undefined {
+  if (!options) return undefined;
+  return options.find((o) => o.category === category)?.id;
+}
+
 class SessionWrapper implements LoopySession {
   private lastTurnText = "";
   private usageAcc = { ...ZERO_USAGE };
   private usageAvailable = false;
 
+  /** `configId` for the `model` category (discovered from `session/new`). */
+  private readonly modelConfigId: string | undefined;
+  /** `configId` for the `thought_level` category (discovered from `session/new`). */
+  private readonly effortConfigId: string | undefined;
+
   constructor(
     private readonly deps: SessionDeps,
     private readonly active: ActiveSession,
-  ) {}
+  ) {
+    const opts = active.newSessionResponse.configOptions;
+    this.modelConfigId = findConfigId(opts, "model");
+    this.effortConfigId = findConfigId(opts, "thought_level");
+  }
 
   get sessionId(): string {
     return this.active.sessionId;
@@ -144,6 +171,55 @@ class SessionWrapper implements LoopySession {
     this.send("session/set_mode", params);
     await this.deps.ctx.request(AGENT_METHODS.session_set_mode, params);
     this.logAction(`set_mode ${modeId}`);
+  }
+
+  /**
+   * Best-effort model override via `session/set_config_option` (category `model`).
+   * No-op + log when the adapter does not announce the capability; adapter errors
+   * are swallowed (AD-5 — never propagated to the loop).
+   */
+  async setModel(modelId: string): Promise<void> {
+    await this.setConfigOption(this.modelConfigId, "model", modelId);
+  }
+
+  /**
+   * Best-effort effort override via `session/set_config_option` (category `thought_level`).
+   * Same best-effort semantics as {@link setModel}.
+   */
+  async setEffort(level: string): Promise<void> {
+    await this.setConfigOption(this.effortConfigId, "thought_level", level);
+  }
+
+  /**
+   * Shared impl for `setModel`/`setEffort`: send `session/set_config_option`
+   * when the `configId` was discovered; no-op + log otherwise. Adapter errors
+   * are caught and swallowed (AD-5).
+   */
+  private async setConfigOption(
+    configId: string | undefined,
+    label: string,
+    value: string,
+  ): Promise<void> {
+    if (configId === undefined) {
+      this.deps.logger?.debug(
+        `[acp] set_config_option(${label}) skipped — capability not announced (${this.sessionId})`,
+      );
+      return;
+    }
+    const params = { sessionId: this.sessionId, configId, value };
+    this.send("session/set_config_option", params);
+    try {
+      await this.deps.ctx.request(
+        AGENT_METHODS.session_set_config_option,
+        params,
+      );
+      this.logAction(`set_config_option(${label}) ${value}`);
+    } catch (err) {
+      // AD-5: adapter error swallowed — best-effort, never propagated.
+      this.deps.logger?.debug(
+        `[acp] set_config_option(${label}) failed (${this.sessionId}): ${String(err)}`,
+      );
+    }
   }
 
   /** Reset context via the raw `/clear` command; keeps the same `sessionId`. */

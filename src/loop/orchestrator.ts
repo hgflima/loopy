@@ -530,6 +530,8 @@ const notWired = (member: string) => (): never => {
 const notWiredSession: AgentSession = {
   sessionId: "not-wired",
   setMode: notWired("session.setMode"),
+  setModel: notWired("session.setModel"),
+  setEffort: notWired("session.setEffort"),
   clear: notWired("session.clear"),
   prompt: notWired("session.prompt"),
   readText: notWired("session.readText"),
@@ -581,6 +583,8 @@ function createLazySession(open: () => Promise<AgentSession>): AgentSession {
       return opened?.sessionId ?? "lazy(unopened)";
     },
     setMode: async (modeId) => (await ensure()).setMode(modeId),
+    setModel: async (modelId) => (await ensure()).setModel(modelId),
+    setEffort: async (level) => (await ensure()).setEffort(level),
     clear: async () => (await ensure()).clear(),
     prompt: async (text) => (await ensure()).prompt(text),
     readText: () => opened?.readText() ?? "",

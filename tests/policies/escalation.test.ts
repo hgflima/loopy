@@ -264,6 +264,8 @@ describe("escalation — abort_loop hard stop (T-007)", () => {
       provider: async (cwd: string): Promise<AgentSession> => ({
         sessionId: `sess:${cwd}`,
         setMode: async () => {},
+        setModel: async () => {},
+        setEffort: async () => {},
         clear: async () => {},
         prompt: async () => {
           await latch;

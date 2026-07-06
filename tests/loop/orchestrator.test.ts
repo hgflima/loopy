@@ -463,6 +463,8 @@ describe("runLoop — metrics instrumentation", () => {
     const fakeSession: AgentSession = {
       sessionId: "test",
       setMode: async () => {},
+      setModel: async () => {},
+      setEffort: async () => {},
       clear: async () => {},
       prompt: async () => "end_turn",
       readText: () => "",
