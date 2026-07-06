@@ -11,6 +11,7 @@ A UX do run: escolhe entre a TUI Ink ao vivo e o fallback append-only de linha, 
 ## Usage Patterns
 - Estado observável em `store.ts`; a árvore visual é validada via `view.ts` (função pura de estado→linhas) separada do Ink (AD-6).
 - Progresso flui por `dispatch(event)` → store (TUI) ou `line-reporter` (fallback).
+- **Multi-agente (ADR-0006):** quando >1 Agente está ativo no Run, Stream e Tráfego ACP são prefixados com `[<agent>]` por Sessão. Single-agent = byte-idêntico (sem prefixo).
 
 ## Anti-patterns
 - Não importar React/Ink fora de `mount.tsx`/`components/` — quebra a testabilidade do resto.

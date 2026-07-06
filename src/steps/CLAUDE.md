@@ -8,7 +8,7 @@ Implementa os intérpretes dos 4 tipos de step (`agent`/`shell`/`checks`/`approv
 - Cada `create*Step()` retorna um `Step` sem estado por-run → uma instância é reusada entre tasks. Lê o step atual de `ctx.step` (o orquestrador só roteia o `type` casado).
 
 ## Usage Patterns
-- **`agent`** (`agent.ts`): o *inner loop* do modelo de dois níveis. `mode` uma vez (`session/set_mode`, persiste e sobrevive a `/clear`); `/clear` antes de **cada** prompt se `clear_context` (memória vive no disco/prompt, nunca na conversa); loop `verify: { run, max_attempts }` re-prompta com `${checks.report}` fresco por tentativa; gate `expect` via `parseVerdict`. A ação em falha (verify esgotado ou expect não-bate) é governada por `step.on_fail` (default `escalate`; pode ser `{ goto: <step-id> }` — ADR-0002). No Desvio por goto, o motor carrega `result.report?.text ?? result.output` como carry; o agente re-entrado semeia `checksReport` do `ctx` (não `""`), `attempt = 1`, e usa `prompt` (não `retry_prompt`).
+- **`agent`** (`agent.ts`): o *inner loop* do modelo de dois níveis. Aplica na ordem: `setMode(step.mode)` → `setModel(modelEfetivo)` → `setEffort(effortEfetivo)` (ADR-0006, cada um condicional e best-effort — só quando resolvido, nunca lança pro loop). `/clear` antes de **cada** prompt se `clear_context` (memória vive no disco/prompt, nunca na conversa); loop `verify: { run, max_attempts }` re-prompta com `${checks.report}` fresco por tentativa; gate `expect` via `parseVerdict`. A ação em falha (verify esgotado ou expect não-bate) é governada por `step.on_fail` (default `escalate`; pode ser `{ goto: <step-id> }` — ADR-0002). No Desvio por goto, o motor carrega `result.report?.text ?? result.output` como carry; o agente re-entrado semeia `checksReport` do `ctx` (não `""`), `attempt = 1`, e usa `prompt` (não `retry_prompt`). Cada Step **reafirma** seu model/effort (determinismo sob Sessão reusada).
 - **`shell`** (`shell.ts` + `tokenize.ts`): tokeniza+resolve TODOS os comandos *antes* de rodar (fail-fast, sem efeito parcial), roda argv direto via execa. Para no 1º erro — exceto `always:true` (best-effort, ex.: `cleanup` tenta `worktree remove` E `branch -D`).
 - **`checks`** (`checks.ts`): roda uma lista nomeada de `checks:` standalone.
 - **`approval`** (`approval.ts`): gate humano via `ctx.ui`, opcionalmente roda `run:` após aprovar.
@@ -20,7 +20,7 @@ Implementa os intérpretes dos 4 tipos de step (`agent`/`shell`/`checks`/`approv
 
 ## Dependencies & Edges
 - Contrato `Step`/`StepContext`/`StepResult`: `../types.ts`. Interpolação: `../interp/`.
-- `agent.ts` reusa `buildScopeVars` de `../loop/orchestrator.ts` (fonte única do escopo) e `classifyStopReason` de `../acp/session.ts`.
+- `agent.ts` reusa `buildScopeVars` de `../loop/orchestrator.ts` (fonte única do escopo) e `classifyStopReason` de `../acp/session.ts`. Usa `resolveAgentBinding` de `../loop/orchestrator.ts` para resolver model/effort efetivos (ADR-0006).
 - Verdict: `verdict.ts`.
 
 ## Patterns & Pitfalls

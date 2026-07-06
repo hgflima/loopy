@@ -36,12 +36,12 @@ Docs: `SPEC.md` (spec completa), `README.md`, ADRs em `docs/adrs/`. **`CONTEXT.m
 ## Linguagem ubíqua (glossário — resumo de `CONTEXT.md`)
 O motor **interpreta** estas palavras, então cada uma tem um único significado. Use o termo canônico; os clusters abaixo são os que mais se confundem — não os intercambie.
 
-- **Motor** (interpreta o yml, fixo) × **Configuração** (o que o loop faz, no `loopy.yml`) × **Run** (uma execução inteira; 1 Agente ACP por Run).
+- **Motor** (interpreta o yml, fixo) × **Configuração** (o que o loop faz, no `loopy.yml`) × **Run** (uma execução inteira; 1 Processo de Agente por Agente referenciado — ADR-0006).
 - **Loop externo** (itera Tasks do Backlog; pool de N Sessões dirigido pelo **Scheduler**, teto `concurrency`) × **Loop interno** (o Verify de um Step de Agente; contador = **Tentativa**, teto `max_attempts`). **Visita** = cada entrada num Step pelo PC (teto `max_step_visits`). **Iteração** desacoplou sob paralelismo (ADR-0004): `${iteration}` = índice estável no backlog (AD-4); `max_iterations` = contador separado ("Tasks iniciadas"). Nunca troque Iteração ↔ Tentativa ↔ Visita.
 - **Pipeline** = lista ordenada de **Steps** aplicada a cada Task; a ordem declarada é o default, mas **Desvios** (`on_fail: { goto }` / `on_success: { goto }`) sobrepõem-na, saltando para um Step pelo `id` — o Pipeline vira um grafo dirigido navegado por um **Program counter** (PC). Quatro tipos: Step de **Agente** / **Shell** / **Checks** / **Aprovação**. Diga "Step de Agente" (turno de conversa), não "o agente".
 - Cluster de verificação: **Check** (um comando) → **Lista de checks** (nomeada, ex. `ci`) → **Verify** (loop de retry sobre checks, mecânica) × **Expect** (condição textual, ex. `AUDIT: PASS`) × **Verdict** (o conteúdo julgado que o Agente emite) × **Report** (`checks.report`, saída agregada). **Audit** = Step de Agente em Modo plan (read-only) que só emite Verdict.
 - **Plan** (documento `plan.md`, o "como") × **Modo plan** (autonomia ACP read-only). Nunca escreva "plan" sozinho para o modo.
-- **Agente** (o subprocesso; 1 por Run) × **Sessão** (conversa ACP presa a um Worktree, cwd imutável, 1 por Task). **Modo** = autonomia da Sessão (`acceptEdits`/`plan`/…).
+- **Agente** (perfil nomeado no **Registry de Agentes** `agents:`) × **Processo de Agente** (subprocesso adapter stdio, 1 por Agente referenciado, eager) × **Sessão** (conversa ACP presa a um `(Agente, Worktree)`, cwd imutável; uma Task pode ter N Sessões se usa N Agentes). **Modo** = autonomia da Sessão (`acceptEdits`/`plan`/…). **Model** = modelo por Step (best-effort). **Effort** = reasoning effort por Step (best-effort, por-Agente — no-op + log se o adapter não suporta). (ADR-0006.)
 - **Worktree** (`.worktrees/<id>/`, onde o Agente edita) × **Parent branch** (destino do Merge, limpa entre Tasks, contém o **Harness** `.claude` commitado).
 - **on_fail** = a Ação em falha unificada de um Step (uma chave só): `escalate` (default — dispara **Escalonamento**: `pause`/`skip_task`/`abort_loop`) **ou** `{ goto: <step-id> }` (**Desvio** — salta para o alvo em vez de escalar). Em Step `agent`, `on_fail` exige `verify` ou `expect`. **on_success** = `{ goto: <step-id> }` opcional em qualquer Step; omitir = sequencial.
 - **Desvio** (_goto_) = salto do fluxo para outro Step por `id`. Ciclos permitidos (fix-loop); limitados por **`max_step_visits`** (default 10, fail-closed → escalate). Cada entrada num Step conta uma **Visita**; exceder o teto escala sem executar.
@@ -54,7 +54,7 @@ O motor **interpreta** estas palavras, então cada uma tem um único significado
 Decisões arquiteturais que atravessam todo o código (definidas nos docstrings; citadas por nome nos filhos):
 - **AD-1 — config-driven**: motor interpreta, não decide. Nenhum comportamento de loop no código.
 - **AD-2 — inversão de dependência**: registry `type → interpreter`; `type` sem intérprete é pulado (no-op), não falha.
-- **AD-3 — um processo ACP por run, N sessões**: uma sessão por task/worktree; cwd imutável por sessão.
+- **AD-3 — N Processos ACP por run (um por Agente referenciado), Sessões por `(Agente, Worktree)`** (ADR-0006 evoluiu: antes 1 processo/run; agora 1 por Agente referenciado, eager; cwd imutável por sessão).
 - **AD-4 — `StepContext` + interpolação por task/attempt**: `buildScopeVars` é a fonte única do escopo (dry-run e run vivo resolvem strings idênticas).
 - **AD-5 — erros como valores nas fronteiras de step**: intérpretes retornam `ok:false`; exceções só para faltas genuínas.
 - **AD-6 — funções puras onde dá**: verdict, planner do dry-run e a view da TUI são puros e testáveis isolados.

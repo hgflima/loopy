@@ -13,6 +13,11 @@
  *  - **`mode`** → applied once via `session/set_mode` (`plan` for a read-only
  *    audit, `acceptEdits` for implement/simplify). Mode persists on the session
  *    and is not reset by `/clear`, so it is set once up front.
+ *  - **`model`** → applied via `setModel()` (best-effort, ADR-0006); resolved as
+ *    `step.model ?? registry[agent].model`. No-op when absent.
+ *  - **`effort`** → applied via `setEffort()` (best-effort, ADR-0006); resolved as
+ *    `step.effort ?? registry[agent].effort`. No-op + log when the agent doesn't
+ *    support reasoning effort.
  *  - **`prompt` / `retry_prompt`** → `prompt` on the first attempt, `retry_prompt`
  *    on retries (falling back to `prompt`), resolved per attempt so a retry's
  *    `${checks.report}` carries *that* attempt's failing checks.

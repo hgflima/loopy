@@ -114,6 +114,43 @@ describe("acceptance · example loopy.yml matches the final schema", () => {
 });
 
 // ---------------------------------------------------------------------------
+// SC multi-agent — dry-run prints Agent/model/effort per step (T-009)
+// ---------------------------------------------------------------------------
+
+describe("acceptance · multi-agent dry-run resolves agent/model/effort per step", () => {
+  const config = loadExampleConfig();
+  const task = sampleTask();
+
+  it("the example declares a multi-agent registry with claude (default) and codex", () => {
+    expect(config.resolvedAgents).toBeDefined();
+    expect(config.resolvedAgents.default).toBe("claude");
+    expect(Object.keys(config.resolvedAgents.byName).sort()).toEqual(["claude", "codex"]);
+  });
+
+  it("dry-run resolves agent bindings per step without writing anything", () => {
+    const plan = planDryRun(config, [task]);
+
+    /** Extract the value of a setting field by label, or `undefined` if absent. */
+    const settingValue = (stepId: string, label: string): string | undefined =>
+      plan.tasks[0]!.steps
+        .find((s) => s.id === stepId)
+        ?.fields.find((f) => f.kind === "setting" && "label" in f && f.label === label)
+        ?.value;
+
+    // implement: agent=claude (default), no model/effort override
+    expect(settingValue("implement", "agent")).toBe("claude");
+
+    // simplify: agent=codex (step override), effort=low (step + registry default)
+    expect(settingValue("simplify", "agent")).toBe("codex");
+    expect(settingValue("simplify", "effort")).toBe("low");
+
+    // review: agent=claude (default), mode=plan (shown as setting)
+    expect(settingValue("review", "agent")).toBe("claude");
+    expect(settingValue("review", "mode")).toBe("plan");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // SC #2 / AD-1 — behavior is config-driven: step ORDER is data, not code.
 // ---------------------------------------------------------------------------
 
