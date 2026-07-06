@@ -56,7 +56,7 @@
   Deps: T-002, T-004
   Files: src/steps/agent.ts
 
-- [ ] T-006: Wiring multi-processo no index.ts
+- [x] T-006: Wiring multi-processo no index.ts
   `defaultRunLive` monta `AgentProcessPool` do `ResolvedAgents` (eager sobre `referencedAgents`;
   spawn-fail = Run falha rápido), usa o session pool re-keyed e `resolveAgentEnv`. Map da TUI vira
   `sessionId → {taskId, agent}`; `onUpdate`/`onTraffic` por Processo. `agent: codex` spawna
