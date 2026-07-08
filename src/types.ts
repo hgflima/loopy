@@ -483,6 +483,8 @@ export interface RunFlags {
   readonly yes: boolean;
   /** `false` when `--no-tui` or no TTY (line-log fallback). */
   readonly tui: boolean;
+  /** Emit NDJSON events to stdout (fan-out dispatch for Native UI). */
+  readonly emitEvents: boolean;
   /** Include ACP traffic in logs. */
   readonly verbose: boolean;
   /** `--clean [T-XXX]`: teardown worktree+branch+checkpoint and exit. */

@@ -155,6 +155,68 @@ describe("run — live loop (git repo already present)", () => {
   });
 });
 
+describe("run — --emit-events flag (T-006)", () => {
+  it("threads emitEvents onto the live flags", async () => {
+    const cap = capture();
+    const { hooks, liveCalls } = recordingHooks();
+
+    await run([PROJECT, "--emit-events"], cap.io, hooks);
+
+    expect(liveCalls[0]!.flags.emitEvents).toBe(true);
+  });
+
+  it("emitEvents defaults to false", async () => {
+    const cap = capture();
+    const { hooks, liveCalls } = recordingHooks();
+
+    await run([PROJECT], cap.io, hooks);
+
+    expect(liveCalls[0]!.flags.emitEvents).toBe(false);
+  });
+
+  it("stdout receives NO text output (only stderr) when --emit-events is active", async () => {
+    const cap = capture();
+    const { hooks } = recordingHooks();
+
+    await run([PROJECT, "--no-tui", "--emit-events"], cap.io, hooks);
+
+    // All status messages (iniciando, fim) go to stderr, not stdout.
+    expect(cap.stderr()).toMatch(/loopy: iniciando/);
+    expect(cap.stderr()).toMatch(/loopy: fim/);
+    // stdout should not contain status messages.
+    expect(cap.stdout()).not.toMatch(/loopy: iniciando/);
+    expect(cap.stdout()).not.toMatch(/loopy: fim/);
+  });
+
+  it("RunLoopResult is byte-identical with and without --emit-events (AD-1)", async () => {
+    const results: RunLoopResult[] = [];
+    const hooksWith = recordingHooks({
+      runLive: async () => {
+        const r = OK_RESULT;
+        results.push(r);
+        return r;
+      },
+    });
+    const hooksWithout = recordingHooks({
+      runLive: async () => {
+        const r = OK_RESULT;
+        results.push(r);
+        return r;
+      },
+    });
+
+    const capWith = capture();
+    const capWithout = capture();
+    const codeWith = await run([PROJECT, "--no-tui", "--emit-events"], capWith.io, hooksWith.hooks);
+    const codeWithout = await run([PROJECT, "--no-tui"], capWithout.io, hooksWithout.hooks);
+
+    expect(codeWith).toBe(codeWithout);
+    // Both runs produced the same result object.
+    expect(results).toHaveLength(2);
+    expect(JSON.stringify(results[0])).toBe(JSON.stringify(results[1]));
+  });
+});
+
 describe("run — first-run git setup (not a repo)", () => {
   it("with --yes, initializes the repo (no prompt) then runs", async () => {
     const cap = capture();

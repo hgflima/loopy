@@ -23,10 +23,15 @@ import {
   createApprovalController,
   createAutoApproval,
   createReadlineApproval,
+  createStdinApproval,
   type ApprovalController,
 } from "./approval";
 import { createLineReporter } from "./line-reporter";
 import { createStore, type Store, type StoreEvent } from "./store";
+import {
+  createEventTransport,
+  type EventTransport,
+} from "./transport";
 import type { RunFlags, UiPort } from "../types";
 
 /** Props an Ink mount receives — the live store + the approval controller. */
@@ -63,6 +68,11 @@ export interface Ui {
   dispatch(event: StoreEvent): void;
   /** Tear down the renderer (unmount Ink / flush). Idempotent-safe to call once. */
   stop(): void;
+  /**
+   * NDJSON transport handle — available only when `--emit-events` is active.
+   * Used by `defaultRunLive` to emit `run_started` / `run_finished` control frames.
+   */
+  readonly transport?: EventTransport;
 }
 
 /** Options for {@link startUi}. */
@@ -84,11 +94,54 @@ export interface StartUiOptions {
 /**
  * Build the run's {@link Ui}: pick the renderer, wire the approval transport, and
  * return one handle for progress + approval + teardown.
+ *
+ * When `--emit-events` is active the dispatch is composed as a **fan-out**: the
+ * base handler (store or line-reporter) **and** a NDJSON {@link EventTransport}
+ * that serializes every {@link StoreEvent} to `stdout`. Approval switches to
+ * {@link createStdinApproval} (stdin NDJSON commands). The transport is exposed
+ * on the returned {@link Ui} so `defaultRunLive` can emit `run_started` /
+ * `run_finished` control frames.
  */
 export function startUi(options: StartUiOptions): Ui {
   const { flags, mount } = options;
   const out = options.stdout ?? process.stdout;
+  const inp = options.stdin ?? process.stdin;
   const isTty = options.isTTY ?? Boolean(out.isTTY);
+
+  // When --emit-events, stdout is the NDJSON channel — build the transport.
+  const transport: EventTransport | undefined = flags.emitEvents
+    ? createEventTransport((line) => { try { out.write(line); } catch { /* best-effort */ } })
+    : undefined;
+
+  /** Wrap a base dispatch with a fan-out to the transport (when active). */
+  const fanOut = (base: (event: StoreEvent) => void): ((event: StoreEvent) => void) => {
+    if (!transport) return base;
+    return (event) => { base(event); transport.emit(event); };
+  };
+
+  /**
+   * Pick the approval port: --emit-events → stdin NDJSON, --yes → auto-approve,
+   * otherwise `fallback` (controller for TUI, readline for line mode).
+   */
+  const pickApproval = (fallback: UiPort): UiPort => {
+    if (flags.emitEvents) {
+      if (flags.yes) return createAutoApproval();
+      return createStdinApproval({
+        emit: (ctrl) => {
+          transport!.emitControl({
+            control: "approval_requested",
+            requestId: ctrl.requestId,
+            taskId: "",
+            stepId: "",
+            summary: ctrl.summary,
+          });
+        },
+        input: inp,
+      });
+    }
+    if (flags.yes) return createAutoApproval();
+    return fallback;
+  };
 
   if (flags.tui && isTty && mount !== undefined) {
     const store = createStore();
@@ -99,26 +152,29 @@ export function startUi(options: StartUiOptions): Ui {
       stdout: options.stdout,
       stdin: options.stdin,
     });
-    // --yes never consults the controller, so no prompt ever appears in CI.
-    const ui: UiPort = flags.yes ? createAutoApproval() : controller;
     return {
-      ui,
+      ui: pickApproval(controller),
       tui: true,
-      dispatch: (event) => store.dispatch(event),
+      dispatch: fanOut((event) => store.dispatch(event)),
       stop: () => instance.unmount(),
+      transport,
     };
   }
 
+  // Fallback (line-reporter). When --emit-events, line logs go to stderr
+  // (stdout is reserved for NDJSON).
   const print =
-    options.linePrint ?? ((line: string) => void out.write(`${line}\n`));
+    options.linePrint ?? (
+      flags.emitEvents
+        ? (line: string) => void process.stderr.write(`${line}\n`)
+        : (line: string) => void out.write(`${line}\n`)
+    );
   const reporter = createLineReporter({ print, verbose: flags.verbose });
-  const ui: UiPort = flags.yes
-    ? createAutoApproval()
-    : createReadlineApproval({ input: options.stdin, output: options.stdout });
   return {
-    ui,
+    ui: pickApproval(createReadlineApproval({ input: options.stdin, output: options.stdout })),
     tui: false,
-    dispatch: (event) => reporter.handle(event),
+    dispatch: fanOut((event) => reporter.handle(event)),
     stop: () => {},
+    transport,
   };
 }
