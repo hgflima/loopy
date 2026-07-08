@@ -152,7 +152,7 @@
     Deps: T-007, T-009
     Files: apps/menubar/src/kanban/KanbanBoard.tsx, apps/menubar/src/kanban/kanban.css, apps/menubar/src/kanban/CardDetail.tsx, apps/menubar/src/kanban/CardDetail.css, apps/menubar/src/App.tsx, apps/menubar/src/App.css. Scope: M.
 
-- [ ] T-011: CardDetail — descrição (markdown) + deps chips + log persistido (#7 conteúdo)
+- [x] T-011: CardDetail — descrição (markdown) + deps chips + log persistido (#7 conteúdo)
     Preencher o `CardDetail`: **descrição** = `TaskState.description` (T-003) renderizada como
     markdown sanitizado (`MarkdownStream`, T-005); **deps** = `TaskState.deps` como **chips com
     status dot** (não prosa — resolver o status de cada dep via `store.tasks`); **log** = o transcript
