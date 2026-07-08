@@ -1,5 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
 import type { BridgeState } from "./state/store-bridge";
+import { StreamPanel } from "./panes/StreamPanel";
 
 interface AppProps {
   state: BridgeState;
@@ -22,6 +23,7 @@ function App({ state }: AppProps) {
       {ui.pendingApprovals.length > 0 && (
         <p>Pending approvals: {ui.pendingApprovals.length}</p>
       )}
+      <StreamPanel store={store} />
     </main>
   );
 }
