@@ -54,7 +54,7 @@
     Deps: nenhuma
     Files: src/tui/store.ts, src/loop/orchestrator.ts, testes de store/orchestrator. Scope: M. RISCO MÉDIO.
 
-- [ ] T-004: `store-bridge` acumulador cross-step + `stream-history.ts` (puro) + teste
+- [x] T-004: `store-bridge` acumulador cross-step + `stream-history.ts` (puro) + teste
     O `reduce` reseta `task.stream` a cada step/attempt — então o histórico vive na camada do app.
     Em `apps/menubar/src/state/store-bridge.ts`: `BridgeState` ganha um transcript **append-only**
     por task, marcado por `stepId`, **nunca resetado** (≠ `task.stream`, sobrevive a `task_finished`);
