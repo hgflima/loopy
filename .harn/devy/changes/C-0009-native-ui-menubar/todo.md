@@ -115,7 +115,7 @@
     Deps: T-001
     Files: apps/menubar/package.json, apps/menubar/vite.config.ts, apps/menubar/tsconfig.json, apps/menubar/src/{main,App}.tsx, apps/menubar/src-tauri/{Cargo.toml,tauri.conf.json,src/main.rs}. Scope: M. RISCO ALTO.
 
-- [ ] T-008: `store-bridge.ts` — `applyLine(NDJSON)` → roteia control vs StoreEvent → `reduce`
+- [x] T-008: `store-bridge.ts` — `applyLine(NDJSON)` → roteia control vs StoreEvent → `reduce`
     `src/state/store-bridge.ts`: `applyLine(state, line)` parseia uma linha NDJSON
     (reusa o parser/contrato do Transport, T-004), roteia frame **control** (run_started/
     run_finished/approval_requested → estado de UI) vs **StoreEvent** (→ `reduce` importado
