@@ -5,12 +5,14 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import { Glance } from "./popover/Glance";
+import { parseTransportLine } from "loopy/tui/transport";
 import {
   applyLine,
   dismissApproval,
   initialBridgeState,
 } from "./state/store-bridge";
 import { formatApprovalPayload } from "./panes/ApprovalPrompt";
+import { shouldNotify } from "./state/notify";
 
 // ---------------------------------------------------------------------------
 // Mock NDJSON feed for dev:web (exercises the full applyLine pipeline)
@@ -46,6 +48,21 @@ const MOCK_FEED = [
 ];
 
 const FEED_INTERVAL_MS = 300;
+
+// ---------------------------------------------------------------------------
+// Notification dispatch (T-017 — signal discipline, best-effort)
+// ---------------------------------------------------------------------------
+
+function dispatchNotification(line: string): void {
+  const parsed = parseTransportLine(line);
+  if (!parsed.ok || parsed.frame === "command") return;
+  const input = parsed.frame === "control" ? parsed.control : parsed.event;
+  const notif = shouldNotify(input);
+  if (!notif) return;
+  import("@tauri-apps/plugin-notification")
+    .then(({ sendNotification }) => sendNotification(notif))
+    .catch(() => {});
+}
 
 // ---------------------------------------------------------------------------
 // Runtime detection (module-level, computed once)
@@ -128,6 +145,7 @@ function Root() {
     // Tauri: listen to sidecar events
     const unLine = listen<string>("sidecar://line", (event) => {
       setState((prev) => applyLine(prev, event.payload));
+      dispatchNotification(event.payload);
     });
 
     const unExit = listen<number>("sidecar://exit", () => {

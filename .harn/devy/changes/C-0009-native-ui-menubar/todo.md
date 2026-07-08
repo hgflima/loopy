@@ -256,7 +256,7 @@
     Deps: T-005, T-014, T-008
     Files: apps/menubar/src/panes/ApprovalPrompt.tsx, apps/menubar/src-tauri/src/main.rs (send_command, focus), apps/menubar/src/App.tsx, testes. Scope: M. RISCO ALTO.
 
-- [ ] T-017: Política de notificação (approval / run_finished / escalated / paused; **nunca** por-task done)
+- [x] T-017: Política de notificação (approval / run_finished / escalated / paused; **nunca** por-task done)
     Plugin `notification`: notifica em **aprovação** (sempre), **`run_finished`** (backlog
     zerado) e task **escalated/paused**. **Nunca** por-task-`done` (ruído — disciplina de
     sinal, refino #8 / DESIGN §5). Centralizar a decisão num helper puro sobre os frames
