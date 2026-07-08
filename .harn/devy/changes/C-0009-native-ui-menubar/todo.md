@@ -78,7 +78,7 @@
     Deps: nenhuma
     Files: src/tui/approval.ts, src/tui/approval.test.ts. Scope: M.
 
-- [ ] T-006: Wire `--emit-events` (fan-out dispatch, logs→stderr, run_started/finished)
+- [x] T-006: Wire `--emit-events` (fan-out dispatch, logs→stderr, run_started/finished)
     Commander ganha `--emit-events` (`index.ts:buildProgram` + `toFlags`/`RunFlags`).
     Sob a flag: `startUi`/`defaultRunLive` compõem o `dispatch` como **fan-out** — store
     ou line-reporter **E** `createEventTransport(stdout)`; emite `run_started` no início
