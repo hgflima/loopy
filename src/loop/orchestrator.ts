@@ -1327,8 +1327,12 @@ export async function runLoop(
   }
   const graph: TaskGraph = graphResult.value;
 
-  // --- Emit DAG topology + task registrations (C-0007 T-004) ---
+  // --- Emit DAG topology + pipeline declaration + task registrations (C-0007 T-004, C-0009 T-003) ---
   safeEmit(deps, { type: "edges_set", edges: graph.edges as [string, string][] });
+  safeEmit(deps, {
+    type: "pipeline_declared",
+    steps: config.pipeline.map((s) => ({ id: s.id, type: s.type })),
+  });
   for (const t of tasks) {
     safeEmit(deps, {
       type: "task_registered",

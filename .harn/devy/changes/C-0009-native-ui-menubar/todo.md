@@ -9,7 +9,7 @@
 
 ## Fase 0 — Fundação (T-001)
 
-- [ ] T-001: Monorepo npm workspaces + subpath exports (`loopy/tui/store`, `loopy/tui/view`)
+- [x] T-001: Monorepo npm workspaces + subpath exports (`loopy/tui/store`, `loopy/tui/view`)
     Root `package.json` ganha `"workspaces": ["apps/*"]` e um mapa `"exports"` com
     `"."` (bin atual), `"./tui/store"` → `./dist/tui/store.js` (+ `types`) e
     `"./tui/view"` → `./dist/tui/view.js` (+ `types`). `tsup.config` ganha esses dois
@@ -37,7 +37,7 @@
     Deps: nenhuma
     Files: src/tui/view.ts, src/tui/view.test.ts. Scope: M. RISCO ALTO.
 
-- [ ] T-003: `StoreState.pipeline` + evento `pipeline_declared` + orquestrador o emite
+- [x] T-003: `StoreState.pipeline` + evento `pipeline_declared` + orquestrador o emite
     `StoreState` ganha `pipeline: readonly { id: string; type: StepType }[]` (default `[]`
     em `initialState`). União `StoreEvent` ganha `{ type: "pipeline_declared"; steps: readonly {id;type}[] }`;
     o `reduce` (switch **exaustivo**, sem `default`) grava `state.pipeline`. O
