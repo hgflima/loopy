@@ -226,7 +226,7 @@
     Deps: T-009
     Files: apps/menubar/src-tauri/src/main.rs, apps/menubar/src-tauri/tauri.conf.json, apps/menubar/src/popover/Glance.tsx. Scope: M.
 
-- [ ] T-015: `LaunchConfig` (picker + flags) + persistência + spawn/relaunch (um Run por vez)
+- [x] T-015: `LaunchConfig` (picker + flags) + persistência + spawn/relaunch (um Run por vez)
     `src/panes/LaunchConfig.tsx`: picker de diretório-alvo (plugin `dialog`) + toggles
     `--yes` (default **OFF**, SC #6), `--task <id>`, `--verbose`. App **sempre** injeta
     `--no-tui --emit-events` (`--dry-run` fora do v1). Persistência = último dir + flags
@@ -242,7 +242,7 @@
 
 ## Fase 6 — Aprovação + sinal (T-016 → T-017)
 
-- [ ] T-016: `ApprovalPrompt` + `approval_decision` via stdin + bring-to-front + badge ⚠
+- [x] T-016: `ApprovalPrompt` + `approval_decision` via stdin + bring-to-front + badge ⚠
     `src/panes/ApprovalPrompt.tsx`: renderiza o `approval_requested` (contexto
     `task · step · summary` + o **custo de reprovar** = escala) com botões **Aprovar/
     Reprovar** explícitos; a decisão vira `approval_decision{requestId,approved}` no stdin
