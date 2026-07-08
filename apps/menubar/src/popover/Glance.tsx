@@ -1,13 +1,18 @@
 /**
  * Glance — compact popover summary for the tray.
  *
- * Shows `done/total · running · ⚠ warnings` at a glance with two actions:
- * - **Abrir**: expand the full dashboard window (switches macOS identity to regular)
- * - **Parar**: stop the running sidecar
+ * Shows `done/total · running · gates` at a glance with two actions:
+ * - **Abrir**: expand the full dashboard window (accent primary)
+ * - **Parar**: stop the running sidecar (secondary)
+ *
+ * Three states: idle (no run), running (progress), gate (pending approvals).
+ * All styling via design system classes + tokens.css — zero inline colors.
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import type { BridgeState } from "../state/store-bridge";
+import { Button, StatusDot, Pill } from "../ui";
+import "./Glance.css";
 
 interface GlanceProps {
   state: BridgeState;
@@ -26,40 +31,29 @@ export function Glance({ state, yesFlag }: GlanceProps) {
   const isIdle = ui.runStatus === "idle";
 
   return (
-    <div
-      style={{
-        padding: "12px 16px",
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-        fontSize: 13,
-        userSelect: "none",
-      }}
-    >
+    <div className="glance t-body">
       {/* Status line */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          color: "#333",
-          marginBottom: 12,
-        }}
-      >
+      <div className="glance__status">
         {isIdle ? (
-          <span style={{ color: "#999" }}>Nenhum run ativo</span>
+          <span className="glance__idle">Nenhum run ativo</span>
         ) : (
           <>
-            <span style={{ fontWeight: 600 }}>
+            <span className="glance__progress">
               {done}/{total}
             </span>
-            <span style={{ color: "#666" }}>·</span>
-            <span style={{ color: running > 0 ? "cyan" : "#666" }}>
-              {running} running
-            </span>
+            <span className="glance__sep">·</span>
+            {running > 0 ? (
+              <span className="glance__running">
+                <StatusDot tone="running" pulse label={`${running} running`} />
+                <span>{running} running</span>
+              </span>
+            ) : (
+              <span className="u-muted">0 running</span>
+            )}
             {warnings > 0 && (
               <>
-                <span style={{ color: "#666" }}>·</span>
-                <span style={{ color: "orange" }}>⚠ {warnings}</span>
+                <span className="glance__sep">·</span>
+                <Pill tone="accent">⚠ {warnings}</Pill>
               </>
             )}
           </>
@@ -68,50 +62,24 @@ export function Glance({ state, yesFlag }: GlanceProps) {
 
       {/* Delegation info */}
       {!isIdle && (
-        <div
-          style={{
-            fontSize: 11,
-            color: "#888",
-            marginBottom: 8,
-          }}
-        >
-          delegação: --yes {yesFlag ? "ON" : "OFF"} · {warnings} gate{warnings !== 1 ? "s" : ""}
+        <div className="glance__delegation t-label u-muted">
+          delegação: --yes {yesFlag ? "ON" : "OFF"} · {warnings} gate
+          {warnings !== 1 ? "s" : ""}
         </div>
       )}
 
       {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        <button
-          onClick={() => invoke("show_main_window")}
-          style={{
-            flex: 1,
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid #007AFF",
-            background: "#007AFF",
-            color: "#fff",
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
+      <div className="glance__actions">
+        <Button variant="primary" onClick={() => invoke("show_main_window")}>
           Abrir
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="secondary"
           onClick={() => invoke("stop_sidecar")}
           disabled={!isRunning}
-          style={{
-            flex: 1,
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid #ccc",
-            background: isRunning ? "#fff" : "#f5f5f5",
-            color: isRunning ? "#333" : "#999",
-            fontSize: 13,
-            cursor: isRunning ? "pointer" : "default",
-          }}
         >
           Parar
-        </button>
+        </Button>
       </div>
     </div>
   );
