@@ -46,6 +46,7 @@ function idleState(): BridgeState {
   return {
     store: emptyStore(),
     ui: { runStatus: "idle", pendingApprovals: [], stderrTail: [] },
+    transcript: {},
   };
 }
 
@@ -76,6 +77,7 @@ function runningState(
   return {
     store: emptyStore(tasks),
     ui: { runStatus: "running", pendingApprovals, stderrTail: [] },
+    transcript: {},
   };
 }
 

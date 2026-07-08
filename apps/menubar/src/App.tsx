@@ -92,7 +92,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
           <div className="app-main">
             <ViewSwitcher store={store} tick={tick} />
           </div>
-          <StreamPanel store={store} />
+          <StreamPanel store={store} transcript={state.transcript} />
         </>
       )}
 
