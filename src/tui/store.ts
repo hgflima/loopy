@@ -76,6 +76,10 @@ export interface TaskState {
   readonly id: string;
   readonly title: string;
   readonly status: TaskStatus;
+  /** Task body without the `Deps:` line (C-0010 T-003). */
+  readonly description?: string;
+  /** Task dependency ids (C-0010 T-003). */
+  readonly deps?: readonly string[];
   /** Id of the step currently running, if any (never a global singleton). */
   readonly currentStepId?: string;
   readonly steps: readonly StepState[];
@@ -144,6 +148,10 @@ export type StoreEvent =
       readonly title: string;
       /** Initial status; defaults to `"pending"` when omitted. */
       readonly status?: "pending" | "blocked";
+      /** Task body without the `Deps:` line (C-0010 T-003). */
+      readonly description?: string;
+      /** Task dependency ids (C-0010 T-003). */
+      readonly deps?: readonly string[];
     }
   | { readonly type: "task_started"; readonly taskId: string }
   | {
@@ -318,6 +326,8 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
             id: event.taskId,
             title: event.title,
             status: event.status ?? "pending",
+            ...(event.description !== undefined && { description: event.description }),
+            ...(event.deps !== undefined && { deps: event.deps }),
             steps: [],
             stream: "",
           },

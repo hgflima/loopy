@@ -741,6 +741,22 @@ export interface OrchestratorDeps {
   readonly emit?: (event: StoreEvent) => void;
 }
 
+/**
+ * Strip the `Deps:` line from a task body, preserving everything else
+ * (including `Files:` lines). Returns the body with the `Deps:` line removed
+ * and leading/trailing whitespace trimmed. Empty body → `undefined`.
+ *
+ * Pure helper (AD-6), exported for testing.
+ */
+export function stripDepsLine(body: string): string | undefined {
+  const filtered = body
+    .split("\n")
+    .filter((line) => !line.trim().toLowerCase().startsWith("deps:"))
+    .join("\n")
+    .trim();
+  return filtered || undefined;
+}
+
 /** Best-effort emit: swallows any exception so the engine is never disrupted. */
 function safeEmit(deps: OrchestratorDeps, event: StoreEvent): void {
   try {
@@ -1334,11 +1350,14 @@ export async function runLoop(
     steps: config.pipeline.map((s) => ({ id: s.id, type: s.type })),
   });
   for (const t of tasks) {
+    const description = stripDepsLine(t.body);
     safeEmit(deps, {
       type: "task_registered",
       taskId: t.id,
       title: t.title,
       status: t.deps.length > 0 ? "blocked" : "pending",
+      ...(description !== undefined && { description }),
+      ...(t.deps.length > 0 && { deps: t.deps }),
     });
   }
 
