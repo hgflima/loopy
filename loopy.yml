@@ -1,16 +1,5 @@
-# loopy.yml — entrega da change C-0008 (multi-agente Codex+Claude) no PRÓPRIO repo (dogfooding).
-#
-# Bootstrapping: v0.1.7 ainda NÃO tem `agents:` (é o que esta change constrói), então este
-# config usa o schema atual — single-agent (Claude Code via ACP). Otimizações pedidas:
-#   • merge resiliente   → merge SEMÂNTICO por agente no worktree (reconcile-parent →
-#                          resolve-merge → finalize-merge); o merge no root chega trivial.
-#                          on_merge_conflict: escalate é só o backstop final.
-#   • paralelismo        → concurrency: 3 (largura máxima do DAG do todo.md). Steps de Agente
-#                          rodam fora do mutex por natureza (Sessão por-worktree); install-deps
-#                          (npm ci lento) é parallel_safe; create-worktree/commit/merge/cleanup
-#                          ficam na Seção crítica do parent (git rápido, serializado).
 version: "1"
-name: C-0008-multi-agent-codex
+name: C-0010-menubar-ui-polish
 
 workspace:
   root: "."
@@ -25,9 +14,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: ".harn/devy/changes/C-0009-native-ui-menubar/spec.md"
-  plan: ".harn/devy/changes/C-0009-native-ui-menubar/plan.md"
-  todo: ".harn/devy/changes/C-0009-native-ui-menubar/todo.md"
+  spec: ".harn/devy/changes/C-0010-menubar-ui-polish/spec.md"
+  plan: ".harn/devy/changes/C-0010-menubar-ui-polish/plan.md"
+  todo: ".harn/devy/changes/C-0010-menubar-ui-polish/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
@@ -96,36 +85,16 @@ pipeline:
   - id: commit
     type: shell
     run:
-      # exclui .claude/ (harness commitado): impede que edições incidentais do harness
-      # (ex.: silenciar lint de .claude/**) entrem no commit da task e conflitem no merge.
       - 'git -C "${worktree.path}" add -A -- . :!.claude'
-      # --allow-empty: os agentes /devy:* podem auto-commitar; sem isso, árvore limpa → git commit exit 1.
       - 'git -C "${worktree.path}" commit --allow-empty -m "feat(${task.id}): ${task.title}"'
 
-  # ---------------------------------------------------------------------------
-  # Resiliência de merge (SEMÂNTICA, por agente).
-  #
-  # Um conflito acontece ao integrar os dois lados. Como um Step de Agente roda
-  # SEMPRE no worktree da task (cwd imutável, keyed por (Agente, Worktree)), ele
-  # NÃO enxerga um conflito deixado por `git merge` no parent (root). Por isso a
-  # reconciliação é feita DENTRO do worktree — trazendo o parent para cá, onde o
-  # agente pode resolver — e só então o merge no root vira trivial (fast-forward).
-  #
-  #   reconcile-parent  (shell)  integra o parent no worktree
-  #     ├─ sem conflito → goto merge   (merge no root é limpo)
-  #     └─ conflito     → goto resolve-merge
-  #   resolve-merge     (agent)  resolve os markers SEMANTICAMENTE (não commita)
-  #   finalize-merge    (shell)  conclui o merge do parent no worktree
-  #   merge             (approval, root)  agora sempre trivial
-  # ---------------------------------------------------------------------------
   - id: reconcile-parent
     type: shell
-    # worktree-scoped: opera com -C no worktree, não muta o parent → fora do mutex.
     parallel_safe: true
     run:
       - git -C "${worktree.path}" merge --no-edit "${workspace.parent_branch}"
-    on_success: { goto: merge } # já integrado (ou no-op) → merge no root é limpo
-    on_fail: { goto: resolve-merge } # conflito → agente resolve semanticamente
+    on_success: { goto: merge }
+    on_fail: { goto: resolve-merge }
 
   - id: resolve-merge
     type: agent
@@ -151,13 +120,12 @@ pipeline:
       `git -C "${worktree.path}" status` (não pode haver caminhos "Unmerged") e corrija.
       ${checks.report}
     verify: { run: ci, max_attempts: 3 }
-    on_fail: escalate # 3 tentativas sem resolver → pausa com worktree preservado (humano assume)
+    on_fail: escalate
 
   - id: finalize-merge
     type: shell
     run:
       - git -C "${worktree.path}" add -A -- . :!.claude
-      # conclui o merge em progresso (não é commit vazio: um merge commit sempre tem 2 pais).
       - git -C "${worktree.path}" commit --no-edit
 
   - id: merge
@@ -165,23 +133,14 @@ pipeline:
     prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
     run:
       - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"'
-    # on_fail = CONFLITO no root: o parent avançou (uma task-irmã merjou) DEPOIS do reconcile-parent,
-    # que roda fora do mutex → o merge no root deixou de ser trivial. NÃO escalar sujo (foi o que
-    # travou a run: T-018 conflitou e o merge pela metade contaminou T-014 com "unmerged files").
-    # Aborta e re-reconcilia o main atual, retentando. Converge porque os merges são serializados;
-    # max_step_visits é o backstop se a corrida não estabilizar.
-    # on_success EXPLÍCITO: sem ele, o sucesso cai sequencialmente no próximo step declarado
-    # (abort-root-merge) e roda `git merge --abort` num root sem merge → exit 128, pause falso.
     on_success: { goto: cleanup }
     on_fail: { goto: abort-root-merge }
 
   - id: abort-root-merge
     type: shell
-    # muta o root → NÃO parallel_safe (roda na Seção crítica do parent). Restaura o root limpo
-    # após o merge conflitado, impedindo que o estado pela metade contamine tasks-irmãs.
     run:
       - git -C "${workspace.root}" merge --abort
-    on_success: { goto: reconcile-parent } # re-integra o main atual no worktree e retenta o merge
+    on_success: { goto: reconcile-parent }
 
   - id: cleanup
     type: shell
@@ -195,8 +154,6 @@ stop_conditions:
   max_step_visits: 25
   stop_signal_file: ".loopy.stop"
 
-# Largura máxima do DAG do todo.md é 3 (camada T-005/T-006/T-007). Tasks independentes com
-# Deps: satisfeitas rodam em paralelo até este teto.
 concurrency: 5
 
 policies:
@@ -206,8 +163,6 @@ policies:
     notify: stderr
   git:
     require_clean_parent: true
-    # escalate: a resiliência primária a conflito é o merge SEMÂNTICO (reconcile-parent →
-    # resolve-merge) no worktree; o merge no root já chega trivial. Este é só o backstop final.
     on_merge_conflict: escalate
 
 logging:
@@ -215,7 +170,6 @@ logging:
   per_task: true
   capture_acp_traffic: true
 
-# Coleta opt-in de métricas (C-0005): tempo/tokens por Step + custo por Task (best-effort).
 metrics:
   report:
-    index: "${change.dir}/../index.md"   # .harn/devy/changes/index.md (Relatório de change)
+    index: "${change.dir}/../index.md"
