@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import type { BridgeState } from "./state/store-bridge";
 import { ViewSwitcher } from "./panes/ViewSwitcher";
 import { StreamPanel } from "./panes/StreamPanel";
+import { Banner } from "./panes/Banner";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
 const TICK_MS = 500;
@@ -14,6 +15,7 @@ interface AppProps {
 
 function App({ state }: AppProps) {
   const { store, ui } = state;
+  const isStartFail = ui.sidecarFailure?.type === "start-fail";
 
   // Single tick counter for all running-task pulses (no timer per node).
   const [tick, setTick] = useState(0);
@@ -39,9 +41,15 @@ function App({ state }: AppProps) {
           </>
         )}
       </header>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <ViewSwitcher store={store} tick={tick} />
-      </div>
+      <Banner ui={ui} />
+      {isStartFail ? (
+        // Start-fail: return to LaunchConfig (idle view)
+        <p style={{ padding: "6px 12px" }}>Configure a run to get started.</p>
+      ) : (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ViewSwitcher store={store} tick={tick} />
+        </div>
+      )}
       <StreamPanel store={store} />
     </main>
   );

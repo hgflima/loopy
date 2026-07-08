@@ -29,10 +29,29 @@ export interface ApprovalRequest {
   readonly summary: string;
 }
 
+/**
+ * Sidecar failure info — populated when the sidecar exits without a clean
+ * `run_finished` control frame.
+ *
+ * - **start-fail**: exit arrived before `run_started` (process never got going).
+ * - **death-mid-run**: exit arrived after `run_started` but before `run_finished`.
+ */
+export interface SidecarFailure {
+  readonly type: "start-fail" | "death-mid-run";
+  readonly exitCode: number;
+}
+
+/** Maximum stderr lines kept in {@link UIState.stderrTail}. */
+export const STDERR_TAIL_CAP = 50;
+
 export interface UIState {
   readonly runStatus: "idle" | "running" | "finished";
   readonly runResult?: unknown;
   readonly pendingApprovals: readonly ApprovalRequest[];
+  /** Rolling tail of sidecar stderr lines (capped at {@link STDERR_TAIL_CAP}). */
+  readonly stderrTail: readonly string[];
+  /** Present only when the sidecar exited without a clean `run_finished`. */
+  readonly sidecarFailure?: SidecarFailure;
 }
 
 // ---------------------------------------------------------------------------
@@ -47,7 +66,7 @@ export interface BridgeState {
 export function initialBridgeState(): BridgeState {
   return {
     store: initialState(),
-    ui: { runStatus: "idle", pendingApprovals: [] },
+    ui: { runStatus: "idle", pendingApprovals: [], stderrTail: [] },
   };
 }
 
@@ -102,4 +121,47 @@ export function applyLine(state: BridgeState, line: string): BridgeState {
     case "command":
       return state;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sidecar-level events (Tauri events, not NDJSON lines)
+// ---------------------------------------------------------------------------
+
+/**
+ * Accumulate one stderr line into the rolling tail buffer.
+ * Capped at {@link STDERR_TAIL_CAP} — oldest lines are dropped.
+ */
+export function applySidecarStderr(
+  state: BridgeState,
+  line: string,
+): BridgeState {
+  const next = [...state.ui.stderrTail.slice(-(STDERR_TAIL_CAP - 1)), line];
+  return { ...state, ui: { ...state.ui, stderrTail: next } };
+}
+
+/**
+ * Handle `sidecar://exit` — determine failure type or ignore clean exits.
+ *
+ * - `runStatus === "finished"` → clean exit, no failure (same reference).
+ * - `runStatus === "idle"` → **start-fail** (exit before `run_started`).
+ * - `runStatus === "running"` → **death-mid-run** (exit after `run_started`).
+ *
+ * Never throws (AD-5).
+ */
+export function applySidecarExit(
+  state: BridgeState,
+  exitCode: number,
+): BridgeState {
+  if (state.ui.runStatus === "finished") return state;
+
+  const type: SidecarFailure["type"] =
+    state.ui.runStatus === "idle" ? "start-fail" : "death-mid-run";
+
+  return {
+    ...state,
+    ui: {
+      ...state.ui,
+      sidecarFailure: { type, exitCode },
+    },
+  };
 }
