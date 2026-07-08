@@ -38,6 +38,7 @@ export default defineConfig({
           "@xyflow/system",
           "zustand",
           "use-sync-external-store",
+          "react-markdown",
         ],
       },
     },

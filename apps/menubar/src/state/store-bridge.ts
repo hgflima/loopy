@@ -17,6 +17,7 @@
 
 import { parseTransportLine, type ControlFrame } from "loopy/tui/transport";
 import { reduce, initialState, type StoreState } from "loopy/tui/store";
+import type { Transcript } from "./stream-history";
 
 // ---------------------------------------------------------------------------
 // UI state (control frames only — never touches StoreState)
@@ -61,12 +62,15 @@ export interface UIState {
 export interface BridgeState {
   readonly store: StoreState;
   readonly ui: UIState;
+  /** Append-only transcript per task — survives `task_finished` (≠ `task.stream`). */
+  readonly transcript: Transcript;
 }
 
 export function initialBridgeState(): BridgeState {
   return {
     store: initialState(),
     ui: { runStatus: "idle", pendingApprovals: [], stderrTail: [] },
+    transcript: {},
   };
 }
 
@@ -134,7 +138,27 @@ export function applyLine(state: BridgeState, line: string): BridgeState {
   switch (result.frame) {
     case "event": {
       const nextStore = reduce(state.store, result.event);
-      return nextStore === state.store ? state : { ...state, store: nextStore };
+      if (nextStore === state.store) return state;
+
+      // Accumulate stream_chunk into append-only transcript (tagged by currentStepId)
+      if (result.event.type === "stream_chunk") {
+        const { taskId, text } = result.event;
+        const task = nextStore.tasks.find((t) => t.id === taskId);
+        const stepId = task?.currentStepId;
+        if (stepId) {
+          const existing = state.transcript[taskId] ?? [];
+          return {
+            ...state,
+            store: nextStore,
+            transcript: {
+              ...state.transcript,
+              [taskId]: [...existing, { stepId, text }],
+            },
+          };
+        }
+      }
+
+      return { ...state, store: nextStore };
     }
     case "control":
       return { ...state, ui: applyControl(state.ui, result.control) };

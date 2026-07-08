@@ -1,0 +1,111 @@
+/**
+ * MarkdownStream — styles for the sanitized markdown renderer.
+ *
+ * Every color, radius, spacing, and font family comes from tokens.css.
+ * No hardcoded values. Honors prefers-reduced-motion.
+ */
+
+.md-stream {
+  font-family: var(--font-ui);
+  color: var(--ink);
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+/* -- Headings -- */
+.md-stream h1,
+.md-stream h2,
+.md-stream h3,
+.md-stream h4,
+.md-stream h5,
+.md-stream h6 {
+  margin: var(--sp-md) 0 var(--sp-sm);
+  font-weight: 600;
+}
+
+.md-stream h1:first-child,
+.md-stream h2:first-child,
+.md-stream h3:first-child {
+  margin-top: 0;
+}
+
+/* -- Block elements -- */
+.md-stream p {
+  margin: 0 0 var(--sp-sm);
+}
+
+.md-stream ul,
+.md-stream ol {
+  margin: 0 0 var(--sp-sm);
+  padding-left: var(--sp-xl);
+}
+
+/* -- Code -- */
+.md-stream pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-sm) var(--sp-md);
+  margin: 0 0 var(--sp-sm);
+  overflow-x: auto;
+}
+
+.md-stream .md-code {
+  font-family: var(--font-mono);
+}
+
+.md-stream :not(pre) > .md-code {
+  background: var(--surface);
+  padding: 1px var(--sp-xs);
+  border-radius: var(--r-sm);
+  font-size: 0.9em;
+}
+
+/* -- Table (GFM) -- */
+.md-stream table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--sp-sm);
+}
+
+.md-stream th,
+.md-stream td {
+  border: 1px solid var(--border);
+  padding: var(--sp-xs) var(--sp-sm);
+  text-align: left;
+}
+
+.md-stream th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+/* -- Blockquote -- */
+.md-stream blockquote {
+  border-left: 3px solid var(--border-strong);
+  margin: 0 0 var(--sp-sm);
+  padding: var(--sp-xs) var(--sp-md);
+  color: var(--ink-secondary);
+}
+
+/* -- Horizontal rule -- */
+.md-stream hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--sp-md) 0;
+}
+
+/* -- Links -- */
+.md-stream a {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+/* -- Reduced motion -- */
+@media (prefers-reduced-motion: reduce) {
+  .md-stream,
+  .md-stream * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

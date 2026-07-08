@@ -7,6 +7,7 @@ import {
   formatDryRunPlan,
   planDryRun,
   runLoop,
+  stripDepsLine,
   worktreePathFor,
 } from "../../src/loop/orchestrator";
 import { createStepRegistry } from "../../src/steps/index";
@@ -1236,14 +1237,14 @@ describe("emit seam (C-0007 T-004)", () => {
     // edges_set with one edge
     expect(events[0]).toEqual({ type: "edges_set", edges: [["A", "C"]] });
 
-    // task_registered: A=pending, B=pending, C=blocked (has deps)
+    // task_registered: A=pending, B=pending, C=blocked (has deps → carries deps)
     const registrations = events.filter((e) => e.type === "task_registered") as Array<
       Extract<StoreEvent, { type: "task_registered" }>
     >;
     expect(registrations).toEqual([
       { type: "task_registered", taskId: "A", title: "Task A", status: "pending" },
       { type: "task_registered", taskId: "B", title: "Task B", status: "pending" },
-      { type: "task_registered", taskId: "C", title: "Task C", status: "blocked" },
+      { type: "task_registered", taskId: "C", title: "Task C", status: "blocked", deps: ["A"] },
     ]);
 
     // After A finishes, C should eventually start
@@ -1460,5 +1461,67 @@ describe("emit seam (C-0007 T-004)", () => {
       .map((e) => e.stepId);
     expect(stepIds).toContain("s1");
     expect(stepIds).toContain("cleanup");
+  });
+
+  it("task_registered carries description (body without Deps:) and deps (C-0010 T-003)", async () => {
+    const { events, emit } = collectingEmit();
+
+    const pipeline = [shell("s1")];
+    const config = makeLoopConfig(pipeline);
+    const tasks = [
+      makeTask("A", { body: "Deps: B\nFiles: foo.ts\nExtra context", deps: ["B"] }),
+      makeTask("B"),
+    ];
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    await runLoop(
+      config,
+      tasks,
+      { ...makeDeps({ registry: scriptedRegistry(rec), markDone: port }), emit },
+    );
+
+    const registrations = events.filter((e) => e.type === "task_registered") as Array<
+      Extract<StoreEvent, { type: "task_registered" }>
+    >;
+    const regA = registrations.find((e) => e.taskId === "A")!;
+    expect(regA.description).toBe("Files: foo.ts\nExtra context");
+    expect(regA.deps).toEqual(["B"]);
+
+    // B has no deps and empty body → no description/deps
+    const regB = registrations.find((e) => e.taskId === "B")!;
+    expect(regB.description).toBeUndefined();
+    expect(regB.deps).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripDepsLine (C-0010 T-003) — pure helper
+// ---------------------------------------------------------------------------
+
+describe("stripDepsLine", () => {
+  it("removes the Deps: line and preserves Files: and other lines", () => {
+    const body = "Deps: T-001, T-002\nFiles: foo.ts\nSome extra context";
+    expect(stripDepsLine(body)).toBe("Files: foo.ts\nSome extra context");
+  });
+
+  it("is case-insensitive for the Deps: prefix", () => {
+    expect(stripDepsLine("deps: T-001\nFiles: bar.ts")).toBe("Files: bar.ts");
+    expect(stripDepsLine("DEPS: T-001\nOther")).toBe("Other");
+  });
+
+  it("returns undefined for an empty body", () => {
+    expect(stripDepsLine("")).toBeUndefined();
+  });
+
+  it("returns undefined when only the Deps: line exists", () => {
+    expect(stripDepsLine("Deps: T-001, T-002")).toBeUndefined();
+  });
+
+  it("preserves body that has no Deps: line", () => {
+    expect(stripDepsLine("Files: a.ts\nSome text")).toBe("Files: a.ts\nSome text");
+  });
+
+  it("handles body with leading/trailing whitespace", () => {
+    expect(stripDepsLine("  \nDeps: T-001\n  Files: x.ts  \n  ")).toBe("Files: x.ts");
   });
 });

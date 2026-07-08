@@ -10,7 +10,7 @@
 
 ## Fase 0 — Fundações (T-001 ∥ T-002 ∥ T-003 ∥ T-004 ∥ T-005 ∥ T-006)
 
-- [ ] T-001: Marca & tray oficiais (app icon + tray template, claro/escuro)
+- [x] T-001: Marca & tray oficiais (app icon + tray template, claro/escuro)
     Substituir os placeholders de `apps/menubar/src-tauri/icons/` pelos assets de marca de
     `.harn/design/logo/loopy-brand/` (read-only): o `AppIcon.iconset`/`AppIcon.icns` viram o
     `icon.icns` + os PNGs (`32x32`, `128x128`, `128x128@2x`, `icon.png`) a partir de
@@ -39,7 +39,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/tokens.css. Scope: XS.
 
-- [ ] T-003: Transport estendido — `task_registered` carrega `description` + `deps` (motor)
+- [x] T-003: Transport estendido — `task_registered` carrega `description` + `deps` (motor)
     ADITIVO e gated por `--emit-events` (AD-1). Em `src/tui/store.ts`: o evento `task_registered`
     ganha `description?: string` e `deps?: readonly string[]`; `TaskState` ganha os mesmos campos
     (opcionais); o `reduce` (switch **exaustivo**, sem `default`) os grava no `task_registered`.
@@ -54,7 +54,7 @@
     Deps: nenhuma
     Files: src/tui/store.ts, src/loop/orchestrator.ts, testes de store/orchestrator. Scope: M. RISCO MÉDIO.
 
-- [ ] T-004: `store-bridge` acumulador cross-step + `stream-history.ts` (puro) + teste
+- [x] T-004: `store-bridge` acumulador cross-step + `stream-history.ts` (puro) + teste
     O `reduce` reseta `task.stream` a cada step/attempt — então o histórico vive na camada do app.
     Em `apps/menubar/src/state/store-bridge.ts`: `BridgeState` ganha um transcript **append-only**
     por task, marcado por `stepId`, **nunca resetado** (≠ `task.stream`, sobrevive a `task_finished`);
@@ -69,7 +69,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/state/stream-history.ts, apps/menubar/src/state/stream-history.test.ts. Scope: M.
 
-- [ ] T-005: `MarkdownStream.tsx` — render sanitizado de voz-de-máquina + teste + dep
+- [x] T-005: `MarkdownStream.tsx` — render sanitizado de voz-de-máquina + teste + dep
     Adicionar `react-markdown@^10` + `remark-gfm@^4` (única dep nova, D5 aprovado; **sem `rehype-raw`**).
     NOVO `apps/menubar/src/ui/MarkdownStream.tsx`: componente que renderiza texto como markdown com
     `remarkPlugins={[remarkGfm]}`, blocos de código em `--font-mono`, **seguro por padrão** (HTML
@@ -96,7 +96,7 @@
 
 ## Fase 1 — Kanban legível (T-007)
 
-- [ ] T-007: Colunas largas + título em 2 linhas (#3, #4)
+- [x] T-007: Colunas largas + título em 2 linhas (#3, #4)
     Em `apps/menubar/src/kanban/kanban.css`: aumentar a largura da coluna para `var(--kanban-col-min)`
     (~220px — cabe `T-NNN` + ~2 linhas de título) e trocar o `u-truncate` do título por
     `line-clamp: 2` (sem limite rígido de chars). Em `KanbanBoard.tsx:62`: substituir a classe
