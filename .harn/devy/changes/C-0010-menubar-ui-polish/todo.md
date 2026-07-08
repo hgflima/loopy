@@ -96,7 +96,7 @@
 
 ## Fase 1 — Kanban legível (T-007)
 
-- [ ] T-007: Colunas largas + título em 2 linhas (#3, #4)
+- [x] T-007: Colunas largas + título em 2 linhas (#3, #4)
     Em `apps/menubar/src/kanban/kanban.css`: aumentar a largura da coluna para `var(--kanban-col-min)`
     (~220px — cabe `T-NNN` + ~2 linhas de título) e trocar o `u-truncate` do título por
     `line-clamp: 2` (sem limite rígido de chars). Em `KanbanBoard.tsx:62`: substituir a classe
