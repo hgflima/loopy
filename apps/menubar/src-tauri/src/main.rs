@@ -44,10 +44,8 @@ fn stop_sidecar(state: tauri::State<'_, SidecarState>) -> Result<(), String> {
 // Window management commands (T-014)
 // ---------------------------------------------------------------------------
 
-/// Show the main (full) window. Hides the popover and switches macOS identity
-/// from accessory to regular (Dock + Cmd+Tab).
-#[tauri::command]
-fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+/// Hide popover, show + focus main window, promote to Regular on macOS.
+fn surface_main_window(app: &tauri::AppHandle) -> Result<(), String> {
     if let Some(popover) = app.get_webview_window("popover") {
         let _ = popover.hide();
     }
@@ -60,6 +58,13 @@ fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Show the main (full) window. Hides the popover and switches macOS identity
+/// from accessory to regular (Dock + Cmd+Tab).
+#[tauri::command]
+fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    surface_main_window(&app)
+}
+
 /// Hide the main window and switch macOS identity back to accessory
 /// (no Dock icon, menu bar only).
 #[tauri::command]
@@ -70,6 +75,12 @@ fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let _ = app.set_activation_policy(ActivationPolicy::Accessory);
     Ok(())
+}
+
+/// Bring the app to the front (T-016 approval arrival, T-017 notification click).
+#[tauri::command]
+fn bring_to_front(app: tauri::AppHandle) -> Result<(), String> {
+    surface_main_window(&app)
 }
 
 /// Update the tray icon title (used by the frontend to echo `pulseFrame`).
@@ -142,6 +153,7 @@ fn main() {
             stop_sidecar,
             show_main_window,
             hide_main_window,
+            bring_to_front,
             update_tray_title,
             load_launch_config,
             save_launch_config,

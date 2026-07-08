@@ -97,6 +97,26 @@ function applyControl(ui: UIState, control: ControlFrame): UIState {
 }
 
 // ---------------------------------------------------------------------------
+// Approval decision (optimistic removal from FIFO queue)
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove a settled approval from the pending queue (optimistic — the command
+ * was already sent to the motor's stdin). Returns the **same reference** when
+ * the `requestId` is not found (idempotent, AD-5).
+ */
+export function dismissApproval(
+  state: BridgeState,
+  requestId: string,
+): BridgeState {
+  const next = state.ui.pendingApprovals.filter(
+    (a) => a.requestId !== requestId,
+  );
+  if (next.length === state.ui.pendingApprovals.length) return state;
+  return { ...state, ui: { ...state.ui, pendingApprovals: next } };
+}
+
+// ---------------------------------------------------------------------------
 // applyLine — single entry point
 // ---------------------------------------------------------------------------
 

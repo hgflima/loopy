@@ -1,11 +1,16 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom/client";
-import { isTauri } from "@tauri-apps/api/core";
+import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import { Glance } from "./popover/Glance";
-import { applyLine, initialBridgeState } from "./state/store-bridge";
+import {
+  applyLine,
+  dismissApproval,
+  initialBridgeState,
+} from "./state/store-bridge";
+import { formatApprovalPayload } from "./panes/ApprovalPrompt";
 
 // ---------------------------------------------------------------------------
 // Mock NDJSON feed for dev:web (exercises the full applyLine pipeline)
@@ -31,6 +36,7 @@ const MOCK_FEED = [
   '{"frame":"event","type":"step_finished","taskId":"T-001","stepId":"test","ok":true}',
   '{"frame":"event","type":"step_started","taskId":"T-001","stepId":"merge","stepType":"approval"}',
   '{"frame":"control","control":"approval_requested","requestId":"req-1","taskId":"T-001","stepId":"merge","summary":"Merge T-001 into main?"}',
+  '{"frame":"control","control":"approval_requested","requestId":"req-2","taskId":"T-002","stepId":"merge","summary":"Merge T-002 into main?"}',
   '{"frame":"event","type":"step_finished","taskId":"T-001","stepId":"merge","ok":true}',
   '{"frame":"event","type":"task_finished","taskId":"T-001","status":"done"}',
   '{"frame":"event","type":"task_started","taskId":"T-002"}',
@@ -54,13 +60,56 @@ const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
 
 function Root() {
   const [state, setState] = useState(initialBridgeState);
+  const prevApprovalCount = useRef(0);
   const [yesFlag, setYesFlag] = useState(false);
 
-  // Reset state and track --yes flag when a new run starts
+  // ----------------------------------------------------------
+  // LaunchConfig callback (reset state + track --yes flag)
+  // ----------------------------------------------------------
+
   const handleStartRun = useCallback((yes: boolean) => {
     setState(initialBridgeState);
     setYesFlag(yes);
   }, []);
+
+  // ----------------------------------------------------------
+  // Approval decision callback (T-016 — the only mutation surface)
+  // ----------------------------------------------------------
+
+  const handleApprovalDecision = useCallback(
+    async (requestId: string, approved: boolean) => {
+      if (IS_TAURI) {
+        const payload = formatApprovalPayload(requestId, approved);
+        await invoke("send_command", { payload });
+      }
+      // Optimistic removal — motor doesn't ack, mirrors TUI's FIFO settle
+      setState((prev) => dismissApproval(prev, requestId));
+    },
+    [],
+  );
+
+  // ----------------------------------------------------------
+  // Tray badge ⚠ + bring-to-front on new approval (T-016)
+  // ----------------------------------------------------------
+
+  useEffect(() => {
+    if (!IS_TAURI || IS_POPOVER) return;
+    const count = state.ui.pendingApprovals.length;
+
+    // Badge: "● ⚠" while approvals pending, "●" otherwise
+    const title = count > 0 ? "● ⚠" : "●";
+    invoke("update_tray_title", { title }).catch(() => {});
+
+    // Surface window when a new approval arrives
+    if (count > prevApprovalCount.current && count > 0) {
+      invoke("bring_to_front").catch(() => {});
+    }
+    prevApprovalCount.current = count;
+  }, [state.ui.pendingApprovals.length]);
+
+  // ----------------------------------------------------------
+  // NDJSON feed (sidecar or mock)
+  // ----------------------------------------------------------
 
   useEffect(() => {
     if (!IS_TAURI) {
@@ -94,7 +143,7 @@ function Root() {
   return IS_POPOVER ? (
     <Glance state={state} yesFlag={yesFlag} />
   ) : (
-    <App state={state} onStartRun={handleStartRun} />
+    <App state={state} onStartRun={handleStartRun} onApprovalDecision={handleApprovalDecision} />
   );
 }
 
