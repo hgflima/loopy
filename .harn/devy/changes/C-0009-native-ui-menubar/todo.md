@@ -167,7 +167,7 @@
 
 ## Fase 4 — Kanban (T-011 → T-012)
 
-- [ ] T-011: Grouper do Kanban (puro) — Backlog → Steps → Fim + `goto`
+- [x] T-011: Grouper do Kanban (puro) — Backlog → Steps → Fim + `goto`
     `src/kanban/grouper.ts`: função pura `groupByStep(state): Column[]` — coluna inicial
     **Backlog** (pending/blocked, sem Step corrente); **uma coluna por Step** do
     `pipeline` declarado (na ordem); coluna terminal **Fim** (done/escalated/skipped/paused).
