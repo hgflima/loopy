@@ -194,6 +194,11 @@ export function buildProgram(io: RunIO): Command {
       parsePositiveInt,
     )
     .option("--no-tui", "forca logs de linha (sem Ink)")
+    .option(
+      "--emit-events",
+      "emite eventos NDJSON no stdout (fan-out dispatch para Native UI)",
+      false,
+    )
     .option("--verbose", "inclui trafego ACP no log", false)
     .allowExcessArguments(false)
     .exitOverride()
@@ -214,6 +219,7 @@ function toFlags(opts: Record<string, unknown>): RunFlags {
     yes: opts.yes === true,
     // `--no-tui` flips this to false; default (unset) is true.
     tui: opts.tui !== false,
+    emitEvents: opts.emitEvents === true,
     verbose: opts.verbose === true,
     clean:
       typeof opts.clean === "string"
@@ -342,7 +348,8 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
 
   // In TUI mode the Ink frame owns stdout — motor logs go file-only so they
   // don't corrupt the frame (OQ16). In fallback mode the teeLogger echoes to
-  // stdout as before.
+  // the caller's IO (which runLiveFlow already redirects to stderr when
+  // --emit-events, so stdout stays NDJSON-only).
   const logger: LoggerPort = ui.tui
     ? fileLogger
     : teeLogger(fileLogger, io, flags.verbose);
@@ -454,7 +461,15 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   };
 
   try {
-    return await runLoop(config, tasks, deps);
+    // T-006: emit run_started before the loop when --emit-events is active.
+    ui.transport?.emitControl({ control: "run_started" });
+
+    const result = await runLoop(config, tasks, deps);
+
+    // T-006: emit run_finished after the loop when --emit-events is active.
+    ui.transport?.emitControl({ control: "run_finished", result });
+
+    return result;
   } finally {
     await pool.shutdownAll();
     ui.stop();
@@ -486,6 +501,10 @@ async function runLiveFlow(
   const approve = hooks.approve ?? defaultApprove;
   const live = hooks.runLive ?? defaultRunLive;
 
+  // T-006: when --emit-events, stdout is the NDJSON channel.
+  // All text output (status messages, git-init, summary) goes to stderr instead.
+  const print = flags.emitEvents ? io.err : io.out;
+
   // 1) First-run git setup — behind a human approval gate (auto under --yes).
   if (!(await repoPresent(root))) {
     const prompt = `O diretório "${root}" não é um repositório git. Inicializar (git init + .gitignore + commit inicial)?`;
@@ -501,7 +520,7 @@ async function runLiveFlow(
       defaultBranch: config.workspace.parent_branch,
       ignore: gitignoreLinesFor(config),
     });
-    io.out(`loopy: repositório git inicializado em "${root}".\n`);
+    print(`loopy: repositório git inicializado em "${root}".\n`);
   }
 
   // 2) Task selection — `--task` runs one task (OQ6: warn, don't block).
@@ -538,12 +557,15 @@ async function runLiveFlow(
   }
 
   if (tasks.length === 0) {
-    io.out("loopy: nenhuma task pendente no backlog — nada a fazer.\n");
+    print("loopy: nenhuma task pendente no backlog — nada a fazer.\n");
     return 0;
   }
 
   // 3) Run the live outer loop.
-  io.out(`loopy: iniciando ${tasks.length} task(s)…\n`);
+  print(`loopy: iniciando ${tasks.length} task(s)…\n`);
+  // When --emit-events, pass stderr-redirected IO to the live executor so its
+  // internal logger never writes to stdout (the NDJSON channel).
+  const liveIO: RunIO = flags.emitEvents ? { out: io.err, err: io.err } : io;
   let result: RunLoopResult;
   try {
     result = await live({
@@ -554,7 +576,7 @@ async function runLiveFlow(
       configPath: paths.configPath,
       todoPath: paths.todoPath,
       knownTaskIds,
-      io,
+      io: liveIO,
     });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -591,7 +613,7 @@ async function runLiveFlow(
   }
 
   // 5) Summary + exit code.
-  io.out(
+  print(
     `loopy: fim — ${result.completed.length} concluída(s), ` +
       `${result.escalated.length} escalada(s), ` +
       `${result.paused.length} pausada(s), ` +

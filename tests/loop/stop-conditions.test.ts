@@ -29,6 +29,7 @@ const FLAGS: RunFlags = {
   dryRun: false,
   yes: false,
   tui: false,
+  emitEvents: false,
   verbose: false,
 };
 
