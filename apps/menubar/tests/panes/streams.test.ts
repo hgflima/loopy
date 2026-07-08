@@ -1,7 +1,17 @@
+/**
+ * Integration tests for streamColumns (T-009: transcript-based).
+ *
+ * Uses the real store reducer to build StoreState, then pairs it with a
+ * Transcript to verify that streamColumns produces the expected columns.
+ *
+ * Run: `npm test -w apps/menubar -- streams`
+ */
+
 import { describe, it, expect } from "vitest";
 import { streamColumns } from "../../src/panes/StreamPanel";
 import { initialState, reduce } from "loopy/tui/store";
 import type { StoreEvent, StoreState } from "loopy/tui/store";
+import type { Transcript } from "../../src/state/stream-history";
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
@@ -12,13 +22,8 @@ function feedEvents(events: StoreEvent[]): StoreState {
   return state;
 }
 
-/** Register + start a task with a stream chunk. */
-function runningTaskWithStream(
-  taskId: string,
-  title: string,
-  text: string,
-  agent?: string,
-): StoreEvent[] {
+/** Register + start a task (with a running step). */
+function startTask(taskId: string, title: string): StoreEvent[] {
   return [
     { type: "task_registered", taskId, title },
     { type: "task_started", taskId },
@@ -28,39 +33,24 @@ function runningTaskWithStream(
       stepId: "implement",
       stepType: "agent",
     },
-    { type: "stream_chunk", taskId, text, agent },
   ];
 }
 
 // ── tests ───────────────────────────────────────────────────────────────
 
-describe("streamColumns", () => {
-  it("returns empty array when no tasks are running", () => {
-    const store = feedEvents([
-      { type: "task_registered", taskId: "T-001", title: "Idle task" },
-    ]);
-    expect(streamColumns(store)).toEqual([]);
-  });
-
-  it("returns one column for one running task", () => {
-    const store = feedEvents(
-      runningTaskWithStream("T-001", "First task", "line one\nline two\n"),
-    );
-    const cols = streamColumns(store);
-
-    expect(cols).toHaveLength(1);
-    expect(cols[0]!.taskId).toBe("T-001");
-    expect(cols[0]!.title).toBe("First task");
-    expect(cols[0]!.lines).toEqual(["line one", "line two"]);
-  });
-
+describe("streamColumns (integration — real reducer)", () => {
   it("returns N columns for N running tasks", () => {
     const store = feedEvents([
-      ...runningTaskWithStream("T-001", "Task A", "alpha\n"),
-      ...runningTaskWithStream("T-002", "Task B", "beta\n"),
-      ...runningTaskWithStream("T-003", "Task C", "gamma\n"),
+      ...startTask("T-001", "Task A"),
+      ...startTask("T-002", "Task B"),
+      ...startTask("T-003", "Task C"),
     ]);
-    const cols = streamColumns(store);
+    const transcript: Transcript = {
+      "T-001": [{ stepId: "implement", text: "alpha" }],
+      "T-002": [{ stepId: "implement", text: "beta" }],
+      "T-003": [{ stepId: "implement", text: "gamma" }],
+    };
+    const cols = streamColumns(store, transcript);
 
     expect(cols).toHaveLength(3);
     expect(cols.map((c) => c.taskId)).toEqual(["T-001", "T-002", "T-003"]);
@@ -68,95 +58,53 @@ describe("streamColumns", () => {
 
   it("excludes finished tasks from columns", () => {
     const store = feedEvents([
-      ...runningTaskWithStream("T-001", "Done task", "done\n"),
+      ...startTask("T-001", "Done task"),
       { type: "task_finished", taskId: "T-001", status: "done" },
-      ...runningTaskWithStream("T-002", "Running task", "still going\n"),
+      ...startTask("T-002", "Running task"),
     ]);
-    const cols = streamColumns(store);
+    const transcript: Transcript = {
+      "T-001": [{ stepId: "implement", text: "done" }],
+      "T-002": [{ stepId: "implement", text: "still going" }],
+    };
+    const cols = streamColumns(store, transcript);
 
     expect(cols).toHaveLength(1);
     expect(cols[0]!.taskId).toBe("T-002");
   });
 
-  it("applies streamTail — only last maxLines lines", () => {
-    const text = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join(
-      "\n",
-    );
-    const store = feedEvents(
-      runningTaskWithStream("T-001", "Long stream", text),
-    );
-    const cols = streamColumns(store); // default maxLines = 8
+  it("produces cross-step segments from transcript", () => {
+    const store = feedEvents(startTask("T-001", "Multi-step"));
+    const transcript: Transcript = {
+      "T-001": [
+        { stepId: "implement", text: "code..." },
+        { stepId: "implement", text: " more code" },
+        { stepId: "simplify", text: "simplifying..." },
+        { stepId: "audit", text: "AUDIT: PASS" },
+      ],
+    };
+    const cols = streamColumns(store, transcript);
 
-    expect(cols[0]!.lines).toHaveLength(8);
-    expect(cols[0]!.lines[0]).toBe("line 13");
-    expect(cols[0]!.lines[7]).toBe("line 20");
-  });
-
-  it("respects custom maxLines", () => {
-    const text = "a\nb\nc\nd\ne";
-    const store = feedEvents(
-      runningTaskWithStream("T-001", "Custom tail", text),
-    );
-    const cols = streamColumns(store, 3);
-
-    expect(cols[0]!.lines).toEqual(["c", "d", "e"]);
-  });
-
-  describe("agent prefix", () => {
-    it("single agent — no prefix", () => {
-      const store = feedEvents(
-        runningTaskWithStream("T-001", "Single", "output\n", "coder"),
-      );
-      const cols = streamColumns(store);
-
-      // activeAgents.size === 1 → no prefix
-      expect(cols[0]!.lines).toEqual(["output"]);
-    });
-
-    it("multi-agent — prefix with [agent]", () => {
-      const store = feedEvents([
-        ...runningTaskWithStream("T-001", "Task A", "output A\n", "coder"),
-        ...runningTaskWithStream("T-002", "Task B", "output B\n", "reviewer"),
-      ]);
-      const cols = streamColumns(store);
-
-      // activeAgents.size === 2 → prefix
-      expect(cols[0]!.lines).toEqual(["[coder] output A"]);
-      expect(cols[1]!.lines).toEqual(["[reviewer] output B"]);
-    });
-
-    it("multi-agent but task has no streamAgent — no prefix on that task", () => {
-      const store = feedEvents([
-        ...runningTaskWithStream("T-001", "Task A", "output A\n"),
-        ...runningTaskWithStream("T-002", "Task B", "output B\n", "reviewer"),
-        // Force a second agent into activeAgents
-        { type: "stream_chunk", taskId: "T-001", text: "more\n", agent: "coder" },
-      ]);
-      const cols = streamColumns(store);
-
-      // T-001 now has streamAgent "coder" (from second chunk)
-      expect(cols).toHaveLength(2);
-      // Both should have prefix since activeAgents.size > 1
-      expect(cols[0]!.lines[0]).toMatch(/^\[coder\]/);
-      expect(cols[1]!.lines[0]).toMatch(/^\[reviewer\]/);
-    });
-  });
-
-  it("handles empty stream text gracefully", () => {
-    const store = feedEvents([
-      { type: "task_registered", taskId: "T-001", title: "Empty" },
-      { type: "task_started", taskId: "T-001" },
-      {
-        type: "step_started",
-        taskId: "T-001",
-        stepId: "implement",
-        stepType: "agent",
-      },
-      // No stream_chunk → stream is ""
+    expect(cols[0]!.segments).toEqual([
+      { stepId: "implement", label: "implement", text: "code... more code" },
+      { stepId: "simplify", label: "simplify", text: "simplifying..." },
+      { stepId: "audit", label: "audit", text: "AUDIT: PASS" },
     ]);
-    const cols = streamColumns(store);
+  });
 
-    expect(cols).toHaveLength(1);
-    expect(cols[0]!.lines).toEqual([]);
+  it("fix-loop: same stepId reappearing produces separate segments", () => {
+    const store = feedEvents(startTask("T-001", "Fix loop"));
+    const transcript: Transcript = {
+      "T-001": [
+        { stepId: "implement", text: "first pass" },
+        { stepId: "test", text: "fail" },
+        { stepId: "implement", text: "fix" },
+      ],
+    };
+    const cols = streamColumns(store, transcript);
+
+    expect(cols[0]!.segments).toHaveLength(3);
+    expect(cols[0]!.segments[0]!.stepId).toBe("implement");
+    expect(cols[0]!.segments[1]!.stepId).toBe("test");
+    expect(cols[0]!.segments[2]!.stepId).toBe("implement");
   });
 });

@@ -1,5 +1,6 @@
 /**
- * StreamPanel — streaming region with fold, max 4 panes, overflow chip (T-008).
+ * StreamPanel — streaming region with fold, max 4 panes, overflow chip,
+ * cross-step markdown + labeled dividers + auto-stick scroll (T-008, T-009).
  *
  * Occupies `var(--stream-h)` (~45%) of the app height. **Fold** collapses to a
  * persistent thin bar `var(--stream-fold-h)` (~28px) showing "▸ Streams · N
@@ -8,14 +9,19 @@
  * Shows at most 4 panes; when >4 tasks are running, displays 4 + a "＋N rodando"
  * chip. Fold state is session-only (not persisted).
  *
+ * Each pane renders the **cross-step transcript** (from `segmentsFor`, T-004)
+ * with `MarkdownStream` (T-005). Steps are separated by a **labeled divider**
+ * (hairline + centered pill). Scroll **auto-sticks** to the bottom when the
+ * user is anchored there; completed segments are memoized.
+ *
  * Pure data transformations ({@link streamColumns}, {@link visiblePanes}) are
  * exported for testing (AD-6).
  */
 
-import { useState } from "react";
-import { streamTail, prefixAgentLines } from "loopy/tui/view";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
 import type { StoreState } from "loopy/tui/store";
-import { StatusDot } from "../ui";
+import { segmentsFor, type Transcript, type StreamSegment } from "../state/stream-history";
+import { StatusDot, MarkdownStream } from "../ui";
 import "./StreamPanel.css";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +29,8 @@ import "./StreamPanel.css";
 // ---------------------------------------------------------------------------
 
 const MAX_VISIBLE_PANES = 4;
+/** Pixel threshold for considering scroll "at bottom". */
+const STICK_THRESHOLD = 24;
 
 // ---------------------------------------------------------------------------
 // Pure data transformations (AD-6)
@@ -31,28 +39,25 @@ const MAX_VISIBLE_PANES = 4;
 export interface StreamColumn {
   readonly taskId: string;
   readonly title: string;
-  readonly lines: readonly string[];
+  readonly segments: readonly StreamSegment[];
 }
 
 /**
- * Compute the stream columns for all running tasks.
- *
- * - Single agent (`activeAgents.size ≤ 1`): no prefix — byte-identical output.
- * - Multi-agent: each line is prefixed with `[agent]`.
+ * Compute the stream columns for all running tasks using the cross-step
+ * transcript (T-004, T-009). Each column carries `StreamSegment[]` from
+ * `segmentsFor` — not the per-step `task.stream` that resets.
  */
 export function streamColumns(
   store: StoreState,
-  maxLines = 8,
+  transcript: Transcript,
 ): StreamColumn[] {
-  const multiAgent = store.activeAgents.size > 1;
-
   return store.tasks
     .filter((t) => t.status === "running")
-    .map((task) => {
-      const tail = streamTail(task.stream, maxLines);
-      const lines = prefixAgentLines(tail, task.streamAgent, multiAgent);
-      return { taskId: task.id, title: task.title, lines };
-    });
+    .map((task) => ({
+      taskId: task.id,
+      title: task.title,
+      segments: segmentsFor(task.id, transcript),
+    }));
 }
 
 /**
@@ -72,17 +77,83 @@ export function visiblePanes(columns: StreamColumn[]): {
 }
 
 // ---------------------------------------------------------------------------
+// Step divider (hairline + centered pill)
+// ---------------------------------------------------------------------------
+
+const StepDivider = memo(function StepDivider({ label }: { readonly label: string }) {
+  return (
+    <div className="stream-panel__divider" aria-hidden="true">
+      <span className="stream-panel__divider-pill t-label">{label}</span>
+    </div>
+  );
+});
+
+// ---------------------------------------------------------------------------
+// StreamPane — one pane with auto-stick scroll
+// ---------------------------------------------------------------------------
+
+function StreamPane({ col }: { readonly col: StreamColumn }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stuckRef = useRef(true);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stuckRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICK_THRESHOLD;
+  }, []);
+
+  // Auto-stick: scroll to bottom when new content arrives and user was at bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stuckRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  });
+
+  const lastIdx = col.segments.length - 1;
+
+  return (
+    <div className="stream-panel__column">
+      <header className="stream-panel__header">
+        <StatusDot tone="running" pulse label="running" />
+        <span className="t-data stream-panel__id">{col.taskId}</span>
+        <span className="t-body u-truncate stream-panel__title">
+          {col.title}
+        </span>
+      </header>
+      <div
+        className="stream-panel__scroll"
+        ref={scrollRef}
+        onScroll={handleScroll}
+      >
+        {col.segments.map((seg, i) => (
+          <div key={`${seg.stepId}-${i}`}>
+            {i > 0 && <StepDivider label={seg.label} />}
+            <MarkdownStream
+              text={seg.text}
+              streaming={i === lastIdx}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // React component
 // ---------------------------------------------------------------------------
 
 interface StreamPanelProps {
   readonly store: StoreState;
+  readonly transcript: Transcript;
 }
 
-export function StreamPanel({ store }: StreamPanelProps) {
+export function StreamPanel({ store, transcript }: StreamPanelProps) {
   const [folded, setFolded] = useState(false);
 
-  const columns = streamColumns(store);
+  const columns = streamColumns(store, transcript);
   const runningCount = columns.length;
   const { visible, overflow } = visiblePanes(columns);
 
@@ -129,18 +200,7 @@ export function StreamPanel({ store }: StreamPanelProps) {
           ) : (
             <>
               {visible.map((col) => (
-                <div key={col.taskId} className="stream-panel__column">
-                  <header className="stream-panel__header">
-                    <StatusDot tone="running" pulse label="running" />
-                    <span className="t-data stream-panel__id">{col.taskId}</span>
-                    <span className="t-body u-truncate stream-panel__title">
-                      {col.title}
-                    </span>
-                  </header>
-                  <pre className="stream-panel__tail t-data">
-                    {col.lines.join("\n")}
-                  </pre>
-                </div>
+                <StreamPane key={col.taskId} col={col} />
               ))}
               {overflow > 0 && (
                 <span className="stream-panel__chip t-label" aria-label={`${overflow} tasks adicionais rodando`}>

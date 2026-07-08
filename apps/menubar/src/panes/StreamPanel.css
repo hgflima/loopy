@@ -92,17 +92,43 @@
   color: var(--ink-secondary);
 }
 
-.stream-panel__tail {
-  margin: 0;
+.stream-panel__scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
   padding: var(--sp-sm);
-  white-space: pre-wrap;
-  color: var(--ink-secondary);
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
+}
+
+/* ---- Step divider (hairline + centered pill) -------------------------- */
+
+.stream-panel__divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin: var(--sp-md) 0;
+}
+
+.stream-panel__divider::before,
+.stream-panel__divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.stream-panel__divider-pill {
+  flex-shrink: 0;
+  padding: 2px var(--sp-sm);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink-tertiary);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 /* ---- Overflow chip ----------------------------------------------------- */
