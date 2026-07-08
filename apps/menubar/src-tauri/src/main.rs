@@ -6,6 +6,7 @@ mod sidecar;
 use config::{load_launch_config, save_launch_config};
 use sidecar::SidecarState;
 use tauri::{
+    image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
@@ -109,10 +110,13 @@ fn main() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
 
-            // Build tray icon — title "●" as fallback when no icon asset exists
+            // Build tray icon — the loopy loop mark as a macOS template image
+            // (monochrome + transparent, so macOS auto-tints it to the menubar
+            // state). `update_tray_title` still drives the live pulse text.
+            let tray_icon = Image::from_bytes(include_bytes!("../icons/tray-template.png"))?;
             let _tray = TrayIconBuilder::with_id("main")
                 .tooltip("Loopy")
-                .title("●")
+                .icon(tray_icon)
                 .icon_as_template(true)
                 .on_tray_icon_event(|tray_handle, event| {
                     // Feed every event to the positioner so it tracks the tray rect
