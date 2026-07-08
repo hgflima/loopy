@@ -1,7 +1,13 @@
+import { useState, useEffect } from "react";
 import { isTauri } from "@tauri-apps/api/core";
+import { ReactFlowProvider } from "@xyflow/react";
 import type { BridgeState } from "./state/store-bridge";
+import { DepsFlow } from "./graph/DepsFlow";
 import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
+
+/** Pulse interval — same cadence as the TUI timer (500 ms). */
+const TICK_MS = 500;
 
 interface AppProps {
   state: BridgeState;
@@ -10,6 +16,13 @@ interface AppProps {
 function App({ state }: AppProps) {
   const { store, ui } = state;
   const isStartFail = ui.sidecarFailure?.type === "start-fail";
+
+  // Single tick counter for all running-task pulses (no timer per node).
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   return (
     <main>
@@ -23,6 +36,13 @@ function App({ state }: AppProps) {
           <p>Runtime: {isTauri() ? "Tauri" : "Web"}</p>
           <p>Run: {ui.runStatus}</p>
           <p>Tasks: {store.tasks.length}</p>
+          {store.tasks.length > 0 && (
+            <ReactFlowProvider>
+              <div style={{ width: "100%", height: 300 }}>
+                <DepsFlow tasks={store.tasks} edges={store.edges} tick={tick} />
+              </div>
+            </ReactFlowProvider>
+          )}
           {store.tasks.map((t) => (
             <div key={t.id}>
               <strong>{t.id}</strong> — {t.title} [{t.status}]

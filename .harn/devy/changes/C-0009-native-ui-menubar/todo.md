@@ -152,7 +152,7 @@
 
 ## Fase 3 — Grafo Deps (T-010)
 
-- [ ] T-010: `DepsFlow` (React Flow, posições de `computeDagreLayout`) + `TaskNode`
+- [x] T-010: `DepsFlow` (React Flow, posições de `computeDagreLayout`) + `TaskNode`
     `src/graph/DepsFlow.tsx` + `src/graph/TaskNode.tsx`: nós posicionados **por**
     `computeDagreLayout` (de `loopy/tui/view`) — **jamais** auto-layout do React Flow;
     `TaskNode` colore por `COLORS.task[status]` (keywords CSS diretas) e **pulsa** no
