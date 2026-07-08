@@ -26,7 +26,7 @@
     Deps: nenhuma
     Files: apps/menubar/src-tauri/icons/*, apps/menubar/src-tauri/tauri.conf.json. Scope: S.
 
-- [ ] T-002: Tokens de layout (larguras/alturas do Kanban, drawer e stream)
+- [x] T-002: Tokens de layout (larguras/alturas do Kanban, drawer e stream)
     Em `apps/menubar/src/ui/tokens.css`, adicionar os vars de **layout** que faltam (append no
     `:root`; espelhar no dark só se o valor mudar — normalmente não muda p/ dimensão): coluna do
     Kanban (`--kanban-col-min: 220px`), largura do drawer (`--drawer-w: 400px`), altura default do
