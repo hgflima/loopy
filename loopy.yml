@@ -165,7 +165,20 @@ pipeline:
     prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
     run:
       - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"'
-    on_fail: escalate
+    # on_fail = CONFLITO no root: o parent avançou (uma task-irmã merjou) DEPOIS do reconcile-parent,
+    # que roda fora do mutex → o merge no root deixou de ser trivial. NÃO escalar sujo (foi o que
+    # travou a run: T-018 conflitou e o merge pela metade contaminou T-014 com "unmerged files").
+    # Aborta e re-reconcilia o main atual, retentando. Converge porque os merges são serializados;
+    # max_step_visits é o backstop se a corrida não estabilizar.
+    on_fail: { goto: abort-root-merge }
+
+  - id: abort-root-merge
+    type: shell
+    # muta o root → NÃO parallel_safe (roda na Seção crítica do parent). Restaura o root limpo
+    # após o merge conflitado, impedindo que o estado pela metade contamine tasks-irmãs.
+    run:
+      - git -C "${workspace.root}" merge --abort
+    on_success: { goto: reconcile-parent } # re-integra o main atual no worktree e retenta o merge
 
   - id: cleanup
     type: shell

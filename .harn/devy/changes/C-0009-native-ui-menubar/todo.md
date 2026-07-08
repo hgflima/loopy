@@ -211,7 +211,7 @@
     Deps: T-008
     Files: apps/menubar/src/panes/StreamPanel.tsx, apps/menubar/src/App.tsx, testes. Scope: M.
 
-- [ ] T-014: Tray + popover-glance + janela + identidade macOS accessory↔regular
+- [x] T-014: Tray + popover-glance + janela + identidade macOS accessory↔regular
     `main.rs`: `TrayIcon` (plugin `positioner`) + janela plena; clique no ícone abre um
     **popover** compacto (`src/popover/Glance.tsx`: `done/total · running · ⚠`, botões
     Abrir/Parar); "Abrir" expande a **janela plena**. Identidade macOS: **accessory** por
@@ -269,7 +269,7 @@
 
 ## Fase 7 — Robustez + empacotamento (T-018 → T-019)
 
-- [ ] T-018: Banners de falha do sidecar (start-fail → LaunchConfig; morte no meio → congela + badge)
+- [x] T-018: Banners de falha do sidecar (start-fail → LaunchConfig; morte no meio → congela + badge)
     `src/panes/Banner.tsx` + estado de UI: falha ao **iniciar** (exit sem `run_started`) →
     banner "Run não iniciou: <motivo>" + volta ao LaunchConfig; **morte no meio** →
     **congela** o último `StoreState` + banner "Run encerrado (exit N)" + badge; banner
