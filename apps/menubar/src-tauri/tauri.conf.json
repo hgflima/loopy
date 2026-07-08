@@ -1,0 +1,26 @@
+{
+  "productName": "loopy-menubar",
+  "version": "0.1.0",
+  "identifier": "com.hgflima.loopy.menubar",
+  "build": {
+    "beforeDevCommand": "vite",
+    "beforeBuildCommand": "vite build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Loopy",
+        "width": 1024,
+        "height": 768
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
