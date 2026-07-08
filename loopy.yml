@@ -170,6 +170,9 @@ pipeline:
     # travou a run: T-018 conflitou e o merge pela metade contaminou T-014 com "unmerged files").
     # Aborta e re-reconcilia o main atual, retentando. Converge porque os merges são serializados;
     # max_step_visits é o backstop se a corrida não estabilizar.
+    # on_success EXPLÍCITO: sem ele, o sucesso cai sequencialmente no próximo step declarado
+    # (abort-root-merge) e roda `git merge --abort` num root sem merge → exit 128, pause falso.
+    on_success: { goto: cleanup }
     on_fail: { goto: abort-root-merge }
 
   - id: abort-root-merge
