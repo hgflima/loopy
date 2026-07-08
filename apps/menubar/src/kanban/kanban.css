@@ -63,6 +63,17 @@
   background: var(--surface-elevated);
   box-shadow: var(--shadow-sm);
   animation: card-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  outline: none;
+}
+
+.kanban-card:focus-visible,
+.kanban-card--selected {
+  box-shadow: var(--shadow-sm), 0 0 0 2px var(--accent);
+}
+
+.kanban-card--selected {
+  background: var(--accent-subtle);
 }
 
 /* Dark: shadows read poorly — separate cards with a hairline instead. */

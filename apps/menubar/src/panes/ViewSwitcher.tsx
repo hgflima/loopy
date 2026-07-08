@@ -22,9 +22,11 @@ const SEGMENTS: readonly Segment<ViewId>[] = [
 interface ViewSwitcherProps {
   store: StoreState;
   tick: number;
+  selectedTaskId?: string | null;
+  onSelectTask?: (taskId: string) => void;
 }
 
-export function ViewSwitcher({ store, tick }: ViewSwitcherProps) {
+export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask }: ViewSwitcherProps) {
   const [view, setView] = useState<ViewId>("kanban");
 
   return (
@@ -43,7 +45,7 @@ export function ViewSwitcher({ store, tick }: ViewSwitcherProps) {
         className="view-switcher__pane"
         style={{ display: view === "kanban" ? "flex" : "none" }}
       >
-        <KanbanBoard store={store} />
+        <KanbanBoard store={store} selectedTaskId={selectedTaskId} onSelectTask={onSelectTask} />
       </div>
       <div
         className="view-switcher__pane"

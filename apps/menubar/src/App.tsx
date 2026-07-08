@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import type { BridgeState } from "./state/store-bridge";
 import type { TaskStatus } from "loopy/tui/store";
 import { ViewSwitcher } from "./panes/ViewSwitcher";
@@ -6,6 +6,7 @@ import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
 import { ApprovalPrompt, headApproval } from "./panes/ApprovalPrompt";
 import { LaunchConfig } from "./panes/LaunchConfig";
+import { CardDetail } from "./kanban/CardDetail";
 import { Pill, type Tone } from "./ui";
 import "./App.css";
 
@@ -51,6 +52,18 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     return () => clearInterval(id);
   }, []);
 
+  // Selection state — persists across column moves and task_finished.
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const handleSelectTask = useCallback((taskId: string) => {
+    setSelectedTaskId((prev) => (prev === taskId ? null : taskId));
+  }, []);
+  const handleCloseDrawer = useCallback(() => setSelectedTaskId(null), []);
+
+  const selectedTask = useMemo(
+    () => (selectedTaskId ? store.tasks.find((t) => t.id === selectedTaskId) : undefined),
+    [selectedTaskId, store.tasks],
+  );
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -88,12 +101,26 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
           <LaunchConfig onStart={onStartRun} startFailed={isStartFail} />
         </div>
       ) : (
-        <>
-          <div className="app-main">
-            <ViewSwitcher store={store} tick={tick} />
+        <div className="app-body">
+          <div className="app-body__left">
+            <div className="app-main">
+              <ViewSwitcher
+                store={store}
+                tick={tick}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={handleSelectTask}
+              />
+            </div>
+            <StreamPanel store={store} transcript={state.transcript} />
           </div>
-          <StreamPanel store={store} transcript={state.transcript} />
-        </>
+          {selectedTask && (
+            <CardDetail
+              taskId={selectedTask.id}
+              title={selectedTask.title}
+              onClose={handleCloseDrawer}
+            />
+          )}
+        </div>
       )}
 
       {currentApproval && onApprovalDecision && (

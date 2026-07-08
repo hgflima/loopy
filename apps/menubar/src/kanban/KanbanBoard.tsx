@@ -20,9 +20,11 @@ const GOTO_HIGHLIGHT_MS = 2_200;
 
 interface KanbanBoardProps {
   store: StoreState;
+  selectedTaskId?: string | null;
+  onSelectTask?: (taskId: string) => void;
 }
 
-export function KanbanBoard({ store }: KanbanBoardProps) {
+export function KanbanBoard({ store, selectedTaskId, onSelectTask }: KanbanBoardProps) {
   const prevColumnsRef = useRef<KanbanColumn[] | undefined>(undefined);
   const [gotoIds, setGotoIds] = useState<ReadonlySet<string>>(new Set());
 
@@ -52,10 +54,28 @@ export function KanbanBoard({ store }: KanbanBoardProps) {
           <div className="kanban-column-cards">
             {col.cards.map((card) => {
               const isGoto = gotoIds.has(card.taskId);
+              const isSelected = selectedTaskId === card.taskId;
+              const cls = [
+                "kanban-card",
+                isGoto && "kanban-card--goto",
+                isSelected && "kanban-card--selected",
+              ]
+                .filter(Boolean)
+                .join(" ");
               return (
                 <article
                   key={card.taskId}
-                  className={`kanban-card${isGoto ? " kanban-card--goto" : ""}`}
+                  className={cls}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isSelected}
+                  onClick={() => onSelectTask?.(card.taskId)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelectTask?.(card.taskId);
+                    }
+                  }}
                 >
                   <TaskStatusDot status={card.status} />
                   <span className="kanban-card-id t-data">{card.taskId}</span>
