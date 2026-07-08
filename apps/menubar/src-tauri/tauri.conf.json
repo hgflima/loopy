@@ -21,6 +21,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
+    "icon": [],
+    "externalBin": ["bin/loopy"]
   }
 }
