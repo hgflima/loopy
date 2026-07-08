@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
+import { PassThrough } from "node:stream";
 import {
   createApprovalController,
   createAutoApproval,
   createReadlineApproval,
+  createStdinApproval,
   parseApprovalAnswer,
+  parseApprovalDecision,
 } from "../../src/tui/approval";
 
 // ---------------------------------------------------------------------------
@@ -139,5 +142,190 @@ describe("createApprovalController", () => {
     unsubscribe();
     void controller.requestApproval("merge?");
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseApprovalDecision — pure parsing of approval_decision NDJSON commands
+// ---------------------------------------------------------------------------
+
+describe("parseApprovalDecision", () => {
+  it("parses a valid approval_decision with approved=true", () => {
+    const line = JSON.stringify({
+      type: "approval_decision",
+      requestId: "1",
+      approved: true,
+    });
+    expect(parseApprovalDecision(line)).toEqual({
+      requestId: "1",
+      approved: true,
+    });
+  });
+
+  it("parses a valid approval_decision with approved=false", () => {
+    const line = JSON.stringify({
+      type: "approval_decision",
+      requestId: "42",
+      approved: false,
+    });
+    expect(parseApprovalDecision(line)).toEqual({
+      requestId: "42",
+      approved: false,
+    });
+  });
+
+  it("returns null for a different type", () => {
+    expect(
+      parseApprovalDecision(
+        JSON.stringify({ type: "approval_requested", requestId: "1" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when requestId is missing", () => {
+    expect(
+      parseApprovalDecision(
+        JSON.stringify({ type: "approval_decision", approved: true }),
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null when approved is not a boolean", () => {
+    expect(
+      parseApprovalDecision(
+        JSON.stringify({
+          type: "approval_decision",
+          requestId: "1",
+          approved: "yes",
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("returns null for malformed JSON", () => {
+    expect(parseApprovalDecision("not json at all")).toBeNull();
+  });
+
+  it("returns null for empty string", () => {
+    expect(parseApprovalDecision("")).toBeNull();
+  });
+
+  it("returns null for a JSON primitive", () => {
+    expect(parseApprovalDecision("42")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createStdinApproval — the stdin/stdout transport for the Native UI gate
+// ---------------------------------------------------------------------------
+
+describe("createStdinApproval", () => {
+  function setup() {
+    const emit = vi.fn();
+    const input = new PassThrough();
+    const ui = createStdinApproval({ emit, input });
+
+    function sendDecision(requestId: string, approved: boolean): void {
+      input.write(
+        JSON.stringify({ type: "approval_decision", requestId, approved }) +
+          "\n",
+      );
+    }
+
+    return { emit, input, ui, sendDecision };
+  }
+
+  it("emits approval_requested and resolves when matched decision arrives", async () => {
+    const { emit, ui, sendDecision } = setup();
+    const decision = ui.requestApproval("Merge T-001?");
+
+    expect(emit).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith({
+      type: "approval_requested",
+      requestId: "1",
+      summary: "Merge T-001?",
+    });
+
+    sendDecision("1", true);
+    await expect(decision).resolves.toBe(true);
+  });
+
+  it("resolves false when the decision rejects", async () => {
+    const { ui, sendDecision } = setup();
+    const decision = ui.requestApproval("Merge?");
+
+    sendDecision("1", false);
+    await expect(decision).resolves.toBe(false);
+  });
+
+  it("resolves two concurrent requests FIFO without clobber", async () => {
+    const { emit, ui, sendDecision } = setup();
+    const first = ui.requestApproval("primeiro");
+    const second = ui.requestApproval("segundo");
+
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenNthCalledWith(1, {
+      type: "approval_requested",
+      requestId: "1",
+      summary: "primeiro",
+    });
+    expect(emit).toHaveBeenNthCalledWith(2, {
+      type: "approval_requested",
+      requestId: "2",
+      summary: "segundo",
+    });
+
+    // Answer in FIFO order
+    sendDecision("1", true);
+    sendDecision("2", false);
+
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(false);
+  });
+
+  it("resolves concurrent requests even when decisions arrive out of order", async () => {
+    const { ui, sendDecision } = setup();
+    const first = ui.requestApproval("primeiro");
+    const second = ui.requestApproval("segundo");
+
+    // Answer second before first
+    sendDecision("2", false);
+    sendDecision("1", true);
+
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(false);
+  });
+
+  it("ignores orphan decisions (no matching pending request)", async () => {
+    const { ui, sendDecision } = setup();
+    const decision = ui.requestApproval("merge?");
+
+    sendDecision("999", true); // orphan — no matching request
+    sendDecision("1", false); // the real one
+
+    await expect(decision).resolves.toBe(false);
+  });
+
+  it("ignores malformed lines without affecting pending requests", async () => {
+    const { ui, input, sendDecision } = setup();
+    const decision = ui.requestApproval("merge?");
+
+    input.write("not json\n");
+    input.write(JSON.stringify({ type: "other_command" }) + "\n");
+    input.write("{}\n");
+    sendDecision("1", true);
+
+    await expect(decision).resolves.toBe(true);
+  });
+
+  it("ignores a duplicate decision for an already-resolved request", async () => {
+    const { ui, sendDecision } = setup();
+    const decision = ui.requestApproval("merge?");
+
+    sendDecision("1", true);
+    await expect(decision).resolves.toBe(true);
+
+    // A second decision for the same requestId is silently ignored (orphan now)
+    sendDecision("1", false); // no-op — no pending for "1"
   });
 });
