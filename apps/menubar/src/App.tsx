@@ -4,7 +4,7 @@ import type { TaskStatus } from "loopy/tui/store";
 import { ViewSwitcher } from "./panes/ViewSwitcher";
 import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
-import { ApprovalPrompt, headApproval } from "./panes/ApprovalPrompt";
+import { headApproval } from "./panes/ApprovalPrompt";
 import { LaunchConfig } from "./panes/LaunchConfig";
 import { CardDetail } from "./kanban/CardDetail";
 import { Pill, type Tone } from "./ui";
@@ -59,9 +59,12 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   }, []);
   const handleCloseDrawer = useCallback(() => setSelectedTaskId(null), []);
 
-  const selectedTask = useMemo(
-    () => (selectedTaskId ? store.tasks.find((t) => t.id === selectedTaskId) : undefined),
-    [selectedTaskId, store.tasks],
+  // Gate auto-open (D6): pending approval forces the drawer to that card.
+  const effectiveTaskId = currentApproval?.taskId ?? selectedTaskId;
+
+  const effectiveTask = useMemo(
+    () => (effectiveTaskId ? store.tasks.find((t) => t.id === effectiveTaskId) : undefined),
+    [effectiveTaskId, store.tasks],
   );
 
   return (
@@ -113,26 +116,21 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
             </div>
             <StreamPanel store={store} transcript={state.transcript} />
           </div>
-          {selectedTask && (
+          {effectiveTask && (
             <CardDetail
-              taskId={selectedTask.id}
-              title={selectedTask.title}
+              taskId={effectiveTask.id}
+              title={effectiveTask.title}
               onClose={handleCloseDrawer}
-              description={selectedTask.description}
-              deps={selectedTask.deps}
+              description={effectiveTask.description}
+              deps={effectiveTask.deps}
               tasks={store.tasks}
               transcript={state.transcript}
+              approval={currentApproval}
+              queueSize={approvals}
+              onApprovalDecision={onApprovalDecision}
             />
           )}
         </div>
-      )}
-
-      {currentApproval && onApprovalDecision && (
-        <ApprovalPrompt
-          request={currentApproval}
-          queueSize={ui.pendingApprovals.length}
-          onDecision={onApprovalDecision}
-        />
       )}
     </main>
   );
