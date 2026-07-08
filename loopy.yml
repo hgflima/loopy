@@ -2,7 +2,9 @@
 #
 # Bootstrapping: v0.1.7 ainda NÃO tem `agents:` (é o que esta change constrói), então este
 # config usa o schema atual — single-agent (Claude Code via ACP). Otimizações pedidas:
-#   • merge por rebase   → policies.git.on_merge_conflict: rebase (auto-rebase + retry-once no mutex)
+#   • merge resiliente   → merge SEMÂNTICO por agente no worktree (reconcile-parent →
+#                          resolve-merge → finalize-merge); o merge no root chega trivial.
+#                          on_merge_conflict: escalate é só o backstop final.
 #   • paralelismo        → concurrency: 3 (largura máxima do DAG do todo.md). Steps de Agente
 #                          rodam fora do mutex por natureza (Sessão por-worktree); install-deps
 #                          (npm ci lento) é parallel_safe; create-worktree/commit/merge/cleanup
@@ -23,9 +25,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: ".harn/devy/changes/C-0008-multi-agent-codex/spec.md"
-  plan: ".harn/devy/changes/C-0008-multi-agent-codex/plan.md"
-  todo: ".harn/devy/changes/C-0008-multi-agent-codex/todo.md"
+  spec: ".harn/devy/changes/C-0009-native-ui-menubar/spec.md"
+  plan: ".harn/devy/changes/C-0009-native-ui-menubar/plan.md"
+  todo: ".harn/devy/changes/C-0009-native-ui-menubar/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
@@ -94,8 +96,69 @@ pipeline:
   - id: commit
     type: shell
     run:
-      - git -C "${worktree.path}" add -A
+      # exclui .claude/ (harness commitado): impede que edições incidentais do harness
+      # (ex.: silenciar lint de .claude/**) entrem no commit da task e conflitem no merge.
+      - 'git -C "${worktree.path}" add -A -- . :!.claude'
+      # --allow-empty: os agentes /devy:* podem auto-commitar; sem isso, árvore limpa → git commit exit 1.
       - 'git -C "${worktree.path}" commit --allow-empty -m "feat(${task.id}): ${task.title}"'
+
+  # ---------------------------------------------------------------------------
+  # Resiliência de merge (SEMÂNTICA, por agente).
+  #
+  # Um conflito acontece ao integrar os dois lados. Como um Step de Agente roda
+  # SEMPRE no worktree da task (cwd imutável, keyed por (Agente, Worktree)), ele
+  # NÃO enxerga um conflito deixado por `git merge` no parent (root). Por isso a
+  # reconciliação é feita DENTRO do worktree — trazendo o parent para cá, onde o
+  # agente pode resolver — e só então o merge no root vira trivial (fast-forward).
+  #
+  #   reconcile-parent  (shell)  integra o parent no worktree
+  #     ├─ sem conflito → goto merge   (merge no root é limpo)
+  #     └─ conflito     → goto resolve-merge
+  #   resolve-merge     (agent)  resolve os markers SEMANTICAMENTE (não commita)
+  #   finalize-merge    (shell)  conclui o merge do parent no worktree
+  #   merge             (approval, root)  agora sempre trivial
+  # ---------------------------------------------------------------------------
+  - id: reconcile-parent
+    type: shell
+    # worktree-scoped: opera com -C no worktree, não muta o parent → fora do mutex.
+    parallel_safe: true
+    run:
+      - git -C "${worktree.path}" merge --no-edit "${workspace.parent_branch}"
+    on_success: { goto: merge } # já integrado (ou no-op) → merge no root é limpo
+    on_fail: { goto: resolve-merge } # conflito → agente resolve semanticamente
+
+  - id: resolve-merge
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      Ao integrar ${workspace.parent_branch} no worktree desta task houve CONFLITO de merge
+      (merge em progresso, arquivos com markers `<<<<<<<`/`=======`/`>>>>>>>`).
+
+      Resolva SEMANTICAMENTE cada conflito: preserve a intenção dos DOIS lados — a mudança da
+      task ${task.id} (${task.title}) E o que veio do parent — em vez de escolher um lado cegamente.
+      Não altere comportamento fora das regiões conflitadas.
+
+      Inspecione o estado com:
+        git -C "${worktree.path}" status
+        git -C "${worktree.path}" diff
+      e edite os arquivos removendo TODOS os markers de conflito.
+
+      **CRITICAL**: NÃO rode git add/commit/merge --continue/--abort. Apenas deixe os arquivos
+      resolvidos no working tree; o pipeline finaliza o merge. Garanta os checks verdes.
+    retry_prompt: |
+      Ainda há conflito não resolvido ou os checks falharam após a resolução. Verifique
+      `git -C "${worktree.path}" status` (não pode haver caminhos "Unmerged") e corrija.
+      ${checks.report}
+    verify: { run: ci, max_attempts: 3 }
+    on_fail: escalate # 3 tentativas sem resolver → pausa com worktree preservado (humano assume)
+
+  - id: finalize-merge
+    type: shell
+    run:
+      - git -C "${worktree.path}" add -A -- . :!.claude
+      # conclui o merge em progresso (não é commit vazio: um merge commit sempre tem 2 pais).
+      - git -C "${worktree.path}" commit --no-edit
 
   - id: merge
     type: approval
@@ -113,12 +176,12 @@ pipeline:
 
 stop_conditions:
   max_iterations: 25
-  max_step_visits: 10
+  max_step_visits: 25
   stop_signal_file: ".loopy.stop"
 
 # Largura máxima do DAG do todo.md é 3 (camada T-005/T-006/T-007). Tasks independentes com
 # Deps: satisfeitas rodam em paralelo até este teto.
-concurrency: 3
+concurrency: 5
 
 policies:
   escalation:
@@ -127,8 +190,9 @@ policies:
     notify: stderr
   git:
     require_clean_parent: true
-    # rebase: em conflito de merge, auto-rebase da branch da task no parent + retry-once (no mutex).
-    on_merge_conflict: rebase
+    # escalate: a resiliência primária a conflito é o merge SEMÂNTICO (reconcile-parent →
+    # resolve-merge) no worktree; o merge no root já chega trivial. Este é só o backstop final.
+    on_merge_conflict: escalate
 
 logging:
   dir: ".loopy/logs"
