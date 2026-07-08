@@ -152,7 +152,7 @@
 
 ## Fase 3 — Grafo Deps (T-010)
 
-- [ ] T-010: `DepsFlow` (React Flow, posições de `computeDagreLayout`) + `TaskNode`
+- [x] T-010: `DepsFlow` (React Flow, posições de `computeDagreLayout`) + `TaskNode`
     `src/graph/DepsFlow.tsx` + `src/graph/TaskNode.tsx`: nós posicionados **por**
     `computeDagreLayout` (de `loopy/tui/view`) — **jamais** auto-layout do React Flow;
     `TaskNode` colore por `COLORS.task[status]` (keywords CSS diretas) e **pulsa** no
@@ -181,7 +181,7 @@
     Deps: T-008
     Files: apps/menubar/src/kanban/grouper.ts, testes. Scope: M.
 
-- [ ] T-012: `KanbanBoard` + `ViewSwitcher` (default Kanban → grafo Deps)
+- [x] T-012: `KanbanBoard` + `ViewSwitcher` (default Kanban → grafo Deps)
     `src/kanban/KanbanBoard.tsx` (colunas do grouper T-011; card com glifo/cor de
     `COLORS.task`; realce/pulso no card que acabou de voltar por `goto` — o fix-loop é a
     estrela, DESIGN §4) + `src/panes/ViewSwitcher.tsx` (default **Kanban**, alterna p/
