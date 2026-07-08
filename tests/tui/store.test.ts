@@ -1022,7 +1022,50 @@ describe("reduce · agent tracking (T-008)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// initialState includes edges and acpLog
+// reduce — pipeline_declared
+// ---------------------------------------------------------------------------
+
+describe("reduce · pipeline_declared", () => {
+  it("stores the pipeline steps in declaration order", () => {
+    const steps = [
+      { id: "implement", type: "agent" as const },
+      { id: "lint", type: "checks" as const },
+      { id: "deploy", type: "shell" as const },
+    ];
+    const state = play({ type: "pipeline_declared", steps });
+    expect(state.pipeline).toEqual(steps);
+  });
+
+  it("is idempotent — emitting the same pipeline twice yields the same list", () => {
+    const steps = [
+      { id: "implement", type: "agent" as const },
+      { id: "ci", type: "checks" as const },
+    ];
+    const once = play({ type: "pipeline_declared", steps });
+    const twice = reduce(once, { type: "pipeline_declared", steps });
+    expect(twice.pipeline).toEqual(steps);
+  });
+
+  it("does not affect tasks, edges, or acpLog", () => {
+    let state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "edges_set", edges: [["T-001", "T-002"]] },
+    );
+    const tasksBefore = state.tasks;
+    const edgesBefore = state.edges;
+    const acpLogBefore = state.acpLog;
+    state = reduce(state, {
+      type: "pipeline_declared",
+      steps: [{ id: "s", type: "shell" as const }],
+    });
+    expect(state.tasks).toBe(tasksBefore);
+    expect(state.edges).toBe(edgesBefore);
+    expect(state.acpLog).toBe(acpLogBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initialState includes edges, acpLog, and pipeline
 // ---------------------------------------------------------------------------
 
 describe("initialState", () => {
@@ -1032,5 +1075,9 @@ describe("initialState", () => {
 
   it("includes an empty acpLog array", () => {
     expect(initialState().acpLog).toEqual([]);
+  });
+
+  it("includes an empty pipeline array", () => {
+    expect(initialState().pipeline).toEqual([]);
   });
 });
