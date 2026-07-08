@@ -69,7 +69,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/state/stream-history.ts, apps/menubar/src/state/stream-history.test.ts. Scope: M.
 
-- [ ] T-005: `MarkdownStream.tsx` — render sanitizado de voz-de-máquina + teste + dep
+- [x] T-005: `MarkdownStream.tsx` — render sanitizado de voz-de-máquina + teste + dep
     Adicionar `react-markdown@^10` + `remark-gfm@^4` (única dep nova, D5 aprovado; **sem `rehype-raw`**).
     NOVO `apps/menubar/src/ui/MarkdownStream.tsx`: componente que renderiza texto como markdown com
     `remarkPlugins={[remarkGfm]}`, blocos de código em `--font-mono`, **seguro por padrão** (HTML
