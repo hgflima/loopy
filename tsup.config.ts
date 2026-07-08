@@ -1,12 +1,27 @@
-import { defineConfig } from "tsup";
+import { defineConfig, type Options } from "tsup";
 
-export default defineConfig({
-  entry: ["src/index.ts"],
+const shared: Options = {
   format: ["esm"],
   target: "node20",
   platform: "node",
-  banner: { js: "#!/usr/bin/env node" },
-  clean: true,
   minify: false,
   sourcemap: false,
-});
+};
+
+export default defineConfig([
+  {
+    ...shared,
+    entry: ["src/index.ts"],
+    banner: { js: "#!/usr/bin/env node" },
+    clean: true,
+  },
+  {
+    ...shared,
+    entry: {
+      "tui/store": "src/tui/store.ts",
+      "tui/view": "src/tui/view.ts",
+    },
+    dts: true,
+    clean: false,
+  },
+]);
