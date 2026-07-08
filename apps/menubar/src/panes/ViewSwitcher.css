@@ -1,0 +1,17 @@
+/* ViewSwitcher — segmented control over two stateful panes. */
+
+.view-switcher {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.view-switcher__bar {
+  display: flex;
+  padding: var(--sp-sm) var(--sp-md);
+}
+
+.view-switcher__pane {
+  flex: 1;
+  min-height: 0;
+}

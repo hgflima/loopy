@@ -1,0 +1,83 @@
+/* Button — native control proportions, gently rounded (DESIGN.md §5). */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-xs);
+  padding: 6px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color 0.12s ease-out,
+    border-color 0.12s ease-out,
+    color 0.12s ease-out;
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Primary — accent fill --------------------------------------------- */
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.btn--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.btn--primary:active:not(:disabled) {
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
+}
+
+/* ---- Secondary — neutral fill + hairline ------------------------------- */
+.btn--secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--border-strong);
+}
+.btn--secondary:hover:not(:disabled) {
+  background: var(--surface-elevated);
+  border-color: var(--border-strong);
+}
+.btn--secondary:active:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--ink-tertiary);
+}
+
+/* ---- Ghost — transparent, inline --------------------------------------- */
+.btn--ghost {
+  background: transparent;
+  color: var(--ink-secondary);
+  border-color: transparent;
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--ink);
+}
+.btn--ghost:active:not(:disabled) {
+  background: var(--surface);
+}
+
+/* ---- Disabled — shared across variants --------------------------------- */
+.btn:disabled {
+  background: transparent;
+  color: var(--ink-tertiary);
+  border-color: transparent;
+  cursor: default;
+}
+.btn--secondary:disabled {
+  border-color: var(--border);
+}

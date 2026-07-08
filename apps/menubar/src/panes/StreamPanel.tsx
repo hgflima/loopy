@@ -12,6 +12,8 @@
 
 import { streamTail, prefixAgentLines } from "loopy/tui/view";
 import type { StoreState } from "loopy/tui/store";
+import { StatusDot } from "../ui";
+import "./StreamPanel.css";
 
 // ---------------------------------------------------------------------------
 // Pure data transformation (AD-6)
@@ -58,7 +60,10 @@ export function StreamPanel({ store }: StreamPanelProps) {
   if (columns.length === 0) {
     return (
       <section className="stream-panel stream-panel--empty">
-        <p className="stream-panel__placeholder">No running tasks</p>
+        <p className="stream-panel__placeholder t-body">
+          Nenhuma task rodando — os streams do agente aparecem aqui quando um
+          Step de Agente está em andamento.
+        </p>
       </section>
     );
   }
@@ -66,20 +71,18 @@ export function StreamPanel({ store }: StreamPanelProps) {
   return (
     <section
       className="stream-panel"
-      style={{
-        display: "grid",
-        gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
-        gap: "0.5rem",
-      }}
+      style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
     >
       {columns.map((col) => (
         <div key={col.taskId} className="stream-panel__column">
-          <header className="stream-panel__header" style={{ color: "cyan" }}>
-            {col.taskId} — {col.title}
+          <header className="stream-panel__header">
+            <StatusDot tone="running" pulse label="running" />
+            <span className="t-data stream-panel__id">{col.taskId}</span>
+            <span className="t-body u-truncate stream-panel__title">
+              {col.title}
+            </span>
           </header>
-          <pre className="stream-panel__tail">
-            {col.lines.join("\n")}
-          </pre>
+          <pre className="stream-panel__tail t-data">{col.lines.join("\n")}</pre>
         </div>
       ))}
     </section>

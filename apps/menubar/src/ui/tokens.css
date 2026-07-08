@@ -1,0 +1,150 @@
+/**
+ * Design tokens — the code-side of DESIGN.md.
+ *
+ * Canonical split (DESIGN.md §1): NEUTRAL CHROME, SEMANTIC COLOR.
+ * Neutrals carry ~90% of every surface; color is spent only on meaning —
+ * the loopy magenta for interaction/selection/approval, and a tight
+ * semantic-state vocabulary that appears only as dots, pills, and labels.
+ *
+ * Format is OKLCH throughout (project doctrine). The Tauri webview is
+ * WebKit, which supports OKLCH natively.
+ *
+ * Theme follows the macOS system appearance via `prefers-color-scheme`.
+ * Light lives in :root; the dark mirror overrides the same semantic names.
+ */
+
+:root {
+  /* ---- Neutral chrome — carry the room ---------------------------------- */
+  --bg: oklch(0.994 0 0);
+  --surface: oklch(0.975 0.001 260);
+  --surface-elevated: oklch(1 0 0);
+  --border: oklch(0.905 0.002 260);
+  --border-strong: oklch(0.84 0.003 260);
+  --ink: oklch(0.22 0.005 260);
+  --ink-secondary: oklch(0.44 0.006 260);
+  --ink-tertiary: oklch(0.56 0.006 260);
+
+  /* ---- Accent — the loopy signature (magenta, hue ~352) ----------------- *
+   * Means exactly three things: interactive, alive, and the human gate.
+   * Never chrome, never decoration (The Accent-Means-You Rule). */
+  --accent: oklch(0.55 0.21 352);
+  --accent-hover: oklch(0.50 0.21 352);
+  --accent-pressed: oklch(0.45 0.20 352);
+  --accent-subtle: oklch(0.95 0.03 352);
+  --accent-ink: oklch(0.99 0 0); /* text on an accent fill */
+  --accent-text: oklch(0.55 0.21 352); /* accent AS text on a subtle tint */
+
+  /* ---- Semantic state vocabulary — indicators ONLY ---------------------- *
+   * Each hue maps 1:1 to a task/step status. `-ink` = AA-safe text tone;
+   * `-subtle` = pill background tint. Never used as chrome. */
+  --state-running: oklch(0.60 0.12 210);
+  --state-running-ink: oklch(0.48 0.13 210);
+  --state-running-subtle: oklch(0.955 0.022 210);
+
+  --state-done: oklch(0.60 0.14 150);
+  --state-done-ink: oklch(0.46 0.13 150);
+  --state-done-subtle: oklch(0.955 0.03 150);
+
+  --state-blocked: oklch(0.74 0.14 75);
+  --state-blocked-ink: oklch(0.50 0.10 75);
+  --state-blocked-subtle: oklch(0.955 0.035 75);
+
+  /* Held at hue 28 — a clear ~35° from the accent so "failed" never reads
+     as "interactive" (DESIGN.md §2). */
+  --state-failed: oklch(0.58 0.20 28);
+  --state-failed-ink: oklch(0.50 0.19 28);
+  --state-failed-subtle: oklch(0.955 0.028 28);
+
+  /* Ready / skipped borrow neutrals — the vocabulary stays small. */
+  --state-neutral: oklch(0.72 0.004 260);
+  --state-neutral-ink: oklch(0.50 0.005 260);
+  --state-neutral-subtle: oklch(0.955 0.001 260);
+
+  /* ---- Elevation — flat until it floats (DESIGN.md §4) ------------------ */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.16);
+  --shadow-gate: 0 4px 24px rgba(0, 0, 0, 0.14);
+
+  /* ---- Type families ---------------------------------------------------- */
+  --font-ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* ---- Radii ------------------------------------------------------------ */
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+
+  /* ---- Spacing ---------------------------------------------------------- */
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-lg: 16px;
+  --sp-xl: 24px;
+
+  /* ---- Semantic z-index scale ------------------------------------------- */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-gate-backdrop: 300;
+  --z-gate: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+
+  color-scheme: light;
+}
+
+/* ------------------------------------------------------------------------- *
+ * Dark mirror — a NATIVE neutral dark, not the old índigo #0f0f23.
+ * Chroma stays near zero; depth comes from tonal layering, not tint.
+ * ------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.20 0.004 260);
+    --surface: oklch(0.24 0.004 260);
+    --surface-elevated: oklch(0.28 0.005 260);
+    --border: oklch(0.32 0.005 260);
+    --border-strong: oklch(0.40 0.006 260);
+    --ink: oklch(0.95 0.003 260);
+    --ink-secondary: oklch(0.72 0.004 260);
+    --ink-tertiary: oklch(0.56 0.005 260);
+
+    /* Fill L held at 0.57 so white label text clears AA (4.87:1); a separate
+       brighter --accent-text carries the accent when it is itself the text. */
+    --accent: oklch(0.57 0.21 352);
+    --accent-hover: oklch(0.585 0.21 352);
+    --accent-pressed: oklch(0.52 0.20 352);
+    --accent-subtle: oklch(0.30 0.07 352);
+    --accent-ink: oklch(0.99 0 0);
+    --accent-text: oklch(0.72 0.19 352);
+
+    /* Semantic hues brighten for dark surfaces; `-ink` brightens to read as
+       text on dark; `-subtle` becomes a low-L tint. */
+    --state-running: oklch(0.72 0.12 210);
+    --state-running-ink: oklch(0.78 0.11 210);
+    --state-running-subtle: oklch(0.32 0.05 210);
+
+    --state-done: oklch(0.72 0.14 150);
+    --state-done-ink: oklch(0.78 0.13 150);
+    --state-done-subtle: oklch(0.32 0.06 150);
+
+    --state-blocked: oklch(0.80 0.14 75);
+    --state-blocked-ink: oklch(0.84 0.12 75);
+    --state-blocked-subtle: oklch(0.34 0.06 75);
+
+    --state-failed: oklch(0.68 0.19 28);
+    --state-failed-ink: oklch(0.76 0.16 28);
+    --state-failed-subtle: oklch(0.33 0.08 28);
+
+    --state-neutral: oklch(0.52 0.005 260);
+    --state-neutral-ink: oklch(0.68 0.005 260);
+    --state-neutral-subtle: oklch(0.30 0.004 260);
+
+    /* Shadows read poorly on dark — elevation is tonal (surface → elevated);
+       keep only a soft ambient lift on true floaters. */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+    --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.50);
+    --shadow-gate: 0 4px 24px rgba(0, 0, 0, 0.44);
+
+    color-scheme: dark;
+  }
+}

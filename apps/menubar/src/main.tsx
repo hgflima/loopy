@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom/client";
+import "./ui/tokens.css";
+import "./ui/base.css";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -8,6 +10,8 @@ import { Glance } from "./popover/Glance";
 import { parseTransportLine } from "loopy/tui/transport";
 import {
   applyLine,
+  applySidecarExit,
+  applySidecarStderr,
   dismissApproval,
   initialBridgeState,
 } from "./state/store-bridge";
@@ -148,12 +152,19 @@ function Root() {
       dispatchNotification(event.payload);
     });
 
-    const unExit = listen<number>("sidecar://exit", () => {
-      // T-018 will add banner handling for sidecar failures
+    // stderr → rolling tail (surfaced by the Banner on failure)
+    const unStderr = listen<string>("sidecar://stderr", (event) => {
+      setState((prev) => applySidecarStderr(prev, event.payload));
+    });
+
+    // exit → classify start-fail vs death-mid-run (T-018 Banner)
+    const unExit = listen<number>("sidecar://exit", (event) => {
+      setState((prev) => applySidecarExit(prev, event.payload));
     });
 
     return () => {
       unLine.then((fn) => fn());
+      unStderr.then((fn) => fn());
       unExit.then((fn) => fn());
     };
   }, []);

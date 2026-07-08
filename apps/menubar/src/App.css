@@ -1,0 +1,65 @@
+/* App shell — neutral chrome; the frame the dashboard lives in. */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  position: relative;
+}
+
+/* ---- Header — legible at a glance, quiet by default -------------------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) var(--sp-md);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+.app-header__wordmark {
+  color: var(--ink);
+}
+
+.app-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  margin-left: auto;
+}
+
+.app-header__progress {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.app-header__count {
+  color: var(--ink);
+}
+
+.app-header__running {
+  color: var(--state-running-ink);
+}
+
+/* ---- Body regions ------------------------------------------------------ */
+
+.app-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+}

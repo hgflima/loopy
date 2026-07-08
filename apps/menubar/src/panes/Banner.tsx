@@ -19,6 +19,8 @@
  */
 
 import type { UIState } from "../state/store-bridge";
+import { StatusDot, type Tone } from "../ui";
+import "./Banner.css";
 
 // ---------------------------------------------------------------------------
 // Pure data extraction (AD-6)
@@ -54,49 +56,27 @@ interface BannerProps {
   readonly ui: UIState;
 }
 
-const PALETTE = {
-  "start-fail": { border: "#e53e3e", bg: "#fff5f5", icon: "\u26D4" },
-  "death-mid-run": { border: "#dd6b20", bg: "#fffaf0", icon: "\u26A0\uFE0F" },
-} as const;
+/** start-fail is a hard failure (red); death-mid-run reads as interrupted (amber). */
+const TONE: Record<BannerData["type"], Tone> = {
+  "start-fail": "failed",
+  "death-mid-run": "blocked",
+};
 
 export function Banner({ ui }: BannerProps) {
   const info = bannerInfo(ui);
   if (!info) return null;
 
-  const { border, bg, icon } = PALETTE[info.type];
+  const tone = TONE[info.type];
 
   return (
-    <section
-      className={`banner banner--${info.type}`}
-      role="alert"
-      style={{
-        padding: "0.75rem 1rem",
-        borderLeft: `4px solid ${border}`,
-        background: bg,
-        marginBottom: "0.5rem",
-      }}
-    >
-      <header className="banner__headline" style={{ fontWeight: "bold" }}>
-        {icon} {info.headline}
+    <section className={`banner banner--${tone}`} role="alert">
+      <header className="banner__headline">
+        <StatusDot tone={tone} label={info.type} />
+        <span className="t-title">{info.headline}</span>
       </header>
 
       {info.stderrTail.length > 0 && (
-        <pre
-          className="banner__stderr"
-          style={{
-            marginTop: "0.5rem",
-            fontSize: "0.8rem",
-            maxHeight: "12rem",
-            overflow: "auto",
-            whiteSpace: "pre-wrap",
-            background: "#1a1a2e",
-            color: "#e0e0e0",
-            padding: "0.5rem",
-            borderRadius: "4px",
-          }}
-        >
-          {info.stderrTail.join("\n")}
-        </pre>
+        <pre className="banner__stderr t-data">{info.stderrTail.join("\n")}</pre>
       )}
     </section>
   );

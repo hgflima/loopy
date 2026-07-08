@@ -1,0 +1,89 @@
+/* StatusIndicator — dots and pills. Color + shape, never color alone. */
+
+.status-dot {
+  --dot: var(--state-neutral);
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--dot);
+  vertical-align: middle;
+}
+
+.status-dot--running { --dot: var(--state-running); }
+.status-dot--done    { --dot: var(--state-done); }
+.status-dot--blocked { --dot: var(--state-blocked); }
+.status-dot--failed  { --dot: var(--state-failed); }
+.status-dot--neutral { --dot: var(--state-neutral); }
+.status-dot--accent  { --dot: var(--accent); }
+
+/* Ready / skipped — a hollow ring, tonally quieter than a fill. */
+.status-dot--hollow {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--dot);
+}
+
+/* "Alive" pulse for running work — a soft breathing halo, not a blink.
+   Reduced-motion collapses it to a static ring. */
+.status-dot--pulse {
+  position: relative;
+}
+.status-dot--pulse::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-pill);
+  background: var(--dot);
+  animation: status-pulse 1.8s ease-out infinite;
+}
+
+@keyframes status-pulse {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot--pulse::after {
+    animation: none;
+    inset: -2px;
+    background: transparent;
+    box-shadow: 0 0 0 1.5px var(--dot);
+    opacity: 0.5;
+  }
+}
+
+/* ---- Pill — tinted background + `-ink` text ---------------------------- */
+
+.status-pill {
+  --pill-ink: var(--state-neutral-ink);
+  --pill-bg: var(--state-neutral-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--pill-bg);
+  color: var(--pill-ink);
+  white-space: nowrap;
+}
+
+.status-pill--running { --pill-ink: var(--state-running-ink); --pill-bg: var(--state-running-subtle); }
+.status-pill--done    { --pill-ink: var(--state-done-ink);    --pill-bg: var(--state-done-subtle); }
+.status-pill--blocked { --pill-ink: var(--state-blocked-ink); --pill-bg: var(--state-blocked-subtle); }
+.status-pill--failed  { --pill-ink: var(--state-failed-ink);  --pill-bg: var(--state-failed-subtle); }
+.status-pill--neutral { --pill-ink: var(--state-neutral-ink); --pill-bg: var(--state-neutral-subtle); }
+.status-pill--accent  { --pill-ink: var(--accent-text);       --pill-bg: var(--accent-subtle); }
+
+/* The dot inside an accent pill inherits the accent hue already; other tones
+   set --dot to match the pill ink channel for a crisp read. */
+.status-pill .status-dot {
+  --dot: var(--pill-ink);
+}

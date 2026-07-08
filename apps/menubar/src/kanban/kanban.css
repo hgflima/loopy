@@ -1,85 +1,134 @@
-/* KanbanBoard styles — minimal, functional, no framework */
+/* Kanban — native cards on neutral columns. Color only on the status dot. */
 
 .kanban-board {
   display: flex;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--sp-md);
+  padding: 0 var(--sp-md) var(--sp-md);
   height: 100%;
   overflow-x: auto;
 }
 
 .kanban-column {
   flex: 1 1 0;
-  min-width: 140px;
+  min-width: 168px;
   display: flex;
   flex-direction: column;
-  background: #1a1a2e;
-  border-radius: 8px;
-  padding: 8px;
-  overflow-y: auto;
+  min-height: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-sm);
 }
 
 .kanban-column-title {
-  font-size: 11px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--sp-xs) 6px var(--sp-sm);
+  color: var(--ink-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #888;
-  padding: 4px 6px 8px;
-  border-bottom: 1px solid #2a2a3e;
-  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-sm);
 }
 
 .kanban-column-count {
-  color: #555;
-  font-weight: 400;
-  margin-left: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  color: var(--ink-tertiary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.kanban-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .kanban-card {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  margin-bottom: 4px;
-  border-radius: 6px;
-  background: #16213e;
-  font-size: 12px;
-  font-family: monospace;
-  transition: background 0.2s;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) 10px;
+  border-radius: var(--r-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-sm);
+  animation: card-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.kanban-card-glyph {
-  flex-shrink: 0;
-  font-size: 11px;
+/* Dark: shadows read poorly — separate cards with a hairline instead. */
+@media (prefers-color-scheme: dark) {
+  .kanban-card {
+    box-shadow: none;
+    border: 1px solid var(--border);
+  }
 }
 
 .kanban-card-id {
-  font-weight: 600;
-}
-
-.kanban-card-title {
-  color: #aaa;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kanban-card-failed-step {
-  font-size: 10px;
-  color: #ff6b6b;
-  margin-left: auto;
+  color: var(--ink);
   flex-shrink: 0;
 }
 
-/* Goto pulse — the fix-loop star (SC #5) */
-@keyframes goto-pulse {
-  0%   { background: #16213e; box-shadow: none; }
-  15%  { background: #1a3a5c; box-shadow: 0 0 8px rgba(0, 255, 255, 0.4); }
-  50%  { background: #1a3a5c; box-shadow: 0 0 12px rgba(0, 255, 255, 0.3); }
-  100% { background: #16213e; box-shadow: none; }
+.kanban-card-title {
+  color: var(--ink-secondary);
+  flex: 1;
+  min-width: 0;
 }
 
+.kanban-card-failed {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--state-failed-ink);
+}
+
+/* A card sliding into a column is the primary "vivo" signal. */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Goto pulse — the fix-loop star (SC #5). A single accent ring, then rest. */
 .kanban-card--goto {
-  animation: goto-pulse 2s ease-in-out;
+  animation:
+    card-enter 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    goto-pulse 2s ease-out;
+}
+
+@keyframes goto-pulse {
+  0% {
+    box-shadow: var(--shadow-sm), 0 0 0 0 var(--accent);
+  }
+  20% {
+    box-shadow: var(--shadow-sm), 0 0 0 2px var(--accent);
+  }
+  100% {
+    box-shadow: var(--shadow-sm), 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-card {
+    animation: none;
+  }
+  /* Reduced motion: a static accent ring marks the goto instead of a pulse. */
+  .kanban-card--goto {
+    animation: none;
+    box-shadow: var(--shadow-sm), 0 0 0 1.5px var(--accent);
+  }
 }

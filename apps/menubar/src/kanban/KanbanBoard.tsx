@@ -3,16 +3,17 @@
  *
  * Thin React wrapper over pure grouper (T-011) + goto detection.
  * The fix-loop (card returning to an earlier column via `goto`) triggers
- * a pulse animation — the visual centrepiece of the Kanban view.
+ * a single accent-ring pulse — the visual centrepiece of the Kanban view.
  *
- * AD-6: presentation logic (groupByStep, detectGotoCards, COLORS, SYMBOLS)
- * is pure and tested independently; this component just renders.
+ * AD-6: presentation logic (groupByStep, detectGotoCards) is pure and tested
+ * independently; this component just renders. Status → color/label comes from
+ * the shared StatusIndicator vocabulary, not terminal glyphs.
  */
 import { useRef, useState, useEffect, useMemo } from "react";
 import type { StoreState } from "loopy/tui/store";
-import { COLORS, SYMBOLS } from "loopy/tui/view";
 import { groupByStep, type KanbanColumn } from "./grouper";
 import { detectGotoCards } from "./goto-detect";
+import { TaskStatusDot } from "../ui";
 import "./kanban.css";
 
 const GOTO_HIGHLIGHT_MS = 2_200;
@@ -41,37 +42,36 @@ export function KanbanBoard({ store }: KanbanBoardProps) {
   return (
     <div className="kanban-board">
       {columns.map((col) => (
-        <div key={col.id} className="kanban-column">
-          <div className="kanban-column-title">
-            {col.title}
+        <section key={col.id} className="kanban-column">
+          <header className="kanban-column-title t-label">
+            <span className="kanban-column-name">{col.title}</span>
             {col.cards.length > 0 && (
-              <span className="kanban-column-count">({col.cards.length})</span>
+              <span className="kanban-column-count">{col.cards.length}</span>
             )}
-          </div>
-          {col.cards.map((card) => {
-            const isGoto = gotoIds.has(card.taskId);
-            const color = COLORS.task[card.status];
-            return (
-              <div
-                key={card.taskId}
-                className={`kanban-card${isGoto ? " kanban-card--goto" : ""}`}
-              >
-                <span className="kanban-card-glyph" style={{ color }}>
-                  {SYMBOLS.task[card.status]}
-                </span>
-                <span className="kanban-card-id" style={{ color }}>
-                  {card.taskId}
-                </span>
-                <span className="kanban-card-title">{card.title}</span>
-                {card.failedAtStepId && (
-                  <span className="kanban-card-failed-step">
-                    @ {card.failedAtStepId}
+          </header>
+          <div className="kanban-column-cards">
+            {col.cards.map((card) => {
+              const isGoto = gotoIds.has(card.taskId);
+              return (
+                <article
+                  key={card.taskId}
+                  className={`kanban-card${isGoto ? " kanban-card--goto" : ""}`}
+                >
+                  <TaskStatusDot status={card.status} />
+                  <span className="kanban-card-id t-data">{card.taskId}</span>
+                  <span className="kanban-card-title t-body u-truncate">
+                    {card.title}
                   </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                  {card.failedAtStepId && (
+                    <span className="kanban-card-failed t-data">
+                      @{card.failedAtStepId}
+                    </span>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
       ))}
     </div>
   );

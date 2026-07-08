@@ -1,0 +1,54 @@
+/* StreamPanel — the machine-voice region. Faithful terminal pane, natively framed. */
+
+.stream-panel {
+  display: grid;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md) var(--sp-md);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.stream-panel--empty {
+  display: block;
+}
+
+.stream-panel__placeholder {
+  margin: 0;
+  color: var(--ink-tertiary);
+  max-width: 60ch;
+}
+
+.stream-panel__column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+
+.stream-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stream-panel__id {
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.stream-panel__title {
+  color: var(--ink-secondary);
+}
+
+.stream-panel__tail {
+  margin: 0;
+  max-height: 8.5rem;
+  overflow: auto;
+  padding: var(--sp-sm);
+  white-space: pre-wrap;
+  color: var(--ink-secondary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}

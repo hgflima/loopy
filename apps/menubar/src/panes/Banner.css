@@ -1,0 +1,39 @@
+/* Banner — full hairline + tint, never a side-stripe. */
+
+.banner {
+  --tint: var(--state-neutral-subtle);
+  --edge: var(--state-neutral);
+  margin: var(--sp-sm) var(--sp-md) 0;
+  padding: var(--sp-md);
+  background: var(--tint);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-md);
+}
+
+.banner--failed {
+  --tint: var(--state-failed-subtle);
+  --edge: var(--state-failed);
+}
+.banner--blocked {
+  --tint: var(--state-blocked-subtle);
+  --edge: var(--state-blocked);
+}
+
+.banner__headline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  color: var(--ink);
+}
+
+.banner__stderr {
+  margin: var(--sp-sm) 0 0;
+  max-height: 12rem;
+  overflow: auto;
+  padding: var(--sp-sm);
+  white-space: pre-wrap;
+  color: var(--ink-secondary);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
