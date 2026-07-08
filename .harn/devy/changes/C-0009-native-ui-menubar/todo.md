@@ -200,7 +200,7 @@
 
 ## Fase 5 — Streams + shell nativo (T-013; T-014 → T-015)
 
-- [ ] T-013: `StreamPanel` — uma coluna por task em `running`
+- [x] T-013: `StreamPanel` — uma coluna por task em `running`
     `src/panes/StreamPanel.tsx`: espelha a região Streams da TUI — **uma coluna por task
     em `running`** (tail via `streamTail` de `loopy/tui/view`); em `concurrency 1` colapsa
     numa coluna. **Sem** pin/seleção; nós do grafo e cards do Kanban não focam stream
