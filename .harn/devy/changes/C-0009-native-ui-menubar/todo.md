@@ -101,7 +101,7 @@
 
 ## Fase 2 — Scaffold + estado vivo (T-007 → T-008; T-009)
 
-- [ ] T-007: Scaffold do app Tauri (`apps/menubar`) — Vite + React 18 + xyflow + tauri api
+- [x] T-007: Scaffold do app Tauri (`apps/menubar`) — Vite + React 18 + xyflow + tauri api
     Workspace `apps/menubar`: `package.json` (Vite, React 18, `@xyflow/react`,
     `@tauri-apps/api` v2), `vite.config`, `tsconfig`, `src/main.tsx`+`src/App.tsx`
     (shell mínimo), `src-tauri/` (Cargo.toml, `tauri.conf.json`, `main.rs` mínimo com
