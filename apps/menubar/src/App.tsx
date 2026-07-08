@@ -3,6 +3,7 @@ import type { BridgeState } from "./state/store-bridge";
 import { ViewSwitcher } from "./panes/ViewSwitcher";
 import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
+import { ApprovalPrompt, headApproval } from "./panes/ApprovalPrompt";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
 const TICK_MS = 500;
@@ -11,11 +12,13 @@ const SEP = <span style={{ color: "#555" }}>|</span>;
 
 interface AppProps {
   state: BridgeState;
+  onApprovalDecision?: (requestId: string, approved: boolean) => void;
 }
 
-function App({ state }: AppProps) {
+function App({ state, onApprovalDecision }: AppProps) {
   const { store, ui } = state;
   const isStartFail = ui.sidecarFailure?.type === "start-fail";
+  const currentApproval = headApproval(ui);
 
   // Single tick counter for all running-task pulses (no timer per node).
   const [tick, setTick] = useState(0);
@@ -25,7 +28,7 @@ function App({ state }: AppProps) {
   }, []);
 
   return (
-    <main style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f0f23", color: "#ccc" }}>
+    <main style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f0f23", color: "#ccc", position: "relative" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 12px", borderBottom: "1px solid #1a1a2e", fontSize: 12 }}>
         <strong style={{ color: "#fff" }}>Loopy</strong>
         {SEP}
@@ -51,6 +54,13 @@ function App({ state }: AppProps) {
         </div>
       )}
       <StreamPanel store={store} />
+      {currentApproval && onApprovalDecision && (
+        <ApprovalPrompt
+          request={currentApproval}
+          queueSize={ui.pendingApprovals.length}
+          onDecision={onApprovalDecision}
+        />
+      )}
     </main>
   );
 }
