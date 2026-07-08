@@ -10,3 +10,4 @@ export {
 } from "./StatusIndicator";
 export { SegmentedControl, type Segment } from "./SegmentedControl";
 export { MarkdownStream, type MarkdownStreamProps } from "./MarkdownStream";
+export { StepDivider } from "./StepDivider";

@@ -18,10 +18,10 @@
  * exported for testing (AD-6).
  */
 
-import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import type { StoreState } from "loopy/tui/store";
 import { segmentsFor, type Transcript, type StreamSegment } from "../state/stream-history";
-import { StatusDot, MarkdownStream } from "../ui";
+import { StatusDot, MarkdownStream, StepDivider } from "../ui";
 import "./StreamPanel.css";
 
 // ---------------------------------------------------------------------------
@@ -75,18 +75,6 @@ export function visiblePanes(columns: StreamColumn[]): {
     overflow: columns.length - MAX_VISIBLE_PANES,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Step divider (hairline + centered pill)
-// ---------------------------------------------------------------------------
-
-const StepDivider = memo(function StepDivider({ label }: { readonly label: string }) {
-  return (
-    <div className="stream-panel__divider" aria-hidden="true">
-      <span className="stream-panel__divider-pill t-label">{label}</span>
-    </div>
-  );
-});
 
 // ---------------------------------------------------------------------------
 // StreamPane — one pane with auto-stick scroll

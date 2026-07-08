@@ -118,6 +118,10 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
               taskId={selectedTask.id}
               title={selectedTask.title}
               onClose={handleCloseDrawer}
+              description={selectedTask.description}
+              deps={selectedTask.deps}
+              tasks={store.tasks}
+              transcript={state.transcript}
             />
           )}
         </div>
