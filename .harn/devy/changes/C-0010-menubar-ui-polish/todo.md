@@ -165,7 +165,7 @@
     Deps: T-003, T-004, T-005, T-010
     Files: apps/menubar/src/kanban/CardDetail.tsx, apps/menubar/src/kanban/CardDetail.css, apps/menubar/src/App.tsx. Scope: M.
 
-- [ ] T-012: Gate no card — remove modal full-screen; resolve no CardDetail (#8, D6)
+- [x] T-012: Gate no card — remove modal full-screen; resolve no CardDetail (#8, D6)
     Remover o `ApprovalPrompt` full-screen (`inset:0`, backdrop `rgba(0,0,0,.7)`, índigo `#1a1a2e`) —
     **deixa de existir**. Extrair os helpers puros (`headApproval`/`escalationCost`/
     `formatApprovalPayload`) e embutir o gate **dentro** do `CardDetail`: Aprovar (magenta `--accent`)
