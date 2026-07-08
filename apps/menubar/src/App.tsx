@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { BridgeState } from "./state/store-bridge";
 import { DepsFlow } from "./graph/DepsFlow";
+import { StreamPanel } from "./panes/StreamPanel";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
 const TICK_MS = 500;
@@ -42,6 +43,7 @@ function App({ state }: AppProps) {
       {ui.pendingApprovals.length > 0 && (
         <p>Pending approvals: {ui.pendingApprovals.length}</p>
       )}
+      <StreamPanel store={store} />
     </main>
   );
 }
