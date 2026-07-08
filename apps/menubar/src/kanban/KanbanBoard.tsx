@@ -59,7 +59,7 @@ export function KanbanBoard({ store }: KanbanBoardProps) {
                 >
                   <TaskStatusDot status={card.status} />
                   <span className="kanban-card-id t-data">{card.taskId}</span>
-                  <span className="kanban-card-title t-body u-truncate">
+                  <span className="kanban-card-title t-body">
                     {card.title}
                   </span>
                   {card.failedAtStepId && (
