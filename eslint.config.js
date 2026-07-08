@@ -8,12 +8,15 @@ export default tseslint.config(
   {
     ignores: [
       "node_modules/",
-      "dist/",
+      "**/dist/",
       "coverage/",
       ".worktrees/",
       ".loopy/",
       // Pre-existing inputs / committed agent harness — not loopy source.
       ".claude/",
+      // Tauri Rust/build artifacts (apps/menubar)
+      "**/src-tauri/",
+      "**/target/",
     ],
   },
   ...tseslint.configs.recommended,
