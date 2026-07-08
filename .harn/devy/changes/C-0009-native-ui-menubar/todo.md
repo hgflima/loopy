@@ -24,7 +24,7 @@
 
 ## Fase 1 — Engine seams (T-002 ∥ T-003 ∥ T-004 ∥ T-005 → T-006)
 
-- [ ] T-002: Extrair `computeDagreLayout` puro (fonte única de layout; `layoutGraph` vira wrapper)
+- [x] T-002: Extrair `computeDagreLayout` puro (fonte única de layout; `layoutGraph` vira wrapper)
     Em `view.ts` (`layoutGraph` `:325-517`): extrair a construção dagre + snap +
     compactação vertical + montagem de arestas para `computeDagreLayout(edges, statusById, order): GraphGeometry`.
     `layoutGraph` passa a **delegar** a ele (wrapper fino, assinatura pública intacta).
