@@ -1,0 +1,28 @@
+/* StepDivider — hairline + centered pill between transcript segments. */
+
+.step-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin: var(--sp-md) 0;
+}
+
+.step-divider::before,
+.step-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.step-divider__pill {
+  flex-shrink: 0;
+  padding: 2px var(--sp-sm);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--ink-tertiary);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

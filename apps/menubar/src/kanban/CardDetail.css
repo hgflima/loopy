@@ -1,4 +1,8 @@
-/* CardDetail — drawer shell, right-side panel (D1). */
+/* CardDetail — drawer shell + content sections (D1, T-011).
+ *
+ * Zero hardcoded color/spacing — everything via design tokens.
+ * WCAG AA: status dots carry aria-labels; no color-only signaling.
+ */
 
 .card-detail {
   width: var(--drawer-w);
@@ -60,3 +64,36 @@
   overflow-y: auto;
   padding: var(--sp-md);
 }
+
+/* ---- Spacing between content sections --------------------------------- */
+
+.card-detail__body > * + * {
+  margin-top: var(--sp-md);
+}
+
+/* ---- Deps chips ------------------------------------------------------- */
+
+.card-detail__deps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+}
+
+.card-detail__dep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: 2px var(--sp-sm);
+  border-radius: var(--r-pill);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+/* ---- Log (persisted transcript) --------------------------------------- */
+
+.card-detail__log:not(:first-child) {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-md);
+}
+
