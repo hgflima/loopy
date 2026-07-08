@@ -1,15 +1,64 @@
-/* StreamPanel — the machine-voice region. Faithful terminal pane, natively framed. */
+/* StreamPanel — streaming region with fold (T-008).
+ *
+ * Height: var(--stream-h) expanded, var(--stream-fold-h) when folded.
+ * Never disappears — the fold bar is always visible.
+ * Zero hardcoded color/spacing — everything via tokens.
+ */
 
 .stream-panel {
-  display: grid;
-  gap: var(--sp-sm);
-  padding: var(--sp-sm) var(--sp-md) var(--sp-md);
+  display: flex;
+  flex-direction: column;
+  height: var(--stream-h);
+  min-height: var(--stream-fold-h);
   border-top: 1px solid var(--border);
   background: var(--surface);
+  overflow: hidden;
+  transition: height 0.2s ease;
 }
 
-.stream-panel--empty {
-  display: block;
+.stream-panel--folded {
+  height: var(--stream-fold-h);
+}
+
+/* ---- Fold bar — persistent thin bar, always visible -------------------- */
+
+.stream-panel__fold-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--stream-fold-h);
+  min-height: var(--stream-fold-h);
+  padding: 0 var(--sp-md);
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.stream-panel__fold-bar:hover {
+  background: var(--surface-elevated);
+}
+
+.stream-panel__chevron {
+  transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+  font-size: 0.75rem;
+}
+
+.stream-panel__chevron--open {
+  transform: rotate(0deg);
+}
+
+/* ---- Grid of panes ---------------------------------------------------- */
+
+.stream-panel__grid {
+  display: grid;
+  gap: var(--sp-sm);
+  padding: 0 var(--sp-md) var(--sp-md);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .stream-panel__placeholder {
@@ -22,14 +71,16 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 6px;
+  gap: var(--sp-xs);
+  overflow: hidden;
 }
 
 .stream-panel__header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-xs);
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .stream-panel__id {
@@ -43,7 +94,8 @@
 
 .stream-panel__tail {
   margin: 0;
-  max-height: 8.5rem;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: var(--sp-sm);
   white-space: pre-wrap;
@@ -51,4 +103,26 @@
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
+}
+
+/* ---- Overflow chip ----------------------------------------------------- */
+
+.stream-panel__chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  padding: var(--sp-xs) var(--sp-sm);
+  border-radius: var(--r-pill);
+  background: var(--state-running-subtle);
+  color: var(--state-running-ink);
+  white-space: nowrap;
+}
+
+/* ---- Reduced motion ---------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-panel,
+  .stream-panel__chevron {
+    transition: none;
+  }
 }
