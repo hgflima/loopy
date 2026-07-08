@@ -14,7 +14,19 @@
         "label": "main",
         "title": "Loopy",
         "width": 1024,
-        "height": 768
+        "height": 768,
+        "visible": false
+      },
+      {
+        "label": "popover",
+        "title": "Loopy",
+        "width": 320,
+        "height": 180,
+        "visible": false,
+        "decorations": false,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true
       }
     ]
   },
