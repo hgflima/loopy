@@ -109,7 +109,7 @@
 
 ## Fase 2 — Painel de streaming (T-008 → T-009)
 
-- [ ] T-008: StreamPanel — altura ~45% + fold p/ barra fina persistente + 1–4 panes + chip (#5, #10)
+- [x] T-008: StreamPanel — altura ~45% + fold p/ barra fina persistente + 1–4 panes + chip (#5, #10)
     Em `apps/menubar/src/panes/StreamPanel.{tsx,css}` (+ `App.css` p/ o slot de altura): o painel
     ocupa `var(--stream-h)` (~45%) da altura; **fold** (estado só-de-sessão, OQ3/D4) colapsa para
     uma barra fina persistente `var(--stream-fold-h)` (~28px) mostrando "▸ Streams · N rodando" +
