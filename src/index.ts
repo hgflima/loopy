@@ -21,11 +21,11 @@
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
 import { realpathSync, statSync } from "node:fs";
-import { createRequire } from "node:module";
 import { basename, normalize, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import pkg from "../package.json" with { type: "json" };
 import { openAgent } from "./acp/agent";
 import { acpTrafficSummary, agentChunkText } from "./acp/client";
 import {
@@ -95,14 +95,14 @@ import type {
 } from "./types";
 
 /**
- * Single source of truth: read the version from `package.json` at runtime rather
- * than hardcoding it (a hardcoded string silently drifts every release). Works in
- * both `dist/index.js` and `src/index.ts` (tsx) since each sits one level below
- * the package root, so `../package.json` resolves the same way.
+ * Single source of truth: the version comes from `package.json` rather than a
+ * hardcoded string (which silently drifts every release). A static JSON import
+ * is embedded by every bundler we ship through — tsx reads it directly, tsup
+ * inlines it into `dist/`, and `bun --compile` embeds it into the sidecar's
+ * virtual filesystem (a runtime `createRequire("../package.json")` cannot find
+ * it there, since the file does not sit beside the single-file binary).
  */
-const VERSION = (
-  createRequire(import.meta.url)("../package.json") as { version: string }
-).version;
+const VERSION = (pkg as { version: string }).version;
 
 /** Raw output sink (no implicit newline), so commander and our prints share it. */
 export interface RunIO {
@@ -813,6 +813,11 @@ export async function run(
 
 /** `true` when this module is the process entrypoint (not an import). */
 function isEntrypoint(): boolean {
+  // A `bun --compile` sidecar lives in the virtual `$bunfs` while argv[1] is the
+  // on-disk binary, so the realpath comparison below never matches. `import.meta.main`
+  // is the reliable entrypoint signal there (and on Node ≥24); it stays false when
+  // the module is imported (tests), so it only ever adds the missing true case.
+  if ((import.meta as ImportMeta & { main?: boolean }).main) return true;
   const invoked = process.argv[1];
   if (!invoked) return false;
   try {

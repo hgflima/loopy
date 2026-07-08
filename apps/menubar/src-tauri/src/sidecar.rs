@@ -22,23 +22,60 @@ fn resolve_sidecar_path() -> Result<PathBuf, String> {
         .parent()
         .ok_or_else(|| "Executable has no parent directory".to_string())?;
 
-    // externalBin "bin/loopy" → binary at <exe_dir>/bin/loopy-<triple>
-    let with_prefix = dir.join(format!("bin/loopy-{triple}"));
-    if with_prefix.exists() {
-        return Ok(with_prefix);
+    // The bundled `.app` and `tauri dev` name the sidecar differently. When
+    // `tauri build` bundles `externalBin: ["bin/loopy"]` it STRIPS both the
+    // `bin/` prefix and the `-<triple>` suffix, placing it flat beside the main
+    // executable as `Contents/MacOS/loopy`. `tauri dev` keeps the triple. Try
+    // every layout and take the first that exists.
+    let candidates = [
+        dir.join("loopy"),                       // bundled .app (Contents/MacOS/loopy)
+        dir.join(format!("loopy-{triple}")),     // dev / flat, triple kept
+        dir.join(format!("bin/loopy-{triple}")), // dev with bin/ prefix
+        dir.join("bin/loopy"),                   // flat bin/, triple stripped
+    ];
+
+    for candidate in &candidates {
+        if candidate.exists() {
+            return Ok(candidate.clone());
+        }
     }
 
-    // Fallback: flat layout (binary next to main executable)
-    let flat = dir.join(format!("loopy-{triple}"));
-    if flat.exists() {
-        return Ok(flat);
-    }
+    let searched = candidates
+        .iter()
+        .map(|c| format!("  {}", c.display()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Err(format!("Sidecar binary not found. Searched:\n{searched}"))
+}
 
-    Err(format!(
-        "Sidecar binary not found. Searched:\n  {}\n  {}",
-        with_prefix.display(),
-        flat.display()
-    ))
+/// Resolve the user's login-shell `PATH`.
+///
+/// A macOS `.app` launched from Finder/the menubar tray does **not** inherit
+/// the interactive shell's `PATH` — it gets the minimal launchd default
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`). Version managers (nvm), `~/.local/bin`
+/// and `~/.bun/bin` live outside that, so the sidecar can't spawn the ACP
+/// agent adapter (`npx …`) and the Run dies before `run_started`.
+///
+/// We recover the real `PATH` the way `fix-path-for-macos` does: ask the login
+/// shell (`$SHELL -ilc 'echo $PATH'`). Interactive (`-i`) is required so files
+/// like `.zshrc`, where nvm usually lives, are sourced. Best-effort: returns
+/// `None` on any failure and the caller falls back to the inherited `PATH`.
+fn login_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    let output = Command::new(&shell)
+        .args(["-ilc", "echo $PATH"])
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -144,11 +181,22 @@ impl SidecarState {
 
         let sidecar_bin = resolve_sidecar_path()?;
 
-        let mut child = Command::new(sidecar_bin)
+        let mut command = Command::new(sidecar_bin);
+        command
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        // Recover the login-shell PATH so the sidecar (and the ACP agent
+        // adapters it spawns via `npx`/`node`) resolve inside a `.app`, which
+        // otherwise runs with launchd's minimal PATH. The sidecar inherits
+        // this env and passes it down to the adapter processes.
+        if let Some(path) = login_shell_path() {
+            command.env("PATH", path);
+        }
+
+        let mut child = command
             .spawn()
             .map_err(|e| format!("Failed to spawn sidecar: {e}"))?;
 

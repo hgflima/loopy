@@ -16,6 +16,8 @@ const IS_TAURI = isTauri();
 
 interface LaunchConfigProps {
   onStart: (yesFlag: boolean) => void;
+  /** True when the sidecar exited before `run_started` — re-enable the button for a retry. */
+  startFailed?: boolean;
 }
 
 interface PersistedConfig {
@@ -25,7 +27,7 @@ interface PersistedConfig {
   verbose: boolean;
 }
 
-export function LaunchConfig({ onStart }: LaunchConfigProps) {
+export function LaunchConfig({ onStart, startFailed }: LaunchConfigProps) {
   const [dir, setDir] = useState("");
   const [yes, setYes] = useState(false);
   const [taskId, setTaskId] = useState("");
@@ -36,6 +38,13 @@ export function LaunchConfig({ onStart }: LaunchConfigProps) {
   const trimmedDir = dir.trim();
   const trimmedTaskId = taskId.trim();
   const disabled = !trimmedDir || starting;
+
+  // A sidecar start-fail leaves `starting` stuck true (the component never
+  // unmounts because runStatus stays "idle"). Re-enable the button so the
+  // Banner's error is actionable — the user can fix and retry.
+  useEffect(() => {
+    if (startFailed) setStarting(false);
+  }, [startFailed]);
 
   // Load persisted config on mount
   useEffect(() => {

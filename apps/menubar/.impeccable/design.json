@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-08T00:00:00.000Z",
+  "title": "Design System: Loopy",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Loopy Magenta",
+        "canonical": "oklch(0.55 0.21 352)",
+        "tonalRamp": ["oklch(0.20 0.10 352)", "oklch(0.28 0.14 352)", "oklch(0.36 0.18 352)", "oklch(0.45 0.20 352)", "oklch(0.55 0.21 352)", "oklch(0.66 0.18 352)", "oklch(0.80 0.10 352)", "oklch(0.95 0.03 352)"]
+      },
+      "state-running": {
+        "role": "secondary",
+        "displayName": "Running Cyan",
+        "canonical": "oklch(0.60 0.12 210)",
+        "tonalRamp": ["oklch(0.22 0.05 210)", "oklch(0.32 0.08 210)", "oklch(0.42 0.10 210)", "oklch(0.50 0.13 210)", "oklch(0.60 0.12 210)", "oklch(0.72 0.10 210)", "oklch(0.85 0.06 210)", "oklch(0.95 0.02 210)"]
+      },
+      "state-done": {
+        "role": "secondary",
+        "displayName": "Done Green",
+        "canonical": "oklch(0.60 0.14 150)",
+        "tonalRamp": ["oklch(0.22 0.06 150)", "oklch(0.32 0.09 150)", "oklch(0.42 0.12 150)", "oklch(0.49 0.14 150)", "oklch(0.60 0.14 150)", "oklch(0.72 0.11 150)", "oklch(0.85 0.07 150)", "oklch(0.95 0.03 150)"]
+      },
+      "state-blocked": {
+        "role": "secondary",
+        "displayName": "Blocked/Paused Amber",
+        "canonical": "oklch(0.74 0.14 75)",
+        "tonalRamp": ["oklch(0.28 0.06 75)", "oklch(0.40 0.09 75)", "oklch(0.52 0.11 75)", "oklch(0.63 0.13 75)", "oklch(0.74 0.14 75)", "oklch(0.83 0.11 75)", "oklch(0.90 0.07 75)", "oklch(0.96 0.03 75)"]
+      },
+      "state-failed": {
+        "role": "secondary",
+        "displayName": "Failed Red-Orange",
+        "canonical": "oklch(0.58 0.20 28)",
+        "tonalRamp": ["oklch(0.22 0.09 28)", "oklch(0.32 0.13 28)", "oklch(0.42 0.17 28)", "oklch(0.52 0.20 28)", "oklch(0.58 0.20 28)", "oklch(0.70 0.16 28)", "oklch(0.84 0.09 28)", "oklch(0.95 0.03 28)"]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "oklch(0.22 0.005 260)",
+        "tonalRamp": ["oklch(0.20 0.004 260)", "oklch(0.24 0.004 260)", "oklch(0.32 0.005 260)", "oklch(0.44 0.006 260)", "oklch(0.56 0.006 260)", "oklch(0.84 0.003 260)", "oklch(0.975 0.001 260)", "oklch(0.994 0 0)"]
+      }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Largest UI text — launch heading, empty-state titles, section headers. No hero." },
+      "title": { "displayName": "Title", "purpose": "Card titles, panel headers, the approval question." },
+      "body": { "displayName": "Body", "purpose": "Default text, 13px macOS base; prose capped 65–75ch." },
+      "label": { "displayName": "Label", "purpose": "Tracked small-caps for standardized system labels (column headers, meta keys) — never an eyebrow." },
+      "data": { "displayName": "Data / Mono", "purpose": "Verbatim machine output — task IDs, agent streams, log tails, check names." }
+    },
+    "shadows": [
+      { "name": "shadow-sm", "value": "0 1px 2px rgba(0,0,0,0.08)", "purpose": "Resting cards, subtle separation from panel (light theme)." },
+      { "name": "shadow-pop", "value": "0 8px 32px rgba(0,0,0,0.16)", "purpose": "Tray popover and native menus, with a 1px hairline border." },
+      { "name": "shadow-gate", "value": "0 4px 24px rgba(0,0,0,0.14)", "purpose": "The approval prompt — lifts the one decision that needs a human." }
+    ],
+    "motion": [
+      { "name": "ease-out-quint", "value": "cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "Default easing for all state transitions — no bounce, no elastic." },
+      { "name": "dur-fast", "value": "120ms", "purpose": "Hover/focus feedback, stream chunk fade-in." },
+      { "name": "dur-base", "value": "180ms", "purpose": "State-change transitions." },
+      { "name": "dur-slow", "value": "240ms", "purpose": "Kanban column-move slide, reveals." },
+      { "name": "fix-loop-pulse", "value": "2000ms accent ring pulse", "purpose": "The goto/fix-loop reveal; reduced-motion → static ring." }
+    ],
+    "breakpoints": [
+      { "name": "popover", "value": "compact tray glance" },
+      { "name": "window", "value": "full dashboard" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The primary action of a surface — Start run, Approve. Loopy magenta fill.",
+      "html": "<button class=\"ds-btn-primary\">Approve</button>",
+      "css": ".ds-btn-primary { background: oklch(0.55 0.21 352); color: oklch(1 0 0); font: 400 13px/1.5 -apple-system, 'SF Pro Text', system-ui, sans-serif; padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; transition: background 120ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-primary:hover { background: oklch(0.50 0.21 352); } .ds-btn-primary:active { background: oklch(0.45 0.20 352); } .ds-btn-primary:focus-visible { outline: 2px solid oklch(0.55 0.21 352); outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Neutral action — Cancel, Stop. Surface fill with hairline border.",
+      "html": "<button class=\"ds-btn-secondary\">Stop</button>",
+      "css": ".ds-btn-secondary { background: oklch(0.975 0.001 260); color: oklch(0.22 0.005 260); font: 400 13px/1.5 -apple-system, 'SF Pro Text', system-ui, sans-serif; padding: 6px 14px; border: 1px solid oklch(0.84 0.003 260); border-radius: 6px; cursor: pointer; transition: background 120ms cubic-bezier(0.22,1,0.36,1); } .ds-btn-secondary:hover { background: oklch(0.94 0.002 260); } .ds-btn-secondary:focus-visible { outline: 2px solid oklch(0.55 0.21 352); outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Pill — Running",
+      "kind": "chip",
+      "refersTo": "status-pill-running",
+      "description": "State indicator — a status dot plus label, tinted by the state hue. Never color-only.",
+      "html": "<span class=\"ds-status-running\"><span class=\"ds-dot\"></span>Running</span>",
+      "css": ".ds-status-running { display: inline-flex; align-items: center; gap: 6px; background: oklch(0.95 0.02 210); color: oklch(0.50 0.13 210); font: 590 11px/1.2 -apple-system, system-ui, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; } .ds-status-running .ds-dot { width: 8px; height: 8px; border-radius: 50%; background: oklch(0.60 0.12 210); flex-shrink: 0; }"
+    },
+    {
+      "name": "Kanban Card",
+      "kind": "card",
+      "refersTo": "kanban-card",
+      "description": "A task on the Backlog→Steps→Fim board. Mono ID, sans title, leading status dot.",
+      "html": "<div class=\"ds-kanban-card\"><span class=\"ds-dot\"></span><span class=\"ds-id\">T-001</span><span class=\"ds-title\">Transport layer</span></div>",
+      "css": ".ds-kanban-card { display: flex; align-items: center; gap: 8px; background: oklch(1 0 0); border-radius: 8px; padding: 8px 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); transition: transform 240ms cubic-bezier(0.22,1,0.36,1), box-shadow 120ms; } .ds-kanban-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); } .ds-kanban-card .ds-dot { width: 8px; height: 8px; border-radius: 50%; background: oklch(0.60 0.12 210); flex-shrink: 0; } .ds-kanban-card .ds-id { font: 450 12px/1.45 ui-monospace, 'SF Mono', Menlo, monospace; color: oklch(0.22 0.005 260); font-weight: 600; } .ds-kanban-card .ds-title { font: 400 13px/1.35 -apple-system, system-ui, sans-serif; color: oklch(0.44 0.006 260); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }"
+    },
+    {
+      "name": "Approval Prompt",
+      "kind": "custom",
+      "refersTo": "approval-prompt",
+      "description": "The signature human gate — the run needs a decision. Lifts on shadow-gate with a thin accent top edge.",
+      "html": "<div class=\"ds-approval\"><div class=\"ds-approval-q\">Merge T-001 into main?</div><div class=\"ds-approval-actions\"><button class=\"ds-btn-primary\">Approve</button><button class=\"ds-btn-secondary\">Reject</button></div></div>",
+      "css": ".ds-approval { background: oklch(1 0 0); border-radius: 10px; border-top: 2px solid oklch(0.55 0.21 352); padding: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.14); max-width: 360px; } .ds-approval-q { font: 600 15px/1.35 -apple-system, system-ui, sans-serif; letter-spacing: -0.005em; color: oklch(0.22 0.005 260); margin-bottom: 14px; } .ds-approval-actions { display: flex; gap: 8px; }"
+    },
+    {
+      "name": "View Switcher",
+      "kind": "nav",
+      "refersTo": "view-switcher",
+      "description": "Native segmented control — Kanban / Graph / Streams. Default is Kanban.",
+      "html": "<div class=\"ds-segmented\"><button class=\"ds-seg ds-seg--on\">Kanban</button><button class=\"ds-seg\">Graph</button><button class=\"ds-seg\">Streams</button></div>",
+      "css": ".ds-segmented { display: inline-flex; gap: 2px; background: oklch(0.94 0.002 260); border-radius: 8px; padding: 2px; } .ds-seg { border: none; background: transparent; color: oklch(0.44 0.006 260); font: 500 13px/1.35 -apple-system, system-ui, sans-serif; padding: 4px 12px; border-radius: 6px; cursor: pointer; transition: background 120ms, color 120ms; } .ds-seg:hover { color: oklch(0.22 0.005 260); } .ds-seg--on { background: oklch(1 0 0); color: oklch(0.22 0.005 260); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Mission Control Window",
+    "overview": "Loopy is a window onto a process that runs without you. A dev fires a run and walks away; an agent implements, verifies, simplifies, audits, and asks for a human hand at the merge. This interface is the calm, honest pane of glass they glance at from the menu bar to know what it's doing, whether it needs them, and that they're still in command. It is built on a hard split: neutral chrome, semantic color. The surface is native macOS neutral, light or dark; color is spent almost entirely on meaning — the loopy-signature magenta for what's interactive and what needs you, and a small standardized vocabulary of state hues (running, done, blocked, failed) that appear only as status dots and pills.",
+    "keyCharacteristics": [
+      "Neutral native surfaces (light + dark, system-following); color reserved for meaning.",
+      "One signature accent (loopy magenta) for interaction, selection, and the approval beacon.",
+      "A standardized semantic state palette, used only as indicators — never chrome.",
+      "Sans-first native typography; monospace scoped narrowly to verbatim machine output.",
+      "Three reading altitudes: tray badge → popover glance → full dashboard.",
+      "Motion only where it reports a real state change."
+    ],
+    "rules": [
+      { "name": "The Meaning-Only Rule", "body": "Color is spent only on meaning. If a surface, border, or piece of chrome is colored for looks rather than to signal an interactive target or a state, it is wrong.", "section": "colors" },
+      { "name": "The Accent-Means-You Rule", "body": "The magenta accent appears only where the dev is meant to look or act: interactive controls, the current selection, and a pending approval. Its rarity is what makes an approval impossible to miss.", "section": "colors" },
+      { "name": "The Machine-Voice Rule", "body": "Monospace is reserved for text a machine emitted — IDs, streams, logs, check output. Everything a human reads is sans.", "section": "typography" },
+      { "name": "The Flat-Until-It-Floats Rule", "body": "Surfaces are flat at rest. A shadow appears only when an element genuinely floats above the plane (popover, menu, gate) — never to decorate a card that isn't going anywhere.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep chrome neutral and spend color on meaning — magenta for interaction/selection/approval, the four state hues for status only.",
+      "Do render the loopy magenta on approvals so the human gate is impossible to miss.",
+      "Do follow the system appearance: full light and dark themes, native-neutral both.",
+      "Do pair every status color with a label or fixed position — never hue alone.",
+      "Do hold monospace to verbatim machine output; everything a person reads is sans.",
+      "Do hit WCAG AA in both themes — use the -ink state variants for colored text.",
+      "Do give motion a job: 150–250ms, ease-out, prefers-reduced-motion honored everywhere."
+    ],
+    "donts": [
+      "Don't mimic the terminal — no índigo-hacker #0f0f23 background, no monospace-everything, no magenta/cyan terminal color-scheme as chrome, no ASCII glyphs as decoration.",
+      "Don't build an 'AI SaaS' dashboard — no infinite identical card grids, no giant gradient hero-metric, no decorative glassmorphism, no tiny tracked eyebrow above every section.",
+      "Don't overload like Grafana/Datadog — no wall of twenty competing panels, no color without semantics.",
+      "Don't turn it into a toy — no confetti, no cute mascot, no choreographed page-load sequences, no decorative motion.",
+      "Don't use a colored side-stripe border on cards, list items, or the approval prompt — use a full hairline, a tint, a leading status dot, or the thin accent top-edge.",
+      "Don't use gradient text or any decorative gradient. Emphasis comes from weight and size.",
+      "Don't let the failed red-orange drift toward the magenta hue — keep failed at ~28° so 'error' never reads as 'interactive.'",
+      "Don't ship a component with half its states."
+    ]
+  }
+}
