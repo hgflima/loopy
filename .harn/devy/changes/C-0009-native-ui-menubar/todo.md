@@ -280,7 +280,7 @@
     Deps: T-009, T-008
     Files: apps/menubar/src/panes/Banner.tsx, apps/menubar/src/App.tsx, apps/menubar/src/state/store-bridge.ts, testes. Scope: M.
 
-- [ ] T-019: `bun --compile` sidecar + `externalBin` + `tauri build` → `.app` sem Node
+- [x] T-019: `bun --compile` sidecar + `externalBin` + `tauri build` → `.app` sem Node
     Script `build:sidecar` (`bun build --compile` → `src-tauri/bin/loopy-<target-triple>`,
     gitignored) + `externalBin` no `tauri.conf.json`; `build` = `build:sidecar && tauri build`
     → `.app`/`.dmg`. Quit com Run ativo (Cmd+Q / menu do tray) **pede confirmação** antes
