@@ -39,7 +39,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/tokens.css. Scope: XS.
 
-- [ ] T-003: Transport estendido — `task_registered` carrega `description` + `deps` (motor)
+- [x] T-003: Transport estendido — `task_registered` carrega `description` + `deps` (motor)
     ADITIVO e gated por `--emit-events` (AD-1). Em `src/tui/store.ts`: o evento `task_registered`
     ganha `description?: string` e `deps?: readonly string[]`; `TaskState` ganha os mesmos campos
     (opcionais); o `reduce` (switch **exaustivo**, sem `default`) os grava no `task_registered`.
