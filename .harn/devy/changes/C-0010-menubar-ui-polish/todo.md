@@ -10,7 +10,7 @@
 
 ## Fase 0 — Fundações (T-001 ∥ T-002 ∥ T-003 ∥ T-004 ∥ T-005 ∥ T-006)
 
-- [ ] T-001: Marca & tray oficiais (app icon + tray template, claro/escuro)
+- [x] T-001: Marca & tray oficiais (app icon + tray template, claro/escuro)
     Substituir os placeholders de `apps/menubar/src-tauri/icons/` pelos assets de marca de
     `.harn/design/logo/loopy-brand/` (read-only): o `AppIcon.iconset`/`AppIcon.icns` viram o
     `icon.icns` + os PNGs (`32x32`, `128x128`, `128x128@2x`, `icon.png`) a partir de
