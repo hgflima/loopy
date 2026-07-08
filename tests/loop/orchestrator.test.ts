@@ -1176,24 +1176,29 @@ describe("emit seam (C-0007 T-004)", () => {
 
     // edges_set first (empty for no deps)
     expect(events[0]).toEqual({ type: "edges_set", edges: [] });
-    // task_registered
+    // pipeline_declared (C-0009 T-003)
     expect(events[1]).toEqual({
+      type: "pipeline_declared",
+      steps: [{ id: "s1", type: "shell" }],
+    });
+    // task_registered
+    expect(events[2]).toEqual({
       type: "task_registered",
       taskId: "A",
       title: "Task A",
       status: "pending",
     });
     // task_started
-    expect(events[2]).toEqual({ type: "task_started", taskId: "A" });
+    expect(events[3]).toEqual({ type: "task_started", taskId: "A" });
     // step_started
-    expect(events[3]).toEqual({
+    expect(events[4]).toEqual({
       type: "step_started",
       taskId: "A",
       stepId: "s1",
       stepType: "shell",
     });
     // step_finished
-    expect(events[4]).toEqual({
+    expect(events[5]).toEqual({
       type: "step_finished",
       taskId: "A",
       stepId: "s1",
@@ -1201,7 +1206,7 @@ describe("emit seam (C-0007 T-004)", () => {
       reason: undefined,
     });
     // task_finished
-    expect(events[5]).toEqual({
+    expect(events[6]).toEqual({
       type: "task_finished",
       taskId: "A",
       status: "done",

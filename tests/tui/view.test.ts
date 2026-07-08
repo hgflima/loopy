@@ -3,6 +3,7 @@ import {
   attemptLabel,
   checkText,
   COLORS,
+  computeDagreLayout,
   layoutGraph,
   nodeLabel,
   prefixAgentLines,
@@ -508,5 +509,91 @@ describe("renderGraph", () => {
     const r1 = renderGraph(geo, statuses, 0, panel);
     const r2 = renderGraph(geo, statuses, 0, panel);
     expect(r1).toEqual(r2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeDagreLayout — pure extraction (T-002, AD-6)
+// Golden byte-identical tests: computeDagreLayout ≡ layoutGraph
+// ---------------------------------------------------------------------------
+
+describe("computeDagreLayout", () => {
+  // Scenario fixtures shared across golden + direct-call tests
+  const diamond = {
+    edges: [["A", "B"], ["A", "C"], ["B", "D"], ["C", "D"]] as [string, string][],
+    statuses: pendingMap("A", "B", "C", "D"),
+    order: ["A", "B", "C", "D"],
+  };
+
+  const chain = {
+    edges: [["X", "Y"], ["Y", "Z"]] as [string, string][],
+    statuses: pendingMap("X", "Y", "Z"),
+    order: ["X", "Y", "Z"],
+  };
+
+  const isolated = {
+    edges: [] as [string, string][],
+    statuses: pendingMap("Solo"),
+    order: ["Solo"],
+  };
+
+  // --- Golden byte-identical tests ---
+
+  describe("golden byte-identical: computeDagreLayout ≡ layoutGraph", () => {
+    it("diamond A→{B,C}→D", () => {
+      const fromLayout = layoutGraph(diamond.edges, diamond.statuses, diamond.order);
+      const fromCompute = computeDagreLayout(diamond.edges, diamond.statuses, diamond.order);
+      expect(fromCompute).toEqual(fromLayout);
+    });
+
+    it("linear chain X→Y→Z", () => {
+      const fromLayout = layoutGraph(chain.edges, chain.statuses, chain.order);
+      const fromCompute = computeDagreLayout(chain.edges, chain.statuses, chain.order);
+      expect(fromCompute).toEqual(fromLayout);
+    });
+
+    it("isolated node", () => {
+      const fromLayout = layoutGraph(isolated.edges, isolated.statuses, isolated.order);
+      const fromCompute = computeDagreLayout(isolated.edges, isolated.statuses, isolated.order);
+      expect(fromCompute).toEqual(fromLayout);
+    });
+
+    it("empty graph", () => {
+      const fromLayout = layoutGraph([], new Map(), []);
+      const fromCompute = computeDagreLayout([], new Map(), []);
+      expect(fromCompute).toEqual(fromLayout);
+    });
+  });
+
+  // --- computeDagreLayout callable directly and deterministic ---
+
+  it("is callable directly and returns valid GraphGeometry", () => {
+    const geo = computeDagreLayout(diamond.edges, diamond.statuses, diamond.order);
+    expect(geo.nodes.length).toBe(4);
+    expect(geo.edges.length).toBeGreaterThan(0);
+    expect(geo.width).toBeGreaterThan(0);
+    expect(geo.height).toBeGreaterThan(0);
+  });
+
+  it("is deterministic — identical inputs produce identical output", () => {
+    const a = computeDagreLayout(diamond.edges, diamond.statuses, diamond.order);
+    const b = computeDagreLayout(diamond.edges, diamond.statuses, diamond.order);
+    expect(a).toEqual(b);
+  });
+
+  it("is pure — no side effects on inputs", () => {
+    const edges: [string, string][] = [["A", "B"]];
+    const statuses = new Map<string, TaskStatus>([["A", "pending"], ["B", "done"]]);
+    const order = ["A", "B"];
+
+    const edgesCopy = [...edges];
+    const statusesCopy = new Map(statuses);
+    const orderCopy = [...order];
+
+    computeDagreLayout(edges, statuses, order);
+
+    expect(edges).toEqual(edgesCopy);
+    expect(statuses).toEqual(statusesCopy);
+    expect(order).toEqual(orderCopy);
   });
 });
