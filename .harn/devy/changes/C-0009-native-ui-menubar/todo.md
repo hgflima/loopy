@@ -65,7 +65,7 @@
     Deps: nenhuma
     Files: src/tui/transport.ts (novo), src/tui/transport.test.ts, docs/adrs/0007-*.md. Scope: M.
 
-- [ ] T-005: Aprovação via stdin — variante `UiPort` (`approval_requested`→`approval_decision`)
+- [x] T-005: Aprovação via stdin — variante `UiPort` (`approval_requested`→`approval_decision`)
     Em `approval.ts`: nova fábrica `createStdinApproval({ emit, input })` que implementa
     `UiPort.requestApproval(prompt)` emitindo um control `approval_requested{requestId,...}`
     (via `emit`) e resolvendo quando chega a linha `approval_decision{requestId,approved}`
