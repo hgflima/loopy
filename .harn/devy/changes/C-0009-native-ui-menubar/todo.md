@@ -24,7 +24,7 @@
 
 ## Fase 1 — Engine seams (T-002 ∥ T-003 ∥ T-004 ∥ T-005 → T-006)
 
-- [ ] T-002: Extrair `computeDagreLayout` puro (fonte única de layout; `layoutGraph` vira wrapper)
+- [x] T-002: Extrair `computeDagreLayout` puro (fonte única de layout; `layoutGraph` vira wrapper)
     Em `view.ts` (`layoutGraph` `:325-517`): extrair a construção dagre + snap +
     compactação vertical + montagem de arestas para `computeDagreLayout(edges, statusById, order): GraphGeometry`.
     `layoutGraph` passa a **delegar** a ele (wrapper fino, assinatura pública intacta).
@@ -51,7 +51,7 @@
     Deps: nenhuma
     Files: src/tui/store.ts, src/loop/orchestrator.ts, testes. Scope: M.
 
-- [ ] T-004: `tui/transport.ts` — `createEventTransport(sink)` NDJSON duplex + ADR-0007
+- [x] T-004: `tui/transport.ts` — `createEventTransport(sink)` NDJSON duplex + ADR-0007
     NOVO módulo puro (sem React): serializa cada `StoreEvent` + os frames **control**
     (`run_started{...}`, `run_finished{result}`, `approval_requested{requestId,taskId,stepId,summary}`)
     como **uma linha NDJSON** no `sink` (best-effort — engole exceção, **nunca lança**,
@@ -65,7 +65,7 @@
     Deps: nenhuma
     Files: src/tui/transport.ts (novo), src/tui/transport.test.ts, docs/adrs/0007-*.md. Scope: M.
 
-- [ ] T-005: Aprovação via stdin — variante `UiPort` (`approval_requested`→`approval_decision`)
+- [x] T-005: Aprovação via stdin — variante `UiPort` (`approval_requested`→`approval_decision`)
     Em `approval.ts`: nova fábrica `createStdinApproval({ emit, input })` que implementa
     `UiPort.requestApproval(prompt)` emitindo um control `approval_requested{requestId,...}`
     (via `emit`) e resolvendo quando chega a linha `approval_decision{requestId,approved}`

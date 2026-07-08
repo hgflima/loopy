@@ -301,7 +301,8 @@ function overlapsNode(
 }
 
 // ---------------------------------------------------------------------------
-// layoutGraph — dagre ➜ cell-snapped GraphGeometry (T-003, AD-6)
+// computeDagreLayout — dagre ➜ cell-snapped GraphGeometry (T-002, AD-6)
+// Pure, renderer-agnostic. Shared by TUI (Ink) and Native UI (React Flow).
 // ---------------------------------------------------------------------------
 
 /**
@@ -316,13 +317,15 @@ const MAX_EMPTY_ROWS = 3;
 
 /**
  * Build a DAG layout using dagre (`rankdir:"LR"`) and snap all positions to
- * integer cell coordinates. Pure — no I/O, no React.
+ * integer cell coordinates. Pure — no I/O, no React, renderer-agnostic.
+ * Single source of layout geometry: both the TUI ({@link layoutGraph}) and the
+ * Native UI consume this function directly (AD-6, T-002).
  *
  * @param edges    Dependency edges `[dep, dependent]` (from `StoreState.edges`).
  * @param statusById  Task status by id (for glyph → node width).
  * @param order    Backlog order (for within-rank tie-breaking).
  */
-export function layoutGraph(
+export function computeDagreLayout(
   edges: readonly [string, string][],
   statusById: ReadonlyMap<string, TaskStatus>,
   order: readonly string[],
@@ -514,6 +517,24 @@ export function layoutGraph(
   }
 
   return { nodes, edges: edgePaths, width: maxCol, height: maxRow };
+}
+
+// ---------------------------------------------------------------------------
+// layoutGraph — thin wrapper over computeDagreLayout (T-003, AD-6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a DAG layout using dagre and snap to cell coordinates.
+ * Thin wrapper — delegates entirely to {@link computeDagreLayout}, which is
+ * the single source of layout geometry (T-002). Kept for backward
+ * compatibility with existing call sites.
+ */
+export function layoutGraph(
+  edges: readonly [string, string][],
+  statusById: ReadonlyMap<string, TaskStatus>,
+  order: readonly string[],
+): GraphGeometry {
+  return computeDagreLayout(edges, statusById, order);
 }
 
 // ---------------------------------------------------------------------------

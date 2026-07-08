@@ -170,3 +170,83 @@ export function createApprovalController(): ApprovalController {
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// The stdin/stdout transport (Native UI / --emit-events)
+// ---------------------------------------------------------------------------
+
+/** Parsed `approval_decision` command received via stdin (NDJSON). */
+export interface ApprovalDecision {
+  readonly requestId: string;
+  readonly approved: boolean;
+}
+
+/**
+ * Parse a raw NDJSON line as an `approval_decision` command. Returns `null`
+ * when the line is malformed or not an `approval_decision` — the caller
+ * silently ignores it (orphan/unknown commands are a no-op).
+ */
+export function parseApprovalDecision(line: string): ApprovalDecision | null {
+  try {
+    const obj = JSON.parse(line);
+    if (
+      typeof obj === "object" &&
+      obj !== null &&
+      obj.type === "approval_decision" &&
+      typeof obj.requestId === "string" &&
+      typeof obj.approved === "boolean"
+    ) {
+      return { requestId: obj.requestId, approved: obj.approved };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Control frame emitted on stdout when a gate needs a human decision. */
+export interface ApprovalRequestedControl {
+  readonly type: "approval_requested";
+  readonly requestId: string;
+  readonly summary: string;
+}
+
+/** Options for {@link createStdinApproval}. */
+export interface StdinApprovalOptions {
+  /** Emit a control frame (the caller serializes + sends to stdout). */
+  readonly emit: (control: ApprovalRequestedControl) => void;
+  /** Readable stream carrying NDJSON commands (typically `process.stdin`). */
+  readonly input: NodeJS.ReadableStream;
+}
+
+/**
+ * The **stdin/stdout** {@link UiPort}: emits `approval_requested` controls via
+ * `emit` and resolves when the matching `approval_decision` arrives on `input`.
+ * FIFO by `requestId` — mirrors the {@link ApprovalController} Ink transport.
+ * Orphan or malformed decisions are silently ignored.
+ */
+export function createStdinApproval(options: StdinApprovalOptions): UiPort {
+  const { emit, input } = options;
+  const pending = new Map<string, (approved: boolean) => void>();
+  let counter = 0;
+
+  const rl = createInterface({ input });
+  rl.on("line", (line) => {
+    const decision = parseApprovalDecision(line);
+    if (!decision) return;
+    const resolver = pending.get(decision.requestId);
+    if (!resolver) return;
+    pending.delete(decision.requestId);
+    resolver(decision.approved);
+  });
+
+  return {
+    requestApproval(prompt) {
+      return new Promise<boolean>((resolve) => {
+        const requestId = String(++counter);
+        pending.set(requestId, resolve);
+        emit({ type: "approval_requested", requestId, summary: prompt });
+      });
+    },
+  };
+}
