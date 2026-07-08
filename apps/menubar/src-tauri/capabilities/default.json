@@ -4,6 +4,7 @@
   "windows": ["main", "popover"],
   "permissions": [
     "core:default",
-    "dialog:default"
+    "dialog:default",
+    "notification:default"
   ]
 }
