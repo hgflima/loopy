@@ -136,7 +136,7 @@
 
 ## Fase 3 — Drill-in por card (T-010 → T-011 → T-012)
 
-- [ ] T-010: Card clicável/focável + drawer shell + seleção persistente (#7 estrutura, D1/D2)
+- [x] T-010: Card clicável/focável + drawer shell + seleção persistente (#7 estrutura, D1/D2)
     `KanbanBoard.tsx`: cada card vira clicável **e** focável (`tabIndex`, Enter/Space) → seleciona e
     abre o drawer; clicar em outro card **troca**; clicar no **mesmo** **fecha** (toggle); `⎋` e um
     botão `✕` fecham. A seleção (por `taskId`) é **içada** para `App.tsx` (compartilhada
