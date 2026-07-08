@@ -129,7 +129,7 @@
     Deps: T-007, T-003, T-004
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/main.tsx (mock feed), testes. Scope: M.
 
-- [ ] T-009: Rust `sidecar.rs` — spawn do sidecar, stdout→emit, stdin←commands (tolerante)
+- [x] T-009: Rust `sidecar.rs` — spawn do sidecar, stdout→emit, stdin←commands (tolerante)
     `src-tauri/src/sidecar.rs` + comando `start_sidecar(dir, flags)` em `main.rs`:
     spawna o `externalBin` `loopy` com `--no-tui --emit-events <dir> [flags]`, lê stdout
     **linha-a-linha** e **emite** cada linha ao webview (evento Tauri `sidecar://line`);
