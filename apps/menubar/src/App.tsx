@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
-import { isTauri } from "@tauri-apps/api/core";
-import { ReactFlowProvider } from "@xyflow/react";
 import type { BridgeState } from "./state/store-bridge";
-import { DepsFlow } from "./graph/DepsFlow";
+import { ViewSwitcher } from "./panes/ViewSwitcher";
 import { StreamPanel } from "./panes/StreamPanel";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
 const TICK_MS = 500;
+
+const SEP = <span style={{ color: "#555" }}>|</span>;
 
 interface AppProps {
   state: BridgeState;
@@ -23,26 +23,25 @@ function App({ state }: AppProps) {
   }, []);
 
   return (
-    <main>
-      <h1>Loopy</h1>
-      <p>Runtime: {isTauri() ? "Tauri" : "Web"}</p>
-      <p>Run: {ui.runStatus}</p>
-      <p>Tasks: {store.tasks.length}</p>
-      {store.tasks.length > 0 && (
-        <ReactFlowProvider>
-          <div style={{ width: "100%", height: 300 }}>
-            <DepsFlow tasks={store.tasks} edges={store.edges} tick={tick} />
-          </div>
-        </ReactFlowProvider>
-      )}
-      {store.tasks.map((t) => (
-        <div key={t.id}>
-          <strong>{t.id}</strong> — {t.title} [{t.status}]
-        </div>
-      ))}
-      {ui.pendingApprovals.length > 0 && (
-        <p>Pending approvals: {ui.pendingApprovals.length}</p>
-      )}
+    <main style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f0f23", color: "#ccc" }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 12px", borderBottom: "1px solid #1a1a2e", fontSize: 12 }}>
+        <strong style={{ color: "#fff" }}>Loopy</strong>
+        {SEP}
+        <span>Run: {ui.runStatus}</span>
+        {SEP}
+        <span>Tasks: {store.tasks.length}</span>
+        {ui.pendingApprovals.length > 0 && (
+          <>
+            {SEP}
+            <span style={{ color: "magenta" }}>
+              Approvals: {ui.pendingApprovals.length}
+            </span>
+          </>
+        )}
+      </header>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ViewSwitcher store={store} tick={tick} />
+      </div>
       <StreamPanel store={store} />
     </main>
   );

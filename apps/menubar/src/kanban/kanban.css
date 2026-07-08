@@ -1,0 +1,85 @@
+/* KanbanBoard styles — minimal, functional, no framework */
+
+.kanban-board {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  height: 100%;
+  overflow-x: auto;
+}
+
+.kanban-column {
+  flex: 1 1 0;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a2e;
+  border-radius: 8px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.kanban-column-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #888;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid #2a2a3e;
+  margin-bottom: 6px;
+}
+
+.kanban-column-count {
+  color: #555;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.kanban-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+  background: #16213e;
+  font-size: 12px;
+  font-family: monospace;
+  transition: background 0.2s;
+}
+
+.kanban-card-glyph {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.kanban-card-id {
+  font-weight: 600;
+}
+
+.kanban-card-title {
+  color: #aaa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-card-failed-step {
+  font-size: 10px;
+  color: #ff6b6b;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Goto pulse — the fix-loop star (SC #5) */
+@keyframes goto-pulse {
+  0%   { background: #16213e; box-shadow: none; }
+  15%  { background: #1a3a5c; box-shadow: 0 0 8px rgba(0, 255, 255, 0.4); }
+  50%  { background: #1a3a5c; box-shadow: 0 0 12px rgba(0, 255, 255, 0.3); }
+  100% { background: #16213e; box-shadow: none; }
+}
+
+.kanban-card--goto {
+  animation: goto-pulse 2s ease-in-out;
+}
