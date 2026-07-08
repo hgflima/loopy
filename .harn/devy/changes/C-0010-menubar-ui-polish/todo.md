@@ -122,7 +122,7 @@
     Deps: T-002
     Files: apps/menubar/src/panes/StreamPanel.tsx, apps/menubar/src/panes/StreamPanel.css, apps/menubar/src/App.css. Scope: M.
 
-- [ ] T-009: StreamPanel — markdown + scroll contínuo cross-step + divisor rotulado (#6, #9)
+- [x] T-009: StreamPanel — markdown + scroll contínuo cross-step + divisor rotulado (#6, #9)
     O pane passa a ler o transcript append-only do `store-bridge` (T-004) via `segmentsFor` — não
     mais `task.stream` (que reseta por step). `App.tsx` passa o histórico como prop ao StreamPanel.
     Render de cada segmento com `MarkdownStream` (T-005). Scroll **contínuo entre steps** com um
