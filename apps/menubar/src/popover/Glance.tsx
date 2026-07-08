@@ -11,9 +11,10 @@ import type { BridgeState } from "../state/store-bridge";
 
 interface GlanceProps {
   state: BridgeState;
+  yesFlag: boolean;
 }
 
-export function Glance({ state }: GlanceProps) {
+export function Glance({ state, yesFlag }: GlanceProps) {
   const { store, ui } = state;
 
   const total = store.tasks.length;
@@ -64,6 +65,19 @@ export function Glance({ state }: GlanceProps) {
           </>
         )}
       </div>
+
+      {/* Delegation info */}
+      {!isIdle && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "#888",
+            marginBottom: 8,
+          }}
+        >
+          delegação: --yes {yesFlag ? "ON" : "OFF"} · {warnings} gate{warnings !== 1 ? "s" : ""}
+        </div>
+      )}
 
       {/* Actions */}
       <div style={{ display: "flex", gap: 8 }}>

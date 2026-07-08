@@ -61,6 +61,16 @@ const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
 function Root() {
   const [state, setState] = useState(initialBridgeState);
   const prevApprovalCount = useRef(0);
+  const [yesFlag, setYesFlag] = useState(false);
+
+  // ----------------------------------------------------------
+  // LaunchConfig callback (reset state + track --yes flag)
+  // ----------------------------------------------------------
+
+  const handleStartRun = useCallback((yes: boolean) => {
+    setState(initialBridgeState);
+    setYesFlag(yes);
+  }, []);
 
   // ----------------------------------------------------------
   // Approval decision callback (T-016 — the only mutation surface)
@@ -131,9 +141,9 @@ function Root() {
   }, []);
 
   return IS_POPOVER ? (
-    <Glance state={state} />
+    <Glance state={state} yesFlag={yesFlag} />
   ) : (
-    <App state={state} onApprovalDecision={handleApprovalDecision} />
+    <App state={state} onStartRun={handleStartRun} onApprovalDecision={handleApprovalDecision} />
   );
 }
 

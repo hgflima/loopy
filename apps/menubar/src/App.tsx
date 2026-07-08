@@ -4,6 +4,7 @@ import { ViewSwitcher } from "./panes/ViewSwitcher";
 import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
 import { ApprovalPrompt, headApproval } from "./panes/ApprovalPrompt";
+import { LaunchConfig } from "./panes/LaunchConfig";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
 const TICK_MS = 500;
@@ -12,12 +13,14 @@ const SEP = <span style={{ color: "#555" }}>|</span>;
 
 interface AppProps {
   state: BridgeState;
+  onStartRun: (yesFlag: boolean) => void;
   onApprovalDecision?: (requestId: string, approved: boolean) => void;
 }
 
-function App({ state, onApprovalDecision }: AppProps) {
+function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   const { store, ui } = state;
   const isStartFail = ui.sidecarFailure?.type === "start-fail";
+  const showLaunchConfig = ui.runStatus === "idle" || isStartFail;
   const currentApproval = headApproval(ui);
 
   // Single tick counter for all running-task pulses (no timer per node).
@@ -33,8 +36,12 @@ function App({ state, onApprovalDecision }: AppProps) {
         <strong style={{ color: "#fff" }}>Loopy</strong>
         {SEP}
         <span>Run: {ui.runStatus}</span>
-        {SEP}
-        <span>Tasks: {store.tasks.length}</span>
+        {!showLaunchConfig && (
+          <>
+            {SEP}
+            <span>Tasks: {store.tasks.length}</span>
+          </>
+        )}
         {ui.pendingApprovals.length > 0 && (
           <>
             {SEP}
@@ -45,15 +52,18 @@ function App({ state, onApprovalDecision }: AppProps) {
         )}
       </header>
       <Banner ui={ui} />
-      {isStartFail ? (
-        // Start-fail: return to LaunchConfig (idle view)
-        <p style={{ padding: "6px 12px" }}>Configure a run to get started.</p>
-      ) : (
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <ViewSwitcher store={store} tick={tick} />
+      {showLaunchConfig ? (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <LaunchConfig onStart={onStartRun} />
         </div>
+      ) : (
+        <>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ViewSwitcher store={store} tick={tick} />
+          </div>
+          <StreamPanel store={store} />
+        </>
       )}
-      <StreamPanel store={store} />
       {currentApproval && onApprovalDecision && (
         <ApprovalPrompt
           request={currentApproval}

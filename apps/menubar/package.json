@@ -14,6 +14,7 @@
   "dependencies": {
     "@hgflima/loopy": "*",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
     "@xyflow/react": "^12",
     "react": "^18",
     "react-dom": "^18",
