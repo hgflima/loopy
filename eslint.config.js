@@ -14,6 +14,8 @@ export default tseslint.config(
       ".loopy/",
       // Pre-existing inputs / committed agent harness — not loopy source.
       ".claude/",
+      // Vendored skill scripts — not loopy source.
+      ".github/",
       // Tauri Rust/build artifacts (apps/menubar)
       "**/src-tauri/",
       "**/target/",
