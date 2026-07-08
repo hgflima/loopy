@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:web": "vite",
-    "build:sidecar": "echo 'TODO: bun build --compile → src-tauri/bin/loopy-<triple>'",
+    "build:sidecar": "mkdir -p src-tauri/bin && bun build --compile ../../src/index.ts --outfile src-tauri/bin/loopy-aarch64-apple-darwin",
     "build": "npm run build:sidecar && tauri build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
