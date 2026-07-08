@@ -39,7 +39,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/tokens.css. Scope: XS.
 
-- [ ] T-003: Transport estendido — `task_registered` carrega `description` + `deps` (motor)
+- [x] T-003: Transport estendido — `task_registered` carrega `description` + `deps` (motor)
     ADITIVO e gated por `--emit-events` (AD-1). Em `src/tui/store.ts`: o evento `task_registered`
     ganha `description?: string` e `deps?: readonly string[]`; `TaskState` ganha os mesmos campos
     (opcionais); o `reduce` (switch **exaustivo**, sem `default`) os grava no `task_registered`.
@@ -54,7 +54,7 @@
     Deps: nenhuma
     Files: src/tui/store.ts, src/loop/orchestrator.ts, testes de store/orchestrator. Scope: M. RISCO MÉDIO.
 
-- [ ] T-004: `store-bridge` acumulador cross-step + `stream-history.ts` (puro) + teste
+- [x] T-004: `store-bridge` acumulador cross-step + `stream-history.ts` (puro) + teste
     O `reduce` reseta `task.stream` a cada step/attempt — então o histórico vive na camada do app.
     Em `apps/menubar/src/state/store-bridge.ts`: `BridgeState` ganha um transcript **append-only**
     por task, marcado por `stepId`, **nunca resetado** (≠ `task.stream`, sobrevive a `task_finished`);
@@ -69,7 +69,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/state/stream-history.ts, apps/menubar/src/state/stream-history.test.ts. Scope: M.
 
-- [ ] T-005: `MarkdownStream.tsx` — render sanitizado de voz-de-máquina + teste + dep
+- [x] T-005: `MarkdownStream.tsx` — render sanitizado de voz-de-máquina + teste + dep
     Adicionar `react-markdown@^10` + `remark-gfm@^4` (única dep nova, D5 aprovado; **sem `rehype-raw`**).
     NOVO `apps/menubar/src/ui/MarkdownStream.tsx`: componente que renderiza texto como markdown com
     `remarkPlugins={[remarkGfm]}`, blocos de código em `--font-mono`, **seguro por padrão** (HTML
@@ -82,7 +82,7 @@
     Deps: nenhuma
     Files: apps/menubar/package.json, apps/menubar/src/ui/MarkdownStream.tsx, apps/menubar/src/ui/MarkdownStream.test.tsx, apps/menubar/src/ui/index.ts. Scope: S.
 
-- [ ] T-006: Popover `Glance` reescrito off-brand → design system (#2)
+- [x] T-006: Popover `Glance` reescrito off-brand → design system (#2)
     Reescrever `apps/menubar/src/popover/Glance.tsx` removendo **todos** os inline styles off-brand
     (`#007AFF`, `cyan`, `orange`, `#333`/`#999`…) → classes do DS + `tokens.css`. NOVO
     `apps/menubar/src/popover/Glance.css`. Usar `StatusDot`/`Pill` e a tipografia do DS

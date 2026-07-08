@@ -1,0 +1,49 @@
+/**
+ * Glance — popover surface (DESIGN.md tokens only).
+ *
+ * Elevated floating surface; compact status line + two-button action bar.
+ * Zero hardcoded colors — everything via var(--…) from tokens.css.
+ */
+
+.glance {
+  padding: var(--sp-md) var(--sp-lg);
+  background: var(--surface-elevated);
+}
+
+.glance__status {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-md);
+}
+
+.glance__idle {
+  color: var(--ink-tertiary);
+}
+
+.glance__progress {
+  font-weight: 600;
+}
+
+.glance__sep {
+  color: var(--ink-tertiary);
+}
+
+.glance__running {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+
+.glance__delegation {
+  margin-bottom: var(--sp-sm);
+}
+
+.glance__actions {
+  display: flex;
+  gap: var(--sp-sm);
+}
+
+.glance__actions .btn {
+  flex: 1;
+}

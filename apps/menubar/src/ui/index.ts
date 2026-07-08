@@ -9,3 +9,4 @@ export {
   type Tone,
 } from "./StatusIndicator";
 export { SegmentedControl, type Segment } from "./SegmentedControl";
+export { MarkdownStream, type MarkdownStreamProps } from "./MarkdownStream";

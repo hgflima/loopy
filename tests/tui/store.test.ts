@@ -99,6 +99,50 @@ describe("reduce · task registration", () => {
 
     expect(next).toBe(state);
   });
+
+  it("stores description and deps when provided (C-0010 T-003)", () => {
+    const state = play({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "Com desc",
+      description: "Files: foo.ts",
+      deps: ["T-000"],
+    });
+    const task = findTask(state, "T-001");
+    expect(task.description).toBe("Files: foo.ts");
+    expect(task.deps).toEqual(["T-000"]);
+  });
+
+  it("omits description and deps when not provided (backward compat)", () => {
+    const state = play({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "Sem desc",
+    });
+    const task = findTask(state, "T-001");
+    expect(task.description).toBeUndefined();
+    expect(task.deps).toBeUndefined();
+  });
+
+  it("duplicate registration preserves original description/deps", () => {
+    const once = play({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "t",
+      description: "body",
+      deps: ["T-000"],
+    });
+    const twice = reduce(once, {
+      type: "task_registered",
+      taskId: "T-001",
+      title: "t",
+      description: "changed",
+      deps: ["T-999"],
+    });
+    expect(twice).toBe(once);
+    expect(findTask(twice, "T-001").description).toBe("body");
+    expect(findTask(twice, "T-001").deps).toEqual(["T-000"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
