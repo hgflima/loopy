@@ -129,7 +129,7 @@
     Deps: T-007, T-003, T-004
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/main.tsx (mock feed), testes. Scope: M.
 
-- [ ] T-009: Rust `sidecar.rs` — spawn do sidecar, stdout→emit, stdin←commands (tolerante)
+- [x] T-009: Rust `sidecar.rs` — spawn do sidecar, stdout→emit, stdin←commands (tolerante)
     `src-tauri/src/sidecar.rs` + comando `start_sidecar(dir, flags)` em `main.rs`:
     spawna o `externalBin` `loopy` com `--no-tui --emit-events <dir> [flags]`, lê stdout
     **linha-a-linha** e **emite** cada linha ao webview (evento Tauri `sidecar://line`);
@@ -152,7 +152,7 @@
 
 ## Fase 3 — Grafo Deps (T-010)
 
-- [ ] T-010: `DepsFlow` (React Flow, posições de `computeDagreLayout`) + `TaskNode`
+- [x] T-010: `DepsFlow` (React Flow, posições de `computeDagreLayout`) + `TaskNode`
     `src/graph/DepsFlow.tsx` + `src/graph/TaskNode.tsx`: nós posicionados **por**
     `computeDagreLayout` (de `loopy/tui/view`) — **jamais** auto-layout do React Flow;
     `TaskNode` colore por `COLORS.task[status]` (keywords CSS diretas) e **pulsa** no
@@ -200,7 +200,7 @@
 
 ## Fase 5 — Streams + shell nativo (T-013; T-014 → T-015)
 
-- [ ] T-013: `StreamPanel` — uma coluna por task em `running`
+- [x] T-013: `StreamPanel` — uma coluna por task em `running`
     `src/panes/StreamPanel.tsx`: espelha a região Streams da TUI — **uma coluna por task
     em `running`** (tail via `streamTail` de `loopy/tui/view`); em `concurrency 1` colapsa
     numa coluna. **Sem** pin/seleção; nós do grafo e cards do Kanban não focam stream

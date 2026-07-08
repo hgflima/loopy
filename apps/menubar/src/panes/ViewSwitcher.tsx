@@ -3,13 +3,12 @@
  *
  * Both views are kept mounted (hidden via CSS) so state is preserved
  * on switch (acceptance criterion: "sem perder estado").
- *
- * DepsFlow (T-010) is not yet implemented — a placeholder is rendered.
- * When T-010 lands, replace the placeholder import with the real component.
  */
 import { useState } from "react";
+import { ReactFlowProvider } from "@xyflow/react";
 import type { StoreState } from "loopy/tui/store";
 import { KanbanBoard } from "../kanban/KanbanBoard";
+import { DepsFlow } from "../graph/DepsFlow";
 
 export type ViewId = "kanban" | "deps";
 
@@ -20,6 +19,7 @@ const TABS: { id: ViewId; label: string }[] = [
 
 interface ViewSwitcherProps {
   store: StoreState;
+  tick: number;
 }
 
 function tabStyle(active: boolean): React.CSSProperties {
@@ -34,7 +34,7 @@ function tabStyle(active: boolean): React.CSSProperties {
   };
 }
 
-export function ViewSwitcher({ store }: ViewSwitcherProps) {
+export function ViewSwitcher({ store, tick }: ViewSwitcherProps) {
   const [view, setView] = useState<ViewId>("kanban");
 
   return (
@@ -55,10 +55,12 @@ export function ViewSwitcher({ store }: ViewSwitcherProps) {
       <div style={{ flex: 1, display: view === "kanban" ? "flex" : "none", minHeight: 0 }}>
         <KanbanBoard store={store} />
       </div>
-      <div style={{ flex: 1, display: view === "deps" ? "flex" : "none", minHeight: 0, alignItems: "center", justifyContent: "center" }}>
-        <span style={{ color: "#555", fontSize: 13 }}>
-          DepsFlow — pending (T-010)
-        </span>
+      <div style={{ flex: 1, display: view === "deps" ? "block" : "none", minHeight: 0 }}>
+        <ReactFlowProvider>
+          <div style={{ width: "100%", height: "100%" }}>
+            <DepsFlow tasks={store.tasks} edges={store.edges} tick={tick} />
+          </div>
+        </ReactFlowProvider>
       </div>
     </div>
   );
