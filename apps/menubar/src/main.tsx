@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -54,6 +54,13 @@ const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
 
 function Root() {
   const [state, setState] = useState(initialBridgeState);
+  const [yesFlag, setYesFlag] = useState(false);
+
+  // Reset state and track --yes flag when a new run starts
+  const handleStartRun = useCallback((yes: boolean) => {
+    setState(initialBridgeState);
+    setYesFlag(yes);
+  }, []);
 
   useEffect(() => {
     if (!IS_TAURI) {
@@ -84,7 +91,11 @@ function Root() {
     };
   }, []);
 
-  return IS_POPOVER ? <Glance state={state} /> : <App state={state} />;
+  return IS_POPOVER ? (
+    <Glance state={state} yesFlag={yesFlag} />
+  ) : (
+    <App state={state} onStartRun={handleStartRun} />
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
