@@ -16,8 +16,22 @@
   "bin": {
     "loopy": "dist/index.js"
   },
+  "exports": {
+    ".": "./dist/index.js",
+    "./tui/store": {
+      "types": "./dist/tui/store.d.ts",
+      "import": "./dist/tui/store.js"
+    },
+    "./tui/view": {
+      "types": "./dist/tui/view.d.ts",
+      "import": "./dist/tui/view.js"
+    }
+  },
   "files": [
     "dist"
+  ],
+  "workspaces": [
+    "apps/*"
   ],
   "engines": {
     "node": ">=20"
