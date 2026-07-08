@@ -20,6 +20,7 @@ export default defineConfig([
     entry: {
       "tui/store": "src/tui/store.ts",
       "tui/view": "src/tui/view.ts",
+      "tui/transport": "src/tui/transport.ts",
     },
     dts: true,
     clean: false,
