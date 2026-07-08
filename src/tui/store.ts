@@ -119,6 +119,8 @@ export interface StoreState {
   readonly acpLog: readonly AcpLogLine[];
   /** Distinct agent names seen so far (T-008: prefix when size > 1). */
   readonly activeAgents: ReadonlySet<string>;
+  /** Declared pipeline steps in order (T-003: populated by `pipeline_declared`). */
+  readonly pipeline: readonly { id: string; type: StepType }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +200,10 @@ export type StoreEvent =
       readonly summary: string;
       /** Agent producing this entry (T-008: multi-agent prefix). */
       readonly agent?: string;
+    }
+  | {
+      readonly type: "pipeline_declared";
+      readonly steps: readonly { id: string; type: StepType }[];
     };
 
 // ---------------------------------------------------------------------------
@@ -206,7 +212,7 @@ export type StoreEvent =
 
 /** The empty starting state (no tasks, no edges). */
 export function initialState(): StoreState {
-  return { tasks: [], edges: [], acpLog: [], activeAgents: new Set<string>() };
+  return { tasks: [], edges: [], acpLog: [], activeAgents: new Set<string>(), pipeline: [] };
 }
 
 /**
@@ -427,6 +433,9 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         activeAgents: nextAgents,
       };
     }
+
+    case "pipeline_declared":
+      return { ...state, pipeline: [...event.steps] };
   }
 }
 
