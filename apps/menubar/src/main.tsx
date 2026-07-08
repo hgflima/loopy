@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
+import { Glance } from "./popover/Glance";
 import { applyLine, initialBridgeState } from "./state/store-bridge";
 
 // ---------------------------------------------------------------------------
@@ -39,28 +42,49 @@ const MOCK_FEED = [
 const FEED_INTERVAL_MS = 300;
 
 // ---------------------------------------------------------------------------
-// Root — manages BridgeState, starts mock feed outside Tauri
+// Runtime detection (module-level, computed once)
+// ---------------------------------------------------------------------------
+
+const IS_TAURI = isTauri();
+const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
+
+// ---------------------------------------------------------------------------
+// Root — manages BridgeState, routes by window label
 // ---------------------------------------------------------------------------
 
 function Root() {
   const [state, setState] = useState(initialBridgeState);
 
   useEffect(() => {
-    if (isTauri()) return;
+    if (!IS_TAURI) {
+      // dev:web: mock NDJSON feed
+      let i = 0;
+      const id = setInterval(() => {
+        if (i >= MOCK_FEED.length) {
+          clearInterval(id);
+          return;
+        }
+        setState((prev) => applyLine(prev, MOCK_FEED[i++]!));
+      }, FEED_INTERVAL_MS);
+      return () => clearInterval(id);
+    }
 
-    let i = 0;
-    const id = setInterval(() => {
-      if (i >= MOCK_FEED.length) {
-        clearInterval(id);
-        return;
-      }
-      setState((prev) => applyLine(prev, MOCK_FEED[i++]!));
-    }, FEED_INTERVAL_MS);
+    // Tauri: listen to sidecar events
+    const unLine = listen<string>("sidecar://line", (event) => {
+      setState((prev) => applyLine(prev, event.payload));
+    });
 
-    return () => clearInterval(id);
+    const unExit = listen<number>("sidecar://exit", () => {
+      // T-018 will add banner handling for sidecar failures
+    });
+
+    return () => {
+      unLine.then((fn) => fn());
+      unExit.then((fn) => fn());
+    };
   }, []);
 
-  return <App state={state} />;
+  return IS_POPOVER ? <Glance state={state} /> : <App state={state} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
