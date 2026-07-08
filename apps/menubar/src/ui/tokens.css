@@ -90,6 +90,12 @@
   --z-toast: 500;
   --z-tooltip: 600;
 
+  /* ---- Layout — structural dimensions (theme-invariant) ---------------- */
+  --kanban-col-min: 220px;
+  --drawer-w: 400px;
+  --stream-h: 45%;
+  --stream-fold-h: 28px;
+
   color-scheme: light;
 }
 
