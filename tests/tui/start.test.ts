@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { startUi, type MountApp, type MountProps } from "../../src/tui/start";
+import { parseTransportLine } from "../../src/tui/transport";
 import type { RunFlags } from "../../src/types";
 
 function flags(overrides: Partial<RunFlags> = {}): RunFlags {
-  return { dryRun: false, yes: false, tui: true, verbose: false, ...overrides };
+  return { dryRun: false, yes: false, tui: true, emitEvents: false, verbose: false, ...overrides };
 }
 
 /** A fake Ink mount that records the props it was handed and its unmount. */
@@ -157,5 +158,98 @@ describe("startUi · approval transport", () => {
     await expect(ui.ui.requestApproval("merge?")).resolves.toBe(true);
     // No pending request is created — the prompt never appears under --yes.
     expect(fake.props()?.approval.pending()).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --emit-events (T-006): fan-out dispatch + transport + stdin approval
+// ---------------------------------------------------------------------------
+
+describe("startUi · --emit-events", () => {
+  it("exposes a transport when emitEvents is true", () => {
+    const ui = startUi({
+      flags: flags({ tui: false, emitEvents: true }),
+      isTTY: false,
+      linePrint: () => {},
+    });
+    expect(ui.transport).toBeDefined();
+  });
+
+  it("does NOT expose a transport when emitEvents is false", () => {
+    const ui = startUi({
+      flags: flags({ tui: false, emitEvents: false }),
+      isTTY: false,
+      linePrint: () => {},
+    });
+    expect(ui.transport).toBeUndefined();
+  });
+
+  it("fan-out dispatches to BOTH line-reporter AND transport", () => {
+    const ndjsonLines: string[] = [];
+    const reporterLines: string[] = [];
+
+    // Inject a stdout-like WritableStream that captures NDJSON output.
+    const fakeStdout = {
+      write: (data: string | Uint8Array) => { ndjsonLines.push(String(data)); return true; },
+      isTTY: false,
+    } as unknown as NodeJS.WriteStream;
+
+    const ui = startUi({
+      flags: flags({ tui: false, emitEvents: true }),
+      stdout: fakeStdout,
+      isTTY: false,
+      linePrint: (l) => reporterLines.push(l),
+    });
+
+    ui.dispatch({ type: "task_registered", taskId: "T-001", title: "Wire events" });
+
+    // Line-reporter got the event.
+    expect(reporterLines.some((l) => l.includes("T-001"))).toBe(true);
+
+    // Transport wrote NDJSON to stdout.
+    expect(ndjsonLines.length).toBeGreaterThan(0);
+    const parsed = parseTransportLine(ndjsonLines[0]!);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.frame).toBe("event");
+      if (parsed.frame === "event") {
+        expect(parsed.event.type).toBe("task_registered");
+      }
+    }
+  });
+
+  it("emitControl writes control frames as NDJSON", () => {
+    const ndjsonLines: string[] = [];
+    const fakeStdout = {
+      write: (data: string | Uint8Array) => { ndjsonLines.push(String(data)); return true; },
+      isTTY: false,
+    } as unknown as NodeJS.WriteStream;
+
+    const ui = startUi({
+      flags: flags({ tui: false, emitEvents: true }),
+      stdout: fakeStdout,
+      isTTY: false,
+      linePrint: () => {},
+    });
+
+    ui.transport!.emitControl({ control: "run_started" });
+
+    const parsed = parseTransportLine(ndjsonLines[0]!);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.frame).toBe("control");
+      if (parsed.frame === "control") {
+        expect(parsed.control.control).toBe("run_started");
+      }
+    }
+  });
+
+  it("auto-approves when --yes is set with emitEvents", async () => {
+    const ui = startUi({
+      flags: flags({ tui: false, emitEvents: true, yes: true }),
+      isTTY: false,
+      linePrint: () => {},
+    });
+    await expect(ui.ui.requestApproval("merge?")).resolves.toBe(true);
   });
 });

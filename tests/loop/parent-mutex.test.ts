@@ -415,7 +415,7 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
   function deps(registry: OrchestratorDeps["registry"], git: GitPort, mutex?: Mutex): OrchestratorDeps {
     return {
       root: "/tmp/loopy-root-nonexist",
-      flags: { dryRun: false, yes: false, tui: false, verbose: false },
+      flags: { dryRun: false, yes: false, tui: false, emitEvents: false, verbose: false },
       registry,
       checks: { run: async () => ({ ok: true, results: [], text: "" }) },
       ui: { requestApproval: async () => true },

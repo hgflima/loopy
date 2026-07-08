@@ -928,7 +928,7 @@ describe("runLoop — DAG pool scheduler", () => {
 
     await runLoop(config, tasks, {
       ...makeDeps({ registry: reg, markDone: port }),
-      flags: { dryRun: false, yes: false, tui: false, verbose: false, concurrency: 3 },
+      flags: { dryRun: false, yes: false, tui: false, emitEvents: false, verbose: false, concurrency: 3 },
     });
 
     expect(maxConcurrent).toBe(3);
