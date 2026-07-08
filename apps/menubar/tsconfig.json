@@ -20,7 +20,7 @@
     "noEmit": true,
 
     "paths": {
-      "loopy/*": ["../../dist/*"]
+      "loopy/*": ["../../src/*"]
     }
   },
   "include": ["src"],

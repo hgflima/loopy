@@ -9,6 +9,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[cfg(target_os = "macos")]
 use tauri::ActivationPolicy;
@@ -158,8 +159,43 @@ fn main() {
             load_launch_config,
             save_launch_config,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error building tauri application")
+        .run(|app_handle, event| {
+            // Only intercept user-initiated quit (Cmd+Q / menu); code is None.
+            // Programmatic app.exit(N) sets code = Some(N) — let it through.
+            let tauri::RunEvent::ExitRequested { api, code, .. } = event else {
+                return;
+            };
+            if code.is_some() {
+                return;
+            }
+            let state = app_handle.state::<SidecarState>();
+            if !state.is_running() {
+                return;
+            }
+
+            api.prevent_exit();
+
+            let confirmed = app_handle
+                .dialog()
+                .message(
+                    "A Run is active. Quit anyway?\n\
+                     The Run will be checkpointed for later resume.",
+                )
+                .title("Confirm Quit")
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Quit".into(),
+                    "Cancel".into(),
+                ))
+                .blocking_show();
+
+            if confirmed {
+                let _ = state.stop();
+                app_handle.exit(0);
+            }
+        });
 }
 
 // ---------------------------------------------------------------------------

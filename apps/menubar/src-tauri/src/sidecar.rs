@@ -1,8 +1,45 @@
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager};
+
+// ---------------------------------------------------------------------------
+// Sidecar binary resolution — matches Tauri externalBin conventions
+// ---------------------------------------------------------------------------
+
+/// Resolve the sidecar binary path.
+///
+/// `externalBin: ["bin/loopy"]` in `tauri.conf.json` means the binary is placed
+/// next to the main executable (inside `bin/`) by `tauri build`/`tauri dev`.
+/// The target triple is embedded at compile-time by `tauri_build::build()`.
+fn resolve_sidecar_path() -> Result<PathBuf, String> {
+    let triple = env!("TAURI_ENV_TARGET_TRIPLE");
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to resolve executable path: {e}"))?;
+    let dir = exe
+        .parent()
+        .ok_or_else(|| "Executable has no parent directory".to_string())?;
+
+    // externalBin "bin/loopy" → binary at <exe_dir>/bin/loopy-<triple>
+    let with_prefix = dir.join(format!("bin/loopy-{triple}"));
+    if with_prefix.exists() {
+        return Ok(with_prefix);
+    }
+
+    // Fallback: flat layout (binary next to main executable)
+    let flat = dir.join(format!("loopy-{triple}"));
+    if flat.exists() {
+        return Ok(flat);
+    }
+
+    Err(format!(
+        "Sidecar binary not found. Searched:\n  {}\n  {}",
+        with_prefix.display(),
+        flat.display()
+    ))
+}
 
 // ---------------------------------------------------------------------------
 // LineFramer — accumulates raw bytes and emits complete lines
@@ -84,6 +121,14 @@ impl SidecarState {
         }
     }
 
+    /// Returns `true` if a sidecar process is currently running.
+    pub fn is_running(&self) -> bool {
+        self.inner
+            .lock()
+            .map(|inner| inner.is_some())
+            .unwrap_or(false)
+    }
+
     /// Spawn the sidecar binary and set up stdout/stderr/exit event forwarding.
     ///
     /// If a sidecar is already running it is killed first (one Run at a time).
@@ -97,7 +142,9 @@ impl SidecarState {
         ];
         args.extend(flags);
 
-        let mut child = Command::new("loopy")
+        let sidecar_bin = resolve_sidecar_path()?;
+
+        let mut child = Command::new(sidecar_bin)
             .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
