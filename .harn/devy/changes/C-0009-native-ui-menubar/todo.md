@@ -115,7 +115,7 @@
     Deps: T-001
     Files: apps/menubar/package.json, apps/menubar/vite.config.ts, apps/menubar/tsconfig.json, apps/menubar/src/{main,App}.tsx, apps/menubar/src-tauri/{Cargo.toml,tauri.conf.json,src/main.rs}. Scope: M. RISCO ALTO.
 
-- [ ] T-008: `store-bridge.ts` — `applyLine(NDJSON)` → roteia control vs StoreEvent → `reduce`
+- [x] T-008: `store-bridge.ts` — `applyLine(NDJSON)` → roteia control vs StoreEvent → `reduce`
     `src/state/store-bridge.ts`: `applyLine(state, line)` parseia uma linha NDJSON
     (reusa o parser/contrato do Transport, T-004), roteia frame **control** (run_started/
     run_finished/approval_requested → estado de UI) vs **StoreEvent** (→ `reduce` importado
@@ -167,7 +167,7 @@
 
 ## Fase 4 — Kanban (T-011 → T-012)
 
-- [ ] T-011: Grouper do Kanban (puro) — Backlog → Steps → Fim + `goto`
+- [x] T-011: Grouper do Kanban (puro) — Backlog → Steps → Fim + `goto`
     `src/kanban/grouper.ts`: função pura `groupByStep(state): Column[]` — coluna inicial
     **Backlog** (pending/blocked, sem Step corrente); **uma coluna por Step** do
     `pipeline` declarado (na ordem); coluna terminal **Fim** (done/escalated/skipped/paused).
@@ -200,7 +200,7 @@
 
 ## Fase 5 — Streams + shell nativo (T-013; T-014 → T-015)
 
-- [ ] T-013: `StreamPanel` — uma coluna por task em `running`
+- [x] T-013: `StreamPanel` — uma coluna por task em `running`
     `src/panes/StreamPanel.tsx`: espelha a região Streams da TUI — **uma coluna por task
     em `running`** (tail via `streamTail` de `loopy/tui/view`); em `concurrency 1` colapsa
     numa coluna. **Sem** pin/seleção; nós do grafo e cards do Kanban não focam stream

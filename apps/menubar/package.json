@@ -8,7 +8,8 @@
     "dev:web": "vite",
     "build:sidecar": "echo 'TODO: bun build --compile → src-tauri/bin/loopy-<triple>'",
     "build": "npm run build:sidecar && tauri build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hgflima/loopy": "*",

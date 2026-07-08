@@ -25,6 +25,10 @@
     "./tui/view": {
       "types": "./dist/tui/view.d.ts",
       "import": "./dist/tui/view.js"
+    },
+    "./tui/transport": {
+      "types": "./dist/tui/transport.d.ts",
+      "import": "./dist/tui/transport.js"
     }
   },
   "files": [
