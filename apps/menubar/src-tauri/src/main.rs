@@ -1,7 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod config;
 mod sidecar;
 
+use config::{load_launch_config, save_launch_config};
 use sidecar::SidecarState;
 use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -87,6 +89,7 @@ fn update_tray_title(app: tauri::AppHandle, title: String) -> Result<(), String>
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState::new())
         .setup(|app| {
             // Start as accessory on macOS (no Dock icon, menu bar only)
@@ -140,6 +143,8 @@ fn main() {
             show_main_window,
             hide_main_window,
             update_tray_title,
+            load_launch_config,
+            save_launch_config,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

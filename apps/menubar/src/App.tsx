@@ -3,6 +3,7 @@ import type { BridgeState } from "./state/store-bridge";
 import { ViewSwitcher } from "./panes/ViewSwitcher";
 import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
+import { LaunchConfig } from "./panes/LaunchConfig";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
 const TICK_MS = 500;
@@ -11,11 +12,13 @@ const SEP = <span style={{ color: "#555" }}>|</span>;
 
 interface AppProps {
   state: BridgeState;
+  onStartRun: (yesFlag: boolean) => void;
 }
 
-function App({ state }: AppProps) {
+function App({ state, onStartRun }: AppProps) {
   const { store, ui } = state;
   const isStartFail = ui.sidecarFailure?.type === "start-fail";
+  const showLaunchConfig = ui.runStatus === "idle" || isStartFail;
 
   // Single tick counter for all running-task pulses (no timer per node).
   const [tick, setTick] = useState(0);
@@ -30,8 +33,12 @@ function App({ state }: AppProps) {
         <strong style={{ color: "#fff" }}>Loopy</strong>
         {SEP}
         <span>Run: {ui.runStatus}</span>
-        {SEP}
-        <span>Tasks: {store.tasks.length}</span>
+        {!showLaunchConfig && (
+          <>
+            {SEP}
+            <span>Tasks: {store.tasks.length}</span>
+          </>
+        )}
         {ui.pendingApprovals.length > 0 && (
           <>
             {SEP}
@@ -42,15 +49,18 @@ function App({ state }: AppProps) {
         )}
       </header>
       <Banner ui={ui} />
-      {isStartFail ? (
-        // Start-fail: return to LaunchConfig (idle view)
-        <p style={{ padding: "6px 12px" }}>Configure a run to get started.</p>
-      ) : (
-        <div style={{ flex: 1, minHeight: 0 }}>
-          <ViewSwitcher store={store} tick={tick} />
+      {showLaunchConfig ? (
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <LaunchConfig onStart={onStartRun} />
         </div>
+      ) : (
+        <>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <ViewSwitcher store={store} tick={tick} />
+          </div>
+          <StreamPanel store={store} />
+        </>
       )}
-      <StreamPanel store={store} />
     </main>
   );
 }
