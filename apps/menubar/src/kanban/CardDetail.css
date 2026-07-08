@@ -1,4 +1,4 @@
-/* CardDetail — drawer shell + content sections (D1, T-011).
+/* CardDetail — drawer shell + content sections + gate (D1, T-011, T-012).
  *
  * Zero hardcoded color/spacing — everything via design tokens.
  * WCAG AA: status dots carry aria-labels; no color-only signaling.
@@ -12,6 +12,11 @@
   flex-direction: column;
   background: var(--surface);
   border-left: 1px solid var(--border);
+}
+
+/* Gate active — shadow elevation (D6) */
+.card-detail--gate {
+  box-shadow: var(--shadow-gate);
 }
 
 .card-detail__header {
@@ -97,3 +102,91 @@
   padding-top: var(--sp-md);
 }
 
+/* ---- Gate section (T-012 — approval inside the card, D6) -------------- */
+
+.card-detail__gate {
+  border-top: 3px solid var(--accent);
+  padding: var(--sp-md);
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.card-detail__gate-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-sm);
+}
+
+.card-detail__gate-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.card-detail__gate-title {
+  font-weight: 600;
+}
+
+.card-detail__gate-queue {
+  margin-left: auto;
+}
+
+.card-detail__gate-context {
+  display: flex;
+  gap: var(--sp-sm);
+  margin-bottom: var(--sp-xs);
+  color: var(--ink-tertiary);
+}
+
+.card-detail__gate-task {
+  color: var(--accent-text);
+}
+
+.card-detail__gate-summary {
+  margin: 0 0 var(--sp-sm);
+  line-height: 1.5;
+}
+
+.card-detail__gate-cost {
+  margin: 0 0 var(--sp-md);
+  padding: var(--sp-sm);
+  border-radius: var(--r-sm);
+  background: var(--state-failed-subtle);
+  color: var(--state-failed-ink);
+}
+
+.card-detail__gate-actions {
+  display: flex;
+  gap: var(--sp-md);
+}
+
+.card-detail__gate-btn {
+  flex: 1;
+  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--r-md);
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.card-detail__gate-btn--reject {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--ink-secondary);
+}
+
+.card-detail__gate-btn--reject:hover {
+  border-color: var(--state-failed);
+  color: var(--state-failed-ink);
+}
+
+.card-detail__gate-btn--approve {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--accent-ink);
+}
+
+.card-detail__gate-btn--approve:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}

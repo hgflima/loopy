@@ -2,6 +2,22 @@ import { describe, it, expect, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/react";
 import { CardDetail } from "./CardDetail";
 import type { Transcript } from "../state/stream-history";
+import type { ApprovalRequest } from "../state/store-bridge";
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const APPROVAL: ApprovalRequest = {
+  requestId: "req-1",
+  taskId: "T-001",
+  stepId: "merge",
+  summary: "Merge T-001 into main?",
+};
+
+// ---------------------------------------------------------------------------
+// T-010 — shell rendering
+// ---------------------------------------------------------------------------
 
 describe("CardDetail — shell rendering", () => {
   it("renders task id and title in the header", () => {
@@ -30,6 +46,10 @@ describe("CardDetail — shell rendering", () => {
     expect(container.querySelector(".card-detail__body")).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-010 — close interactions (no gate)
+// ---------------------------------------------------------------------------
 
 describe("CardDetail — close interactions", () => {
   it("calls onClose when the close button is clicked", () => {
@@ -296,5 +316,223 @@ describe("CardDetail — graceful empty state", () => {
 
     expect(container.querySelector(".card-detail")).toBeTruthy();
     expect(container.querySelector(".card-detail__body")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-012 — gate rendering (approval inside CardDetail)
+// ---------------------------------------------------------------------------
+
+describe("CardDetail — gate rendering (T-012)", () => {
+  it("renders the gate section when approval is provided", () => {
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={vi.fn()}
+      />,
+    );
+
+    const gate = container.querySelector(".card-detail__gate");
+    expect(gate).toBeTruthy();
+    expect(gate?.textContent).toContain("Aprovação necessária");
+    expect(gate?.textContent).toContain(APPROVAL.summary);
+  });
+
+  it("applies card-detail--gate class when gate is active", () => {
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".card-detail--gate")).toBeTruthy();
+  });
+
+  it("does not render gate section when no approval", () => {
+    const { container } = render(
+      <CardDetail taskId="T-001" title="First" onClose={vi.fn()} />,
+    );
+
+    expect(container.querySelector(".card-detail__gate")).toBeNull();
+    expect(container.querySelector(".card-detail--gate")).toBeNull();
+  });
+
+  it("shows +N na fila when queueSize > 1", () => {
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={3}
+        onApprovalDecision={vi.fn()}
+      />,
+    );
+
+    const queue = container.querySelector(".card-detail__gate-queue");
+    expect(queue).toBeTruthy();
+    expect(queue?.textContent).toContain("＋2");
+    expect(queue?.textContent).toContain("na fila");
+  });
+
+  it("does not show +N na fila when queueSize is 1", () => {
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector(".card-detail__gate-queue")).toBeNull();
+  });
+
+  it("shows task and step context", () => {
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={vi.fn()}
+      />,
+    );
+
+    const context = container.querySelector(".card-detail__gate-context");
+    expect(context?.textContent).toContain("T-001");
+    expect(context?.textContent).toContain("merge");
+  });
+
+  it("has alertdialog role for accessibility", () => {
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={vi.fn()}
+      />,
+    );
+
+    const gate = container.querySelector("[role='alertdialog']");
+    expect(gate).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-012 — gate button interactions
+// ---------------------------------------------------------------------------
+
+describe("CardDetail — gate button interactions (T-012)", () => {
+  it("calls onApprovalDecision(requestId, true) on Approve click", () => {
+    const onDecision = vi.fn();
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={onDecision}
+      />,
+    );
+
+    const btn = container.querySelector(".card-detail__gate-btn--approve") as HTMLElement;
+    fireEvent.click(btn);
+    expect(onDecision).toHaveBeenCalledWith("req-1", true);
+  });
+
+  it("calls onApprovalDecision(requestId, false) on Reject click", () => {
+    const onDecision = vi.fn();
+    const { container } = render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={onDecision}
+      />,
+    );
+
+    const btn = container.querySelector(".card-detail__gate-btn--reject") as HTMLElement;
+    fireEvent.click(btn);
+    expect(onDecision).toHaveBeenCalledWith("req-1", false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-012 — keyboard: ⎋ = Reject (precedence), ⏎ = Approve
+// ---------------------------------------------------------------------------
+
+describe("CardDetail — keyboard with gate active (T-012)", () => {
+  it("⎋ rejects (does NOT close drawer) when gate is active", () => {
+    const onClose = vi.fn();
+    const onDecision = vi.fn();
+    render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={onClose}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={onDecision}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onDecision).toHaveBeenCalledWith("req-1", false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("⏎ approves when gate is active", () => {
+    const onDecision = vi.fn();
+    render(
+      <CardDetail
+        taskId="T-001"
+        title="First"
+        onClose={vi.fn()}
+        approval={APPROVAL}
+        queueSize={1}
+        onApprovalDecision={onDecision}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onDecision).toHaveBeenCalledWith("req-1", true);
+  });
+
+  it("⎋ closes drawer when no gate is active", () => {
+    const onClose = vi.fn();
+    render(
+      <CardDetail taskId="T-001" title="First" onClose={onClose} />,
+    );
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("⏎ does nothing when no gate is active", () => {
+    const onClose = vi.fn();
+    render(
+      <CardDetail taskId="T-001" title="First" onClose={onClose} />,
+    );
+
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
