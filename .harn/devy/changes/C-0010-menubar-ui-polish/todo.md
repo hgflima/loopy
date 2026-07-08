@@ -82,7 +82,7 @@
     Deps: nenhuma
     Files: apps/menubar/package.json, apps/menubar/src/ui/MarkdownStream.tsx, apps/menubar/src/ui/MarkdownStream.test.tsx, apps/menubar/src/ui/index.ts. Scope: S.
 
-- [ ] T-006: Popover `Glance` reescrito off-brand → design system (#2)
+- [x] T-006: Popover `Glance` reescrito off-brand → design system (#2)
     Reescrever `apps/menubar/src/popover/Glance.tsx` removendo **todos** os inline styles off-brand
     (`#007AFF`, `cyan`, `orange`, `#333`/`#999`…) → classes do DS + `tokens.css`. NOVO
     `apps/menubar/src/popover/Glance.css`. Usar `StatusDot`/`Pill` e a tipografia do DS
