@@ -279,4 +279,120 @@ describe("store-bridge", () => {
       expect(bridge.ui.pendingApprovals).toHaveLength(1);
     });
   });
+
+  describe("transcript accumulation (append-only, cross-step)", () => {
+    it("accumulates stream_chunks tagged by currentStepId", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "implement",
+          stepType: "agent",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "hello " },
+        { type: "stream_chunk", taskId: "T-001", text: "world" },
+      ]);
+
+      const bridge = feedLines(lines);
+
+      expect(bridge.transcript["T-001"]).toEqual([
+        { stepId: "implement", text: "hello " },
+        { stepId: "implement", text: "world" },
+      ]);
+    });
+
+    it("tags chunks with the new stepId after step_started", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "implement",
+          stepType: "agent",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "code" },
+        {
+          type: "step_finished",
+          taskId: "T-001",
+          stepId: "implement",
+          ok: true,
+        },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "simplify",
+          stepType: "agent",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "clean" },
+      ]);
+
+      const bridge = feedLines(lines);
+
+      expect(bridge.transcript["T-001"]).toEqual([
+        { stepId: "implement", text: "code" },
+        { stepId: "simplify", text: "clean" },
+      ]);
+    });
+
+    it("transcript persists after task_finished (≠ store.stream)", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "implement",
+          stepType: "agent",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "work" },
+        {
+          type: "step_finished",
+          taskId: "T-001",
+          stepId: "implement",
+          ok: true,
+        },
+        { type: "task_finished", taskId: "T-001", status: "done" },
+      ]);
+
+      const bridge = feedLines(lines);
+
+      // store.stream is empty (cleared by step_started / task lifecycle)
+      // but transcript survives
+      expect(bridge.transcript["T-001"]).toEqual([
+        { stepId: "implement", text: "work" },
+      ]);
+    });
+
+    it("no transcript entry for unregistered task (same ref)", () => {
+      const state = initialBridgeState();
+      const line = serializeEvents([
+        { type: "stream_chunk", taskId: "GHOST", text: "boo" },
+      ])[0]!;
+
+      const next = applyLine(state, line);
+      expect(next).toBe(state);
+      expect(next.transcript).toEqual({});
+    });
+
+    it("applyLine never throws on stream_chunk (AD-5)", () => {
+      const state = initialBridgeState();
+      // malformed, missing fields, etc. — all no-op
+      expect(() => applyLine(state, "")).not.toThrow();
+      expect(() => applyLine(state, '{"frame":"event"}')).not.toThrow();
+      expect(() =>
+        applyLine(
+          state,
+          JSON.stringify({
+            frame: "event",
+            type: "stream_chunk",
+            taskId: "T-X",
+            text: "x",
+          }),
+        ),
+      ).not.toThrow();
+    });
+  });
 });
