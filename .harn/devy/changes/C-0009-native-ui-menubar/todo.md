@@ -9,7 +9,7 @@
 
 ## Fase 0 — Fundação (T-001)
 
-- [ ] T-001: Monorepo npm workspaces + subpath exports (`loopy/tui/store`, `loopy/tui/view`)
+- [x] T-001: Monorepo npm workspaces + subpath exports (`loopy/tui/store`, `loopy/tui/view`)
     Root `package.json` ganha `"workspaces": ["apps/*"]` e um mapa `"exports"` com
     `"."` (bin atual), `"./tui/store"` → `./dist/tui/store.js` (+ `types`) e
     `"./tui/view"` → `./dist/tui/view.js` (+ `types`). `tsup.config` ganha esses dois
