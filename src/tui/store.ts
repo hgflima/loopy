@@ -61,6 +61,10 @@ export interface StepState {
   readonly id: string;
   readonly type: StepType;
   readonly status: StepStatus;
+  /** Resolved agent label (only for agent steps). */
+  readonly agentName?: string;
+  /** Model override for this step (only for agent steps). */
+  readonly model?: string;
   /** Inner-loop attempt (`${attempt}`); set once an attempt starts. */
   readonly attempt?: number;
   /** Inner-loop ceiling (`verify.max_attempts`), for the `try k/max` display. */
@@ -159,6 +163,10 @@ export type StoreEvent =
       readonly taskId: string;
       readonly stepId: string;
       readonly stepType: StepType;
+      /** Resolved agent label (only for agent steps). */
+      readonly agentName?: string;
+      /** Model override for this step (only for agent steps). */
+      readonly model?: string;
     }
   | {
       readonly type: "attempt_started";
@@ -347,6 +355,8 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
           id: event.stepId,
           type: event.stepType,
           status: "running",
+          ...(event.agentName !== undefined && { agentName: event.agentName }),
+          ...(event.model !== undefined && { model: event.model }),
           checks: [],
         };
         const exists = task.steps.some((s) => s.id === event.stepId);

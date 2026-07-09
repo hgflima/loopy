@@ -22,6 +22,7 @@ import {
   createMarkDonePort,
   decideEscalation,
   resolveAgentBinding,
+  resolveAgentLabel,
   runLoop,
   worktreePathFor,
   type OrchestratorDeps,
@@ -1207,6 +1208,28 @@ describe("resolveAgentBinding", () => {
       model: undefined,
       effort: undefined,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-006: resolveAgentLabel — pure helper
+// ---------------------------------------------------------------------------
+
+describe("resolveAgentLabel", () => {
+  it("returns display_name when present in the agent def", () => {
+    expect(resolveAgentLabel("claude", { command: ["c"], display_name: "Claude Sonnet" })).toBe("Claude Sonnet");
+  });
+
+  it("capitalizes the key when display_name is absent", () => {
+    expect(resolveAgentLabel("claude", { command: ["c"] })).toBe("Claude");
+  });
+
+  it("capitalizes the key when agentDef is undefined", () => {
+    expect(resolveAgentLabel("codex", undefined)).toBe("Codex");
+  });
+
+  it("capitalizes only the first character, preserving the rest", () => {
+    expect(resolveAgentLabel("myAgent", undefined)).toBe("MyAgent");
   });
 });
 

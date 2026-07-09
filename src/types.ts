@@ -29,6 +29,7 @@ export interface AgentDef {
   readonly env?: Readonly<Record<string, string>>;
   readonly model?: string;
   readonly effort?: string;
+  readonly display_name?: string;
 }
 
 /**
