@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { segmentsFor, type Transcript } from "./stream-history";
+import {
+  segmentsFor,
+  overlayStepUsage,
+  type Transcript,
+  type StreamSegment,
+} from "./stream-history";
 
 describe("segmentsFor", () => {
   it("returns [] for unknown task", () => {
@@ -142,5 +147,49 @@ describe("segmentsFor", () => {
       usedTokens: 3000,
       size: 128_000,
     });
+  });
+});
+
+describe("overlayStepUsage", () => {
+  const seg = (over: Partial<StreamSegment> = {}): StreamSegment => ({
+    stepId: "s1",
+    label: "s1",
+    text: "hi",
+    ...over,
+  });
+
+  it("fills usage from the live step when the snapshot has none (the #5 bug)", () => {
+    // The transcript snapshot froze `usedTokens: undefined` because the
+    // `usage_sample` landed AFTER the step's chunks. The live step is truth.
+    const out = overlayStepUsage(
+      [seg({ agent: "Claude", model: "claude-opus-4-8" })],
+      [{ id: "s1", agentName: "Claude", model: "claude-opus-4-8", used: 34_421, size: 1_000_000 }],
+    );
+    expect(out[0]).toMatchObject({ usedTokens: 34_421, size: 1_000_000 });
+  });
+
+  it("keeps the snapshot value when the step is absent (best-effort)", () => {
+    const out = overlayStepUsage([seg({ usedTokens: 100, size: 200_000 })], []);
+    expect(out[0]).toMatchObject({ usedTokens: 100, size: 200_000 });
+  });
+
+  it("keeps the snapshot value when the live field is undefined (never blanks)", () => {
+    const out = overlayStepUsage(
+      [seg({ agent: "Claude", usedTokens: 100, size: 200_000 })],
+      [{ id: "s1", agentName: "Claude" }], // no used/size yet
+    );
+    expect(out[0]).toMatchObject({ agent: "Claude", usedTokens: 100, size: 200_000 });
+  });
+
+  it("overlays live agent/model too, matching each segment by stepId", () => {
+    const out = overlayStepUsage(
+      [seg({ stepId: "s1" }), seg({ stepId: "s2", text: "yo" })],
+      [
+        { id: "s1", agentName: "Claude", used: 10, size: 100 },
+        { id: "s2", agentName: "Codex", used: 20, size: 200 },
+      ],
+    );
+    expect(out[0]).toMatchObject({ agent: "Claude", usedTokens: 10, size: 100 });
+    expect(out[1]).toMatchObject({ agent: "Codex", usedTokens: 20, size: 200 });
   });
 });

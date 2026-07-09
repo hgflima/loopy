@@ -42,6 +42,50 @@ describe("splitSentences — real boundaries", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Dropped-space boundaries — `.` glued to an uppercase word (streaming artifact)
+// ---------------------------------------------------------------------------
+
+describe("splitSentences — dropped-space boundaries", () => {
+  it("splits on a period glued to an uppercase word", () => {
+    expect(splitSentences("implementado.Vou criar")).toBe(
+      "implementado.\nVou criar",
+    );
+  });
+
+  it("splits multiple glued sentences", () => {
+    expect(
+      splitSentences("os configs.Agora preciso.Stubs criados."),
+    ).toBe("os configs.\nAgora preciso.\nStubs criados.");
+  });
+
+  it("splits after a closing paren glued to uppercase", () => {
+    expect(splitSentences("(v9+ usa flat config).ESLint v10")).toBe(
+      "(v9+ usa flat config).\nESLint v10",
+    );
+  });
+
+  it("splits an all-caps word glued to the next sentence", () => {
+    expect(splitSentences("da SPEC.Stubs criados")).toBe(
+      "da SPEC.\nStubs criados",
+    );
+  });
+
+  it("still protects filenames when glued (Node.js — lowercase ext)", () => {
+    expect(splitSentences("Use Node.js here")).toBe("Use Node.js here");
+  });
+
+  it("still protects abbreviations when glued (e.g.React)", () => {
+    expect(splitSentences("Use e.g.React here")).toBe("Use e.g.React here");
+  });
+
+  it("still protects versions/decimals — digits after a dot never match", () => {
+    expect(splitSentences("bump v0.26 and 20.5 values")).toBe(
+      "bump v0.26 and 20.5 values",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Negative whitelist — should NOT split
 // ---------------------------------------------------------------------------
 

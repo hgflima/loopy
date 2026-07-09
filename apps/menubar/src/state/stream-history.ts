@@ -91,3 +91,49 @@ function buildSegment(
     size: last.size,
   };
 }
+
+// ---------------------------------------------------------------------------
+// overlayStepUsage — reconcile segments with LIVE per-step telemetry
+// ---------------------------------------------------------------------------
+
+/** Minimal live-step shape (structurally satisfied by `StepState` from
+ *  `loopy/tui/store`). Kept structural so this module stays store-agnostic. */
+export interface StepTelemetry {
+  readonly id: string;
+  readonly agentName?: string;
+  readonly model?: string;
+  readonly used?: number;
+  readonly size?: number;
+}
+
+/**
+ * Overlay live per-step telemetry (`used`/`size`, and `agent`/`model`) from the
+ * task's current step state onto the text-grouped segments.
+ *
+ * WHY: the transcript entry snapshots `step.used` at `stream_chunk` time, but
+ * `usage_update` (→ `usage_sample` → `step.used`) arrives at the **end** of a
+ * turn, *after* the step's chunks. So the transcript snapshot is stale/absent
+ * (undefined) for the actively-streaming block and for single-block steps — the
+ * raia then shows the agent but no `(used / %)`. The live step state is the
+ * authoritative source of the latest sample; overlay it at render time.
+ *
+ * Best-effort (AD-6, pure): a segment whose `stepId` is absent from `steps`, or
+ * whose live field is undefined, keeps its own snapshot value — never throws,
+ * never blanks a value that the snapshot did carry.
+ */
+export function overlayStepUsage(
+  segments: readonly StreamSegment[],
+  steps: readonly StepTelemetry[],
+): StreamSegment[] {
+  return segments.map((seg) => {
+    const step = steps.find((s) => s.id === seg.stepId);
+    if (!step) return seg;
+    return {
+      ...seg,
+      agent: step.agentName ?? seg.agent,
+      model: step.model ?? seg.model,
+      usedTokens: step.used ?? seg.usedTokens,
+      size: step.size ?? seg.size,
+    };
+  });
+}

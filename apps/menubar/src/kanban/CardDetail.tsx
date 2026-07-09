@@ -16,7 +16,12 @@
  */
 import { useEffect, useMemo } from "react";
 import type { TaskStatus } from "loopy/tui/store";
-import { segmentsFor, type Transcript } from "../state/stream-history";
+import {
+  segmentsFor,
+  overlayStepUsage,
+  type Transcript,
+  type StepTelemetry,
+} from "../state/stream-history";
 import type { ApprovalRequest } from "../state/store-bridge";
 import { escalationCost } from "../panes/ApprovalPrompt";
 import { TaskStatusDot, MarkdownStream, StepDivider } from "../ui";
@@ -32,6 +37,10 @@ export interface CardDetailProps {
   /** All tasks — used to resolve dep status for chips. */
   tasks?: readonly { readonly id: string; readonly status: TaskStatus }[];
   transcript?: Transcript;
+  /** Live per-step telemetry for this task — feeds the raia's usage (C-0011 #5).
+   *  Authoritative over the transcript snapshot, which misses the late
+   *  `usage_sample`. Structurally satisfied by `store.tasks[i].steps`. */
+  steps?: readonly StepTelemetry[];
   /** Head of the FIFO approval queue for this task (T-012). */
   approval?: ApprovalRequest;
   /** Total pending approvals across all tasks (T-012). */
@@ -48,6 +57,7 @@ export function CardDetail({
   deps,
   tasks = [],
   transcript = {},
+  steps = [],
   approval,
   queueSize = 0,
   onApprovalDecision,
@@ -77,8 +87,8 @@ export function CardDetail({
   }, [onClose, hasGate, approval, onApprovalDecision]);
 
   const segments = useMemo(
-    () => segmentsFor(taskId, transcript),
-    [taskId, transcript],
+    () => overlayStepUsage(segmentsFor(taskId, transcript), steps),
+    [taskId, transcript, steps],
   );
 
   return (

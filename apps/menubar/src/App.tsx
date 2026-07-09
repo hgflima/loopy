@@ -149,6 +149,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
               deps={effectiveTask.deps}
               tasks={store.tasks}
               transcript={state.transcript}
+              steps={effectiveTask.steps}
               approval={currentApproval}
               queueSize={approvals}
               onApprovalDecision={onApprovalDecision}

@@ -1,9 +1,10 @@
 /**
  * sentence-split.ts — breaks prose into one sentence per line (AD-6: pure).
  *
- * Conservative strategy (refine #5): splits only on `. ` followed by an
- * uppercase letter or start-of-sentence pattern, with a negative whitelist.
- * When in doubt, keeps together (fail-safe).
+ * Conservative strategy (refine #5): splits on `.` optionally followed by
+ * spaces and then an uppercase letter, with a negative whitelist. The space
+ * is optional because streaming agent prose often drops it (`configs.Agora`),
+ * which is still a real boundary. When in doubt, keeps together (fail-safe).
  *
  * Does NOT split on `?` or `!` (too many false positives in technical prose).
  */
@@ -41,8 +42,8 @@ function isInsideUrl(before: string): boolean {
 /**
  * Split prose into one sentence per line.
  *
- * Only splits at `. ` followed by a Unicode uppercase letter.
- * Returns the input unchanged if no splits apply.
+ * Splits at `.` (with or without following spaces) before a Unicode uppercase
+ * letter. Returns the input unchanged if no splits apply.
  */
 export function splitSentences(prose: string): string {
   if (!prose) return prose;
@@ -54,8 +55,8 @@ export function splitSentences(prose: string): string {
     .join("\n");
 }
 
-/** Matches `. ` followed by any Unicode uppercase letter. */
-const BOUNDARY = /\.\s+(\p{Lu})/u;
+/** Matches `.` + optional spaces + any Unicode uppercase letter. */
+const BOUNDARY = /\.\s*(\p{Lu})/u;
 
 function splitLine(line: string): string {
   const result: string[] = [];
@@ -69,8 +70,8 @@ function splitLine(line: string): string {
     }
 
     const dotIndex = match.index;
-    // match[0] = ". X" (dot + spaces + uppercase char); the next sentence
-    // starts at the uppercase char, i.e. one char before the match ends.
+    // match[0] = ".X" or ". X" (dot + optional spaces + uppercase char); the
+    // next sentence starts at the uppercase char, one char before the match ends.
     const nextStart = dotIndex + match[0].length - 1;
     const before = remaining.slice(0, dotIndex);
 

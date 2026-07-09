@@ -9,7 +9,7 @@
  * React.memo; only the tail in growth re-parses (avoids O(n²) live).
  */
 import type { HTMLAttributes, ReactNode } from "react";
-import { memo, useMemo } from "react";
+import { Fragment, memo, useMemo } from "react";
 import _Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { splitSentences } from "./sentence-split";
@@ -34,14 +34,33 @@ export interface MarkdownStreamProps {
 const remarkPlugins = [remarkGfm];
 
 /**
- * Apply splitSentences to plain-text children only; non-string children
+ * Split one prose string and render each sentence boundary as a real <br>.
+ *
+ * splitSentences marks boundaries with `\n`, but a `\n` inside a <p>/<li>
+ * collapses to a space under `white-space: normal` — so it must become a
+ * <br> to be visible (#7). Returns the raw string when there is no boundary,
+ * keeping textContent byte-identical for the no-split case.
+ */
+function proseToNodes(text: string, keyPrefix: string): ReactNode {
+  const split = splitSentences(text);
+  if (!split.includes("\n")) return split;
+  return split.split("\n").map((line, i) => (
+    <Fragment key={`${keyPrefix}-${i}`}>
+      {i > 0 ? <br /> : null}
+      {line}
+    </Fragment>
+  ));
+}
+
+/**
+ * Apply sentence splitting to plain-text children only; non-string children
  * (e.g. inline code, links) pass through unchanged.
  */
 function splitProseChildren(children: ReactNode): ReactNode {
-  if (typeof children === "string") return splitSentences(children);
+  if (typeof children === "string") return proseToNodes(children, "s");
   if (!Array.isArray(children)) return children;
-  return children.map((child) =>
-    typeof child === "string" ? splitSentences(child) : child,
+  return children.map((child, i) =>
+    typeof child === "string" ? proseToNodes(child, `s${i}`) : child,
   );
 }
 

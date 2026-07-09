@@ -140,6 +140,36 @@ describe("MarkdownStream — sentence splitting", () => {
     expect(p!.textContent).toContain("Second sentence.");
   });
 
+  it("renders the sentence boundary as a real <br>, not a bare newline", () => {
+    // Regression: a bare `\n` collapses under `white-space: normal`, so the
+    // sentences would render on one line. The boundary must be a <br> (#7).
+    const { container } = render(
+      <MarkdownStream text="First sentence. Second sentence. Third one." />,
+    );
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    expect(p!.querySelectorAll("br")).toHaveLength(2);
+  });
+
+  it("breaks a period glued to an uppercase word (dropped space)", () => {
+    // Streaming artifact: `implementado.Vou` has no space but is a boundary (#7).
+    const { container } = render(
+      <MarkdownStream text="Li os arquivos.Vou criar os stubs.Agora rodo os checks." />,
+    );
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    expect(p!.querySelectorAll("br")).toHaveLength(2);
+  });
+
+  it("emits no <br> when there is no sentence boundary", () => {
+    const { container } = render(
+      <MarkdownStream text="Just one sentence with no split." />,
+    );
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    expect(p!.querySelectorAll("br")).toHaveLength(0);
+  });
+
   it("does NOT split inside inline code", () => {
     const { container } = render(
       <MarkdownStream text="Use `Node.js. Start now.` for this." />,

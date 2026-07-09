@@ -20,7 +20,12 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { StoreState } from "loopy/tui/store";
-import { segmentsFor, type Transcript, type StreamSegment } from "../state/stream-history";
+import {
+  segmentsFor,
+  overlayStepUsage,
+  type Transcript,
+  type StreamSegment,
+} from "../state/stream-history";
 import { StatusDot, MarkdownStream, StepDivider } from "../ui";
 import { formatUsage } from "../ui/context-window";
 import "./StreamPanel.css";
@@ -57,7 +62,9 @@ export function streamColumns(
     .map((task) => ({
       taskId: task.id,
       title: task.title,
-      segments: segmentsFor(task.id, transcript),
+      // Overlay LIVE per-step usage (C-0011 #5): the transcript snapshot misses
+      // the late `usage_sample`; `task.steps` is authoritative.
+      segments: overlayStepUsage(segmentsFor(task.id, transcript), task.steps),
     }));
 }
 
