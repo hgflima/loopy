@@ -104,7 +104,7 @@
     Deps: nenhuma
     Files: src/acp/session.ts, src/acp/pool.ts, src/index.ts, tests/acp/session.test.ts, tests/acp/pool.test.ts. Scope: L. RISCO ALTO.
 
-- [ ] T-006: `step_started` carrega Agente + model (motor resolve o label) (#4)
+- [x] T-006: `step_started` carrega Agente + model (motor resolve o label) (#4)
     Extensão ADITIVA. Em `src/types.ts:27-32`: `AgentDef.display_name?: string`. Em
     `src/config/schema.ts:66-73`: `agentDefSchema` += `display_name: nonEmptyString.optional()`
     (mantém `.strict()`). Em `src/tui/store.ts`: o evento `step_started` (`:157-162`) ganha
