@@ -198,7 +198,7 @@
     Deps: T-004
     Files: apps/menubar/src/assets/loopy-lockup-horizontal-gradient.svg, apps/menubar/src/assets/loopy-lockup-horizontal-black.svg, apps/menubar/src/assets/loopy-lockup-horizontal-white.svg, apps/menubar/src/App.tsx, apps/menubar/src/App.css. Scope: S.
 
-- [ ] T-011: Divisor arrastável Kanban↔stream — altura persistida (#3)
+- [x] T-011: Divisor arrastável Kanban↔stream — altura persistida (#3)
     Em `apps/menubar/src/App.tsx` (entre `.app-main` e `<StreamPanel>`, `:109-117`) inserir um
     **divisor arrastável**. A altura do painel de streaming vira **fração de runtime** (refine #6):
     default `0.45`, min `0.20`, max `0.70`, persistida em **localStorage**, aplicada via inline-style
