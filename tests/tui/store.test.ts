@@ -1098,6 +1098,115 @@ describe("reduce · agent tracking (T-008)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// reduce — usage_sample (T-007: live context-window occupancy)
+// ---------------------------------------------------------------------------
+
+describe("reduce · usage_sample", () => {
+  it("stores used and size on the target step (last sample wins)", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "implement",
+        stepType: "agent",
+      },
+      {
+        type: "usage_sample",
+        taskId: "T-001",
+        stepId: "implement",
+        used: 50000,
+        size: 200000,
+      },
+    );
+    const step = findStep(state, "T-001", "implement");
+    expect(step.used).toBe(50000);
+    expect(step.size).toBe(200000);
+  });
+
+  it("overwrites previous sample (last sample, not peak or sum)", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "implement",
+        stepType: "agent",
+      },
+      {
+        type: "usage_sample",
+        taskId: "T-001",
+        stepId: "implement",
+        used: 50000,
+        size: 200000,
+      },
+      {
+        type: "usage_sample",
+        taskId: "T-001",
+        stepId: "implement",
+        used: 80000,
+        size: 200000,
+      },
+    );
+    const step = findStep(state, "T-001", "implement");
+    expect(step.used).toBe(80000);
+    expect(step.size).toBe(200000);
+  });
+
+  it("is a no-op when the step has not been started yet", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "usage_sample",
+        taskId: "T-001",
+        stepId: "implement",
+        used: 50000,
+        size: 200000,
+      },
+    );
+    expect(findTask(state, "T-001").steps).toEqual([]);
+  });
+
+  it("is a no-op for an unregistered task", () => {
+    const before = initialState();
+    const after = reduce(before, {
+      type: "usage_sample",
+      taskId: "T-404",
+      stepId: "implement",
+      used: 50000,
+      size: 200000,
+    });
+    expect(after).toBe(before);
+  });
+
+  it("does not affect other step fields", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "implement",
+        stepType: "agent",
+        agentName: "Claude",
+        model: "sonnet",
+      },
+      {
+        type: "usage_sample",
+        taskId: "T-001",
+        stepId: "implement",
+        used: 50000,
+        size: 200000,
+      },
+    );
+    const step = findStep(state, "T-001", "implement");
+    expect(step.status).toBe("running");
+    expect(step.agentName).toBe("Claude");
+    expect(step.model).toBe("sonnet");
+    expect(step.type).toBe("agent");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // reduce — pipeline_declared
 // ---------------------------------------------------------------------------
 

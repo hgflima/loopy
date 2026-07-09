@@ -73,6 +73,10 @@ export interface StepState {
   readonly checks: readonly CheckState[];
   /** Failure reason when `status` is `failed`. */
   readonly reason?: string;
+  /** Live context-window tokens used (last `usage_update` sample, T-007). */
+  readonly used?: number;
+  /** Live context-window size limit (last `usage_update` sample, T-007). */
+  readonly size?: number;
 }
 
 /** Live state of one backlog task — the unit the TUI renders a row per. */
@@ -216,6 +220,13 @@ export type StoreEvent =
       readonly summary: string;
       /** Agent producing this entry (T-008: multi-agent prefix). */
       readonly agent?: string;
+    }
+  | {
+      readonly type: "usage_sample";
+      readonly taskId: string;
+      readonly stepId: string;
+      readonly used: number;
+      readonly size: number;
     }
   | {
       readonly type: "pipeline_declared";
@@ -453,6 +464,13 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         activeAgents: nextAgents,
       };
     }
+
+    case "usage_sample":
+      return updateTaskStep(state, event.taskId, event.stepId, (step) => ({
+        ...step,
+        used: event.used,
+        size: event.size,
+      }));
 
     case "pipeline_declared":
       return { ...state, pipeline: [...event.steps] };
