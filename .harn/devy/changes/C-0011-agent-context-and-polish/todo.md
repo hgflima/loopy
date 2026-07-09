@@ -150,7 +150,7 @@
 
 ## Fase 2 — Integração no app (T-008 ∥ T-009 ∥ T-010 → T-011 → T-012)
 
-- [ ] T-008: `store-bridge` + `stream-history` propagam Agente/model/uso por Step (#4/#5)
+- [x] T-008: `store-bridge` + `stream-history` propagam Agente/model/uso por Step (#4/#5)
     Em `apps/menubar/src/state/store-bridge.ts`: acumular telemetria por **(taskId, stepId)** —
     `agentName`/`model` chegam via `step_started` (já em `StoreState.tasks[].steps[]` após o
     reduce de T-006) e `used`/`size` via `usage_sample` (após T-007). Derivar isso do `nextStore`
