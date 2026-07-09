@@ -1,5 +1,5 @@
 version: "1"
-name: C-0010-menubar-ui-polish
+name: C-0011-agent-context-and-polish
 
 workspace:
   root: "."
@@ -14,9 +14,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: ".harn/devy/changes/C-0010-menubar-ui-polish/spec.md"
-  plan: ".harn/devy/changes/C-0010-menubar-ui-polish/plan.md"
-  todo: ".harn/devy/changes/C-0010-menubar-ui-polish/todo.md"
+  spec: ".harn/devy/changes/C-0011-agent-context-and-polish/spec.md"
+  plan: ".harn/devy/changes/C-0011-agent-context-and-polish/plan.md"
+  todo: ".harn/devy/changes/C-0011-agent-context-and-polish/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
