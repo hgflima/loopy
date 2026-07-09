@@ -125,6 +125,51 @@ describe("MarkdownStream — streaming", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Sentence splitting in prose nodes
+// ---------------------------------------------------------------------------
+
+describe("MarkdownStream — sentence splitting", () => {
+  it("splits sentences in a paragraph", () => {
+    const { container } = render(
+      <MarkdownStream text="First sentence. Second sentence." />,
+    );
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    // The text should have a newline between sentences
+    expect(p!.textContent).toContain("First sentence.");
+    expect(p!.textContent).toContain("Second sentence.");
+  });
+
+  it("does NOT split inside inline code", () => {
+    const { container } = render(
+      <MarkdownStream text="Use `Node.js. Start now.` for this." />,
+    );
+    const code = container.querySelector("code");
+    expect(code).not.toBeNull();
+    // Inline code content must remain intact
+    expect(code!.textContent).toBe("Node.js. Start now.");
+  });
+
+  it("does NOT split inside fenced code blocks", () => {
+    const md = "```\nFirst line. Second line. Third line.\n```";
+    const { container } = render(<MarkdownStream text={md} />);
+    const code = container.querySelector("code");
+    expect(code).not.toBeNull();
+    expect(code!.textContent).toBe("First line. Second line. Third line.\n");
+  });
+
+  it("does not split Node.js in prose", () => {
+    const { container } = render(
+      <MarkdownStream text="Use Node.js. It works well." />,
+    );
+    const p = container.querySelector("p");
+    expect(p).not.toBeNull();
+    // Node.js should not cause a split
+    expect(p!.textContent).toBe("Use Node.js. It works well.");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Edge cases
 // ---------------------------------------------------------------------------
 

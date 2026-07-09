@@ -421,6 +421,14 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
           : undefined,
       }),
     logger,
+    // Re-register sessionToTask when clear() reopens a session (sessionId changes).
+    (oldSessionId, newSessionId) => {
+      const entry = sessionToTask.get(oldSessionId);
+      if (entry) {
+        sessionToTask.delete(oldSessionId);
+        sessionToTask.set(newSessionId, entry);
+      }
+    },
   );
   const git = createGit({ root });
   const checks: ChecksRunnerPort = {

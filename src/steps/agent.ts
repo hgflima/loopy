@@ -7,12 +7,12 @@
  * What it interprets, all straight from the step's config (AD-1 — no behavior
  * hardcoded here, only the mechanics of driving the session):
  *
- *  - **`clear_context`** (default `true`) → send `/clear` before *each* prompt so
- *    every attempt starts from a fresh context; memory lives on disk (the
- *    worktree) and in the prompt, never in the conversation (SPEC / AD-3).
+ *  - **`clear_context`** (default `true`) → reopen the session before *each*
+ *    prompt so every attempt starts from a fresh context; memory lives on disk
+ *    (the worktree) and in the prompt, never in the conversation (SPEC / AD-3).
  *  - **`mode`** → applied once via `session/set_mode` (`plan` for a read-only
- *    audit, `acceptEdits` for implement/simplify). Mode persists on the session
- *    and is not reset by `/clear`, so it is set once up front.
+ *    audit, `acceptEdits` for implement/simplify). Mode is re-applied
+ *    automatically after reopen, so it is set once up front.
  *  - **`model`** → applied via `setModel()` (best-effort, ADR-0006); resolved as
  *    `step.model ?? registry[agent].model`. No-op when absent.
  *  - **`effort`** → applied via `setEffort()` (best-effort, ADR-0006); resolved as
@@ -201,7 +201,7 @@ export function createAgentStep(): Step {
       // name the target agent.
       const binding = resolveAgentBinding(step, ctx.config.resolvedAgents);
 
-      // Mode persists on the session and survives /clear, so set it once up front.
+      // Mode is re-applied automatically after reopen, so set it once up front.
       // A rejected mode is a genuine config fault (wrong per-agent vocabulary), so
       // it fails fast with the step + agent named — not swallowed (AD-5 reserves
       // exceptions for genuine faults; the same bad mode would hit every task).

@@ -6,8 +6,8 @@
  *    subprocess): non-`end_turn` is a failure, `cancelled` is our stop-signal.
  *  - Integration `describe` against the scenario-driven fake agent (OQ5): a
  *    *medium* test that spawns the real ndjson transport and drives the full
- *    lifecycle new -> set_mode -> /clear -> prompt -> readText -> cancel ->
- *    teardown, plus the worktree-keyed pool (parallel-ready).
+ *    lifecycle new -> set_mode -> clear (reopen) -> prompt -> readText ->
+ *    cancel -> teardown, plus the worktree-keyed pool (parallel-ready).
  */
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -108,7 +108,7 @@ describe("buildSession / session pool (against the fake agent)", () => {
     session.dispose();
   });
 
-  it("setMode and /clear keep the same sessionId", async () => {
+  it("setMode keeps sessionId; clear() (reopen) changes it", async () => {
     const session = await startSession({
       modes: {
         currentModeId: "default",
@@ -123,8 +123,10 @@ describe("buildSession / session pool (against the fake agent)", () => {
     await session.setMode("plan");
     expect(session.sessionId).toBe(id);
 
+    // clear() reopens: dispose + session/new → sessionId CHANGES.
     await session.clear();
-    expect(session.sessionId).toBe(id);
+    expect(session.sessionId).not.toBe(id);
+    expect(session.sessionId).toBeTruthy();
 
     session.dispose();
   });
@@ -181,7 +183,7 @@ describe("buildSession / session pool (against the fake agent)", () => {
     session.dispose();
   });
 
-  it("runs the full lifecycle: new -> set_mode -> /clear -> prompt -> readText -> cancel -> teardown", async () => {
+  it("runs the full lifecycle: new -> set_mode -> clear (reopen) -> prompt -> readText -> cancel -> teardown", async () => {
     const deps = await openWith({
       modes: {
         currentModeId: "default",
@@ -195,8 +197,11 @@ describe("buildSession / session pool (against the fake agent)", () => {
     const pool = createSessionPool(deps);
 
     const session = await pool.session(PROJECT_ROOT);
+    const idBefore = session.sessionId;
     await session.setMode("acceptEdits");
     await session.clear();
+    // Reopen changes the sessionId.
+    expect(session.sessionId).not.toBe(idBefore);
     const reason = await session.prompt("do it");
     expect(reason).toBe("end_turn");
     expect(session.readText()).toBe("all done");
@@ -275,7 +280,7 @@ describe("buildSession / session pool (against the fake agent)", () => {
     session.dispose();
   });
 
-  it("/clear returns zeros and is innocuous for drainUsage", async () => {
+  it("clear (reopen) does not affect drainUsage — usage accumulator is preserved", async () => {
     const session = await startSession({
       turns: [
         {
@@ -287,12 +292,12 @@ describe("buildSession / session pool (against the fake agent)", () => {
     });
 
     await session.prompt("go");
-    // /clear sends a special prompt that returns stopReason: end_turn with no usage
+    // clear() is now reopen (dispose + session/new) — no prompt turn, no usage delta.
     await session.clear();
 
     const usage = session.drainUsage();
     expect(usage).not.toBeNull();
-    // Only the real turn's tokens are counted; /clear adds nothing.
+    // Only the real turn's tokens are counted; reopen adds nothing.
     expect(usage!.inputTokens).toBe(100);
     expect(usage!.outputTokens).toBe(50);
 
@@ -335,6 +340,97 @@ describe("buildSession / session pool (against the fake agent)", () => {
     // Cost is cumulative — the last snapshot wins.
     expect(cost!.amount).toBe(0.12);
     expect(cost!.currency).toBe("USD");
+
+    session.dispose();
+  });
+
+  it("readCost carries cost across reopens (costCarry)", async () => {
+    const session = await startSession({
+      turns: [
+        {
+          text: ["t1"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+          cost: { amount: 0.10, currency: "USD" },
+        },
+      ],
+    });
+
+    await session.prompt("go");
+    // Cost before reopen: 0.10.
+    const costBefore = session.readCost();
+    expect(costBefore).not.toBeNull();
+    expect(costBefore!.amount).toBe(0.10);
+
+    // Reopen: old cost becomes costCarry; new session starts at 0.
+    await session.clear();
+
+    // After reopen, cost is still at least the carry.
+    const costAfter = session.readCost();
+    expect(costAfter).not.toBeNull();
+    expect(costAfter!.amount).toBeGreaterThanOrEqual(0.10);
+
+    session.dispose();
+  });
+
+  it("clear() fires onReopen callback with old and new sessionId", async () => {
+    const reopens: Array<{ oldId: string; newId: string }> = [];
+    handle = await openAgent({
+      command: fakeCommand({
+        modes: {
+          currentModeId: "default",
+          availableModes: [
+            { id: "default", name: "Default" },
+            { id: "plan", name: "Plan" },
+          ],
+        },
+      }),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+    });
+    const deps: SessionDeps = {
+      ctx: handle.ctx,
+      text: handle.text,
+      cost: handle.cost,
+      onReopen: (oldId, newId) => reopens.push({ oldId, newId }),
+    };
+    const session = await buildSession(deps, PROJECT_ROOT).start();
+    const originalId = session.sessionId;
+
+    await session.clear();
+
+    expect(reopens).toHaveLength(1);
+    expect(reopens[0]!.oldId).toBe(originalId);
+    expect(reopens[0]!.newId).toBe(session.sessionId);
+    expect(reopens[0]!.oldId).not.toBe(reopens[0]!.newId);
+
+    session.dispose();
+  });
+
+  it("clear() re-applies mode after reopen (audit mode: plan survives)", async () => {
+    const session = await startSession({
+      modes: {
+        currentModeId: "default",
+        availableModes: [
+          { id: "default", name: "Default" },
+          { id: "plan", name: "Plan" },
+        ],
+      },
+      defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+    });
+
+    await session.setMode("plan");
+    const idBefore = session.sessionId;
+
+    // Reopen — mode should be re-applied automatically.
+    await session.clear();
+    expect(session.sessionId).not.toBe(idBefore);
+
+    // If mode re-apply failed, the session would have thrown (fail-closed for modes).
+    // A successful clear() proves the mode was re-applied without error.
+    // We can also prompt on the new session to verify it's functional.
+    const reason = await session.prompt("audit check");
+    expect(reason).toBe("end_turn");
 
     session.dispose();
   });

@@ -154,7 +154,7 @@ export interface AgentStep extends StepBase {
   readonly prompt: string;
   readonly retry_prompt?: string;
   readonly mode?: AgentMode;
-  /** `/clear` before the prompt (fresh context). Default `true`. */
+  /** Reopen the session before the prompt (fresh context). Default `true`. */
   readonly clear_context?: boolean;
   readonly verify?: VerifyConfig;
   /** Verdict gate, e.g. `"AUDIT: PASS"`; blocks continuation if unmet. */
@@ -511,7 +511,11 @@ export interface AgentSession {
   readonly sessionId: string;
   /** Apply a mode via `session/set_mode` (e.g. `plan`/`acceptEdits`). */
   setMode(modeId: string): Promise<void>;
-  /** Send `/clear` (resets context, keeps the same `sessionId`). */
+  /**
+   * Reset context by reopening the session (`dispose()` + `session/new`).
+   * The wrapper reference is preserved, but the underlying `sessionId` **changes**.
+   * Mode/model/effort are re-applied automatically; cost is carried over.
+   */
   clear(): Promise<void>;
   /** Send a prompt; resolves with the ACP `stopReason`. */
   prompt(text: string): Promise<StopReason>;
