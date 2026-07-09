@@ -13,8 +13,8 @@
  * the `agent` step (T-014) drives, nothing more (AD-1 — no loop behavior here):
  *
  *  - {@link LoopySession.setMode} → `session/set_mode` (`plan` / `acceptEdits` …).
- *  - {@link LoopySession.clear}   → sends the raw `/clear` command, which the
- *    agent forwards to reset context while keeping the same `sessionId`.
+ *  - {@link LoopySession.clear}   → reopens the session (`dispose()` +
+ *    `session/new`); the wrapper is preserved but the `sessionId` changes.
  *  - {@link LoopySession.prompt}  → one prompt turn; resolves with the ACP
  *    `stopReason` only (never the text).
  *  - {@link LoopySession.readText} → the turn's text from our OWN buffer (OQ3),
@@ -50,9 +50,6 @@ import type {
 } from "../types";
 import type { AcpTrafficEntry } from "../logging/logger";
 import type { CostBuffer, TurnTextBuffer } from "./client";
-
-/** The raw command that resets an agent's context while keeping the session. */
-export const CLEAR_COMMAND = "/clear";
 
 // ---------------------------------------------------------------------------
 // Stop-reason classification (AC3) — pure, reused by the `agent` step (T-014).
@@ -102,6 +99,13 @@ export interface SessionDeps {
   readonly cost?: CostBuffer;
   /** Called for every ACP JSON-RPC message (send/recv); pure observation (AD-1). */
   readonly onTraffic?: (entry: AcpTrafficEntry, sessionId: string) => void;
+  /**
+   * Called when `clear()` reopens the session (`dispose()` + `session/new`).
+   * The wrapper's identity is preserved, but the underlying `sessionId` changes.
+   * Consumers keyed by `sessionId` (e.g. `sessionToTask` in `index.ts`) must
+   * re-register here.
+   */
+  readonly onReopen?: (oldSessionId: string, newSessionId: string) => void;
   readonly logger?: LoggerPort;
 }
 
@@ -140,26 +144,48 @@ class SessionWrapper implements LoopySession {
   private usageAvailable = false;
 
   /** `configId` for the `model` category (discovered from `session/new`). */
-  private readonly modelConfigId: string | undefined;
+  private modelConfigId: string | undefined;
   /** `configId` for the `thought_level` category (discovered from `session/new`). */
-  private readonly effortConfigId: string | undefined;
+  private effortConfigId: string | undefined;
   /**
    * Mode ids the adapter announced in `session/new` (empty when none announced).
    * Modes are **per-agent vocabulary** (claude-agent-acp: `acceptEdits`/`plan`;
    * codex-acp: `read-only`/`agent`/`agent-full-access`), so a mode valid for one
    * agent is invalid for another — {@link setMode} validates against this list.
    */
-  private readonly availableModeIds: readonly string[];
+  private availableModeIds!: readonly string[];
+
+  // Stored config values for replay after reopen (session/new resets to defaults).
+  private appliedMode: string | undefined;
+  private appliedModel: string | undefined;
+  private appliedEffort: string | undefined;
+
+  /**
+   * Cumulative cost carry-over across reopens. The `CostBuffer` is keyed by
+   * `sessionId` and resets to zero on a new session; this field preserves
+   * the total across the wrapper's lifetime.
+   */
+  private costCarry: { amount: number; currency: string } | null = null;
+
+  /** The cwd this session is bound to (immutable, needed for reopen). */
+  private readonly cwd: string;
 
   constructor(
     private readonly deps: SessionDeps,
-    private readonly active: ActiveSession,
+    private active: ActiveSession,
+    cwd: string,
   ) {
-    const opts = active.newSessionResponse.configOptions;
+    this.cwd = cwd;
+    this.parseConfigFromSession(active);
+  }
+
+  /** Extract config ids and available modes from a (possibly new) session. */
+  private parseConfigFromSession(session: ActiveSession): void {
+    const opts = session.newSessionResponse.configOptions;
     this.modelConfigId = findConfigId(opts, "model");
     this.effortConfigId = findConfigId(opts, "thought_level");
     this.availableModeIds =
-      active.newSessionResponse.modes?.availableModes.map((m) => m.id) ?? [];
+      session.newSessionResponse.modes?.availableModes.map((m) => m.id) ?? [];
   }
 
   get sessionId(): string {
@@ -201,6 +227,7 @@ class SessionWrapper implements LoopySession {
     const params = { sessionId: this.sessionId, modeId };
     this.send("session/set_mode", params);
     await this.deps.ctx.request(AGENT_METHODS.session_set_mode, params);
+    this.appliedMode = modeId;
     this.logAction(`set_mode ${modeId}`);
   }
 
@@ -211,6 +238,7 @@ class SessionWrapper implements LoopySession {
    */
   async setModel(modelId: string): Promise<void> {
     await this.setConfigOption(this.modelConfigId, "model", modelId);
+    this.appliedModel = modelId;
   }
 
   /**
@@ -219,6 +247,7 @@ class SessionWrapper implements LoopySession {
    */
   async setEffort(level: string): Promise<void> {
     await this.setConfigOption(this.effortConfigId, "thought_level", level);
+    this.appliedEffort = level;
   }
 
   /**
@@ -253,10 +282,57 @@ class SessionWrapper implements LoopySession {
     }
   }
 
-  /** Reset context via the raw `/clear` command; keeps the same `sessionId`. */
+  /**
+   * Reset context by reopening the session: `dispose()` the current
+   * `ActiveSession` then `buildSession(cwd).start()` a fresh one. The wrapper
+   * reference is preserved (pool/orchestrator caches stay valid), but the
+   * underlying `sessionId` **changes**.
+   *
+   * After reopen:
+   *  - `modelConfigId`/`effortConfigId`/`availableModeIds` are re-parsed from
+   *    the new `newSessionResponse`.
+   *  - Stored mode/model/effort are re-applied so the session resumes with the
+   *    same autonomy level (critical for `mode: plan` in audit steps).
+   *  - `costCarry` captures the old session's cumulative cost so `readCost()`
+   *    remains monotonic across reopens.
+   *  - The `onReopen` callback notifies consumers keyed by `sessionId`.
+   */
   async clear(): Promise<void> {
-    await this.runTurn(CLEAR_COMMAND);
-    this.logAction(CLEAR_COMMAND);
+    const oldSessionId = this.sessionId;
+
+    // Snapshot the old session's cost before disposing.
+    const oldCost = this.deps.cost?.read(oldSessionId);
+    if (oldCost != null) {
+      this.costCarry = {
+        amount: (this.costCarry?.amount ?? 0) + oldCost.amount,
+        currency: oldCost.currency,
+      };
+    }
+
+    // Dispose + open a fresh session on the same cwd.
+    this.active.dispose();
+    this.active = await this.deps.ctx.buildSession(this.cwd).start();
+    this.parseConfigFromSession(this.active);
+
+    // Reset turn state for the new session.
+    this.lastTurnText = "";
+    this.deps.text.reset(this.sessionId);
+
+    this.logAction(`reopen ${oldSessionId} → ${this.sessionId}`);
+
+    // Re-apply stored config (session/new starts with defaults).
+    if (this.appliedMode !== undefined) {
+      await this.setMode(this.appliedMode);
+    }
+    if (this.appliedModel !== undefined) {
+      await this.setModel(this.appliedModel);
+    }
+    if (this.appliedEffort !== undefined) {
+      await this.setEffort(this.appliedEffort);
+    }
+
+    // Notify consumers keyed by sessionId (e.g. sessionToTask).
+    this.deps.onReopen?.(oldSessionId, this.sessionId);
   }
 
   async prompt(text: string): Promise<StopReason> {
@@ -301,11 +377,14 @@ class SessionWrapper implements LoopySession {
     return snapshot;
   }
 
-  /** Cumulative cost snapshot from the cost buffer; `null` when not reported. */
+  /** Cumulative cost snapshot from the cost buffer + carry from prior sessions. */
   readCost(): StepCost | null {
     const raw = this.deps.cost?.read(this.sessionId);
-    if (raw == null) return null;
-    return { amount: raw.amount, currency: raw.currency, available: true };
+    const carry = this.costCarry;
+    if (raw == null && carry == null) return null;
+    const amount = (carry?.amount ?? 0) + (raw?.amount ?? 0);
+    const currency = raw?.currency ?? carry?.currency ?? "USD";
+    return { amount, currency, available: true };
   }
 
   /**
@@ -370,13 +449,13 @@ export interface SessionStarter {
 /**
  * Build a session bound to `cwd` (a worktree). Call {@link SessionStarter.start}
  * to actually open it — mirrors the SDK's `ctx.buildSession(cwd).start()` while
- * layering the turn buffer, `/clear`, and stop-reason mechanics on top.
+ * layering the turn buffer, reopen-on-clear, and stop-reason mechanics on top.
  */
 export function buildSession(deps: SessionDeps, cwd: string): SessionStarter {
   return {
     async start(): Promise<LoopySession> {
       const active = await deps.ctx.buildSession(cwd).start();
-      return new SessionWrapper(deps, active);
+      return new SessionWrapper(deps, active, cwd);
     },
   };
 }

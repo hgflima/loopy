@@ -53,6 +53,7 @@ import type { StoreEvent } from "../tui/store";
 import type { Mutex } from "./mutex";
 import { guarded } from "./mutex";
 import type {
+  AgentDef,
   AgentSession,
   CheckpointPort,
   ChecksRunnerPort,
@@ -181,6 +182,36 @@ export function resolveAgentBinding(
     agentName,
     model: step.model ?? agentDef?.model,
     effort: step.effort ?? agentDef?.effort,
+  };
+}
+
+/**
+ * Resolve the human-readable label for an agent: `display_name` from the
+ * registry wins; otherwise capitalize the key. Pure helper (AD-6).
+ */
+export function resolveAgentLabel(
+  key: string,
+  agentDef: AgentDef | undefined,
+): string {
+  if (agentDef?.display_name) return agentDef.display_name;
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+type AgentLabel = { readonly agentName: string; readonly model?: string };
+
+/**
+ * Build the `{ agentName, model }` payload for `step_started` events.
+ * Returns `undefined` for non-agent steps (they carry no agent metadata).
+ */
+function buildAgentLabel(
+  step: StepConfig,
+  binding: ReturnType<typeof resolveAgentBinding>,
+  resolvedAgents: ResolvedAgents,
+): AgentLabel | undefined {
+  if (step.type !== "agent") return undefined;
+  return {
+    agentName: resolveAgentLabel(binding.agentName, resolvedAgents.byName[binding.agentName]),
+    model: binding.model,
   };
 }
 
@@ -881,12 +912,14 @@ async function runTaskPipeline(
   const timedExecute = async (
     interpreter: { execute(ctx: StepContext): Promise<StepResult> },
     ctx: StepContext,
+    agentLabel?: AgentLabel,
   ): Promise<StepResult> => {
     safeEmit(deps, {
       type: "step_started",
       taskId: task.id,
       stepId: ctx.step.id,
       stepType: ctx.step.type,
+      ...(agentLabel && { agentName: agentLabel.agentName, model: agentLabel.model }),
     });
     const t0 = clock();
     const result = await interpreter.execute(ctx);
@@ -1003,7 +1036,9 @@ async function runTaskPipeline(
       deps,
       stepSession,
     );
-    const result: StepResult = await timedExecute(interpreter, ctx);
+    const result: StepResult = await timedExecute(
+      interpreter, ctx, buildAgentLabel(step, binding, config.resolvedAgents),
+    );
     executedSteps.add(step.id);
 
     if (result.ok) {
@@ -1113,7 +1148,9 @@ async function runTaskPipeline(
           deps,
           teardownSession,
         );
-        const result = await timedExecute(interpreter, ctx);
+        const result = await timedExecute(
+          interpreter, ctx, buildAgentLabel(step, teardownBinding, config.resolvedAgents),
+        );
         executedSteps.add(step.id);
 
         if (result.ok) {

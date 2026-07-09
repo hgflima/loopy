@@ -25,7 +25,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/main.tsx, apps/menubar/src-tauri/src/main.rs. Scope: S.
 
-- [ ] T-002: `sentence-split.ts` (puro) + aplicação em MarkdownStream (#7)
+- [x] T-002: `sentence-split.ts` (puro) + aplicação em MarkdownStream (#7)
     NOVO `apps/menubar/src/ui/sentence-split.ts` — função **pura** `splitSentences(prose): string`
     (AD-6) que quebra prosa em um período por linha, **conservadora** (refine #5): quebra só em
     `. ` seguido de Maiúscula/início de sentença, com **whitelist negativa** — NÃO quebra em
@@ -75,7 +75,7 @@
 
 ## Fase 1 — Motor (T-005 ∥ T-006 → T-007)
 
-- [ ] T-005: `clear()` → reopen ACP-nativo (`session/new`), fix sempre-ativo (#8)
+- [x] T-005: `clear()` → reopen ACP-nativo (`session/new`), fix sempre-ativo (#8)
     **RISCO ALTO** — cirurgia no ciclo de vida da Sessão. Hoje `clear()` (`src/acp/session.ts:256-260`)
     roda `/clear` como turno (`CLEAR_COMMAND` `:55`), que o Codex rejeita ("Unknown command /clear").
     Trocar por `reopen()` encapsulado no `SessionWrapper` (`session.ts:137-351`):
@@ -104,7 +104,7 @@
     Deps: nenhuma
     Files: src/acp/session.ts, src/acp/pool.ts, src/index.ts, tests/acp/session.test.ts, tests/acp/pool.test.ts. Scope: L. RISCO ALTO.
 
-- [ ] T-006: `step_started` carrega Agente + model (motor resolve o label) (#4)
+- [x] T-006: `step_started` carrega Agente + model (motor resolve o label) (#4)
     Extensão ADITIVA. Em `src/types.ts:27-32`: `AgentDef.display_name?: string`. Em
     `src/config/schema.ts:66-73`: `agentDefSchema` += `display_name: nonEmptyString.optional()`
     (mantém `.strict()`). Em `src/tui/store.ts`: o evento `step_started` (`:157-162`) ganha
@@ -168,7 +168,7 @@
     Deps: T-007
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/state/stream-history.ts, apps/menubar/src/state/stream-history.test.ts. Scope: M.
 
-- [ ] T-009: Kanban — título em 3 linhas com altura estável (#2)
+- [x] T-009: Kanban — título em 3 linhas com altura estável (#2)
     Em `apps/menubar/src/kanban/kanban.css`: `.kanban-card-title` (`:92-100`) troca
     `-webkit-line-clamp: 2 → 3`; garantir que o card **acomoda 3 linhas sem "pular" a altura** ao
     truncar (min-height no `.kanban-card` e/ou `align-items: flex-start` para título multi-linha —

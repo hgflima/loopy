@@ -173,6 +173,38 @@ describe("reduce · task and step lifecycle", () => {
     expect(findStep(state, "T-001", "implement").type).toBe("agent");
   });
 
+  it("carries agentName and model in step_started for agent steps", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "implement",
+        stepType: "agent",
+        agentName: "Claude",
+        model: "sonnet",
+      },
+    );
+    const step = findStep(state, "T-001", "implement");
+    expect(step.agentName).toBe("Claude");
+    expect(step.model).toBe("sonnet");
+  });
+
+  it("omits agentName and model when absent in step_started (non-agent steps)", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "run-checks",
+        stepType: "checks",
+      },
+    );
+    const step = findStep(state, "T-001", "run-checks");
+    expect(step.agentName).toBeUndefined();
+    expect(step.model).toBeUndefined();
+  });
+
   it("records the current attempt as try k/max", () => {
     const state = play(
       { type: "task_registered", taskId: "T-001", title: "t" },
