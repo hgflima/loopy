@@ -26,8 +26,35 @@
   gap: var(--sp-sm);
 }
 
-.app-header__wordmark {
-  color: var(--ink);
+/* Logo — gradient by default; swap to black/white when contrast is poor. */
+.app-header__logo {
+  height: var(--logo-h);
+  width: auto;
+  display: none;
+}
+
+/* Default: show the gradient lockup. */
+.app-header__logo--gradient {
+  display: block;
+}
+
+/* Light theme override: gradient may lack contrast on very light backgrounds. */
+[data-theme="light"] .app-header__logo--gradient { display: none; }
+[data-theme="light"] .app-header__logo--light { display: block; }
+
+/* Dark theme override: use white variant for readability. */
+[data-theme="dark"] .app-header__logo--gradient { display: none; }
+[data-theme="dark"] .app-header__logo--dark { display: block; }
+
+/* OS-level fallback when no data-theme attribute is set. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) .app-header__logo--gradient { display: none; }
+  :root:not([data-theme]) .app-header__logo--light { display: block; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .app-header__logo--gradient { display: none; }
+  :root:not([data-theme]) .app-header__logo--dark { display: block; }
 }
 
 .app-header__meta {
