@@ -27,7 +27,7 @@ import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { openAgent } from "./acp/agent";
-import { acpTrafficSummary, agentChunkText } from "./acp/client";
+import { acpTrafficSummary, agentChunkText, usageUpdateUsed } from "./acp/client";
 import {
   createAgentProcessPool,
   type PerAgentOptions,
@@ -366,6 +366,11 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   // The `agent` field is carried for T-008 (TUI prefixing by agent when >1).
   const sessionToTask = new Map<string, { taskId: string; agent: string }>();
 
+  // taskId→currentStepId: derived from the event stream (step_started /
+  // step_finished) so `onUpdate` can stamp `usage_sample` with the right stepId
+  // without reaching into the store (T-007). Lightweight — one entry per running task.
+  const taskCurrentStep = new Map<string, string>();
+
   // Gate ACP capture by --verbose / capture_acp_traffic.
   const captureAcp = flags.verbose || config.logging.capture_acp_traffic;
 
@@ -407,10 +412,20 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
         permissions: { on_request: config.acp.permissions.on_request },
         logger,
         onUpdate: (notification) => {
-          const text = agentChunkText(notification.update);
+          const { update, sessionId } = notification;
+          const text = agentChunkText(update);
           if (text !== undefined) {
-            const info = infoFor(notification.sessionId);
+            const info = infoFor(sessionId);
             ui.dispatch({ type: "stream_chunk", taskId: info.taskId, text, agent: info.agent ?? agentName });
+          }
+          // T-007: live context-window occupancy (usage_sample).
+          const sample = usageUpdateUsed(update);
+          if (sample) {
+            const { taskId } = infoFor(sessionId);
+            const stepId = taskCurrentStep.get(taskId);
+            if (stepId) {
+              ui.dispatch({ type: "usage_sample", taskId, stepId, ...sample });
+            }
           }
         },
         onTraffic: captureAcp
@@ -465,7 +480,15 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     checkpoint: createCheckpointPort({ statePath, pipelineHash }),
     knownTaskIds,
     parentMutex,
-    emit: ui.dispatch,
+    emit: (event) => {
+      // Track currentStepId per task for usage_sample stamping (T-007).
+      if (event.type === "step_started") {
+        taskCurrentStep.set(event.taskId, event.stepId);
+      } else if (event.type === "step_finished") {
+        taskCurrentStep.delete(event.taskId);
+      }
+      ui.dispatch(event);
+    },
   };
 
   try {

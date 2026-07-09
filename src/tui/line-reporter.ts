@@ -153,6 +153,10 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
           print(`    ${arrow} ${pfx}${method}${event.summary}`);
           return;
         }
+
+        case "usage_sample":
+          // Live context-window occupancy (T-007) — TUI-only, no line output.
+          return;
       }
     },
   };

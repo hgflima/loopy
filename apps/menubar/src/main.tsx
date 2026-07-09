@@ -76,6 +76,97 @@ const IS_TAURI = isTauri();
 const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
 
 // ---------------------------------------------------------------------------
+// Crash capture net — survives the webview dying (debug aid)
+// ---------------------------------------------------------------------------
+// The main window "vanishing back to the popover" mid-Run has two opposite
+// causes with opposite fixes: a native hide()/close of the window, vs. a React
+// render throw that unmounts the tree (blank screen). Without a net, either one
+// leaves no trace. This routes every uncaught error to the Rust process stderr
+// (which outlives the webview) and renders the stack instead of dying silently.
+
+function logWebviewError(
+  source: string,
+  message: string,
+  stack?: string,
+  componentStack?: string,
+): void {
+  // Console first — visible in DevTools with "Preserve Log" on.
+  console.error(`[webview-error:${source}]`, message, stack ?? "", componentStack ?? "");
+  // Then persist to the backend: the Rust stderr survives the webview crashing.
+  if (IS_TAURI) {
+    invoke("log_error", {
+      source,
+      message,
+      stack: stack ?? "",
+      componentStack: componentStack ?? "",
+    }).catch(() => {});
+  }
+}
+
+// Global handlers — installed once, before render, so nothing slips through.
+window.addEventListener("error", (e) => {
+  logWebviewError("window.onerror", e.message, e.error?.stack);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e.reason;
+  logWebviewError(
+    "unhandledrejection",
+    reason instanceof Error ? reason.message : String(reason),
+    reason instanceof Error ? reason.stack : undefined,
+  );
+});
+
+interface ErrorBoundaryProps {
+  label: string;
+  children: React.ReactNode;
+}
+interface ErrorBoundaryState {
+  error: Error | null;
+}
+
+/** Top-level boundary: renders the stack instead of unmounting to a blank window. */
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    logWebviewError(
+      `react:${this.props.label}`,
+      error.message,
+      error.stack,
+      info.componentStack ?? undefined,
+    );
+  }
+
+  render(): React.ReactNode {
+    const { error } = this.state;
+    if (error) {
+      return (
+        <div
+          role="alert"
+          style={{
+            padding: 16,
+            font: "12px/1.5 ui-monospace, monospace",
+            color: "#ff9a9a",
+            background: "#1a1114",
+            height: "100vh",
+            overflow: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <strong>Render crashed ({this.props.label})</strong>
+          {`\n\n${error.message}\n\n${error.stack ?? ""}`}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Root — manages BridgeState, routes by window label
 // ---------------------------------------------------------------------------
 
@@ -178,6 +269,8 @@ function Root() {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <Root />
+    <ErrorBoundary label={IS_POPOVER ? "popover" : "main"}>
+      <Root />
+    </ErrorBoundary>
   </React.StrictMode>,
 );
