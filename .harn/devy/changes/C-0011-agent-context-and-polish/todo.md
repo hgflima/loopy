@@ -214,7 +214,7 @@
     Deps: T-004, T-010
     Files: apps/menubar/src/App.tsx, apps/menubar/src/App.css, apps/menubar/src/panes/StreamPanel.tsx, apps/menubar/src/panes/StreamPanel.css. Scope: M.
 
-- [ ] T-012: Raia carrega Agente + uso da context window (#4/#5)
+- [x] T-012: Raia carrega Agente + uso da context window (#4/#5)
     Em `apps/menubar/src/ui/StepDivider.{tsx,css}` (hoje só `label`, `:9-19`): props `agent?` e
     `usage?` (string **pré-formatada**) → renderiza `LABEL → <Agente> (<uso>)` (ex.:
     `SIMPLIFY → Codex (287k / 29%)`); sem `usage` em Steps não-Agente; sem `agent` → só o label.
