@@ -75,7 +75,7 @@
 
 ## Fase 1 — Motor (T-005 ∥ T-006 → T-007)
 
-- [ ] T-005: `clear()` → reopen ACP-nativo (`session/new`), fix sempre-ativo (#8)
+- [x] T-005: `clear()` → reopen ACP-nativo (`session/new`), fix sempre-ativo (#8)
     **RISCO ALTO** — cirurgia no ciclo de vida da Sessão. Hoje `clear()` (`src/acp/session.ts:256-260`)
     roda `/clear` como turno (`CLEAR_COMMAND` `:55`), que o Codex rejeita ("Unknown command /clear").
     Trocar por `reopen()` encapsulado no `SessionWrapper` (`session.ts:137-351`):
