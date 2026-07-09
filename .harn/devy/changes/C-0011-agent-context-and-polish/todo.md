@@ -168,7 +168,7 @@
     Deps: T-007
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/state/stream-history.ts, apps/menubar/src/state/stream-history.test.ts. Scope: M.
 
-- [ ] T-009: Kanban — título em 3 linhas com altura estável (#2)
+- [x] T-009: Kanban — título em 3 linhas com altura estável (#2)
     Em `apps/menubar/src/kanban/kanban.css`: `.kanban-card-title` (`:92-100`) troca
     `-webkit-line-clamp: 2 → 3`; garantir que o card **acomoda 3 linhas sem "pular" a altura** ao
     truncar (min-height no `.kanban-card` e/ou `align-items: flex-start` para título multi-linha —
