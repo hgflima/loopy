@@ -105,3 +105,47 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* While dragging the resize divider, disable pointer events on children
+   (prevents iframes/selections from stealing mousemove) and force the
+   row-resize cursor everywhere. */
+.app-body__left--dragging {
+  cursor: row-resize;
+  user-select: none;
+}
+
+.app-body__left--dragging * {
+  pointer-events: none;
+}
+
+/* ---- Resize divider — between Kanban and StreamPanel (T-011) ----------- */
+
+.resize-divider {
+  flex-shrink: 0;
+  height: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  position: relative;
+  z-index: 1;
+}
+
+.resize-divider__handle {
+  width: 36px;
+  height: 4px;
+  border-radius: var(--r-pill);
+  background: var(--border);
+  transition: background 0.15s ease;
+}
+
+.resize-divider:hover .resize-divider__handle,
+.resize-divider:active .resize-divider__handle {
+  background: var(--ink-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resize-divider__handle {
+    transition: none;
+  }
+}
