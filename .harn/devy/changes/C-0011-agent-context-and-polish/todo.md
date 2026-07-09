@@ -11,7 +11,7 @@
 
 ## Fase 0 — Quick wins & fundações puras (T-001 ∥ T-002 ∥ T-003 ∥ T-004)
 
-- [ ] T-001: Tray sem `●` (#9)
+- [x] T-001: Tray sem `●` (#9)
     Em `apps/menubar/src/main.tsx:120-122` o título do tray hoje é `count > 0 ? "● ⚠" : "●"`.
     Trocar por: ocioso/rodando = **título vazio** (`""`) → só o ícone template (C-0010 T-001);
     com aprovação pendente = **apenas** o indicador de gate (`"⚠"`, opcionalmente `⚠ N` com a
