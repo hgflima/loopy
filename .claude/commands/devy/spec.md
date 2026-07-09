@@ -14,3 +14,5 @@ Begin by understanding what the user wants to build. Ask clarifying questions ab
 Then generate a structured spec covering all six core areas: objective, commands, project structure, code style, testing strategy, and boundaries.
 
 Save the spec as SPEC.md in the project root and confirm with the user before proceeding.
+
+Once the spec is saved and confirmed, immediately continue into the `/devy:refine` flow to stress-test it before any code is written: interview the user relentlessly about every aspect of the spec until you reach a shared understanding. Walk down each branch of the decision tree, resolving dependencies between decisions one-by-one. Ask the questions one at a time, and for each provide your recommended answer. If a question can be answered by exploring the codebase, explore the codebase instead of asking.
