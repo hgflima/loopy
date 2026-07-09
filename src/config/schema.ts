@@ -69,6 +69,7 @@ const agentDefSchema = z
     env: z.record(z.string(), z.string()).optional(),
     model: nonEmptyString.optional(),
     effort: nonEmptyString.optional(),
+    display_name: nonEmptyString.optional(),
   })
   .strict();
 
