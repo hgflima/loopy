@@ -11,7 +11,7 @@
 
 ## Fase 0 — Quick wins & fundações puras (T-001 ∥ T-002 ∥ T-003 ∥ T-004)
 
-- [ ] T-001: Tray sem `●` (#9)
+- [x] T-001: Tray sem `●` (#9)
     Em `apps/menubar/src/main.tsx:120-122` o título do tray hoje é `count > 0 ? "● ⚠" : "●"`.
     Trocar por: ocioso/rodando = **título vazio** (`""`) → só o ícone template (C-0010 T-001);
     com aprovação pendente = **apenas** o indicador de gate (`"⚠"`, opcionalmente `⚠ N` com a
@@ -25,7 +25,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/main.tsx, apps/menubar/src-tauri/src/main.rs. Scope: S.
 
-- [ ] T-002: `sentence-split.ts` (puro) + aplicação em MarkdownStream (#7)
+- [x] T-002: `sentence-split.ts` (puro) + aplicação em MarkdownStream (#7)
     NOVO `apps/menubar/src/ui/sentence-split.ts` — função **pura** `splitSentences(prose): string`
     (AD-6) que quebra prosa em um período por linha, **conservadora** (refine #5): quebra só em
     `. ` seguido de Maiúscula/início de sentença, com **whitelist negativa** — NÃO quebra em
@@ -59,7 +59,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/context-window.ts, apps/menubar/src/ui/context-window.test.ts. Scope: S.
 
-- [ ] T-004: Tokens de layout — único escritor de `tokens.css` (#1 + suporte a #3/#6)
+- [x] T-004: Tokens de layout — único escritor de `tokens.css` (#1 + suporte a #3/#6)
     Em `apps/menubar/src/ui/tokens.css` (o **único** ponto desta change que escreve `tokens.css` —
     espelho de C-0010 T-002): (a) `--kanban-col-min: 220px → 286px` (#1, 220×1.30); (b) adicionar
     `--logo-h` (altura do lockup no header, ~20–24px) que #6 consome; (c) manter `--stream-h: 45%`
@@ -75,7 +75,7 @@
 
 ## Fase 1 — Motor (T-005 ∥ T-006 → T-007)
 
-- [ ] T-005: `clear()` → reopen ACP-nativo (`session/new`), fix sempre-ativo (#8)
+- [x] T-005: `clear()` → reopen ACP-nativo (`session/new`), fix sempre-ativo (#8)
     **RISCO ALTO** — cirurgia no ciclo de vida da Sessão. Hoje `clear()` (`src/acp/session.ts:256-260`)
     roda `/clear` como turno (`CLEAR_COMMAND` `:55`), que o Codex rejeita ("Unknown command /clear").
     Trocar por `reopen()` encapsulado no `SessionWrapper` (`session.ts:137-351`):
@@ -168,7 +168,7 @@
     Deps: T-007
     Files: apps/menubar/src/state/store-bridge.ts, apps/menubar/src/state/stream-history.ts, apps/menubar/src/state/stream-history.test.ts. Scope: M.
 
-- [ ] T-009: Kanban — título em 3 linhas com altura estável (#2)
+- [x] T-009: Kanban — título em 3 linhas com altura estável (#2)
     Em `apps/menubar/src/kanban/kanban.css`: `.kanban-card-title` (`:92-100`) troca
     `-webkit-line-clamp: 2 → 3`; garantir que o card **acomoda 3 linhas sem "pular" a altura** ao
     truncar (min-height no `.kanban-card` e/ou `align-items: flex-start` para título multi-linha —

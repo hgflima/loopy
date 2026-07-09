@@ -8,10 +8,11 @@
  * Streaming perf: completed segments (split on \n\n) are memoized via
  * React.memo; only the tail in growth re-parses (avoids O(n²) live).
  */
-import type { HTMLAttributes } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { memo, useMemo } from "react";
 import _Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { splitSentences } from "./sentence-split";
 import "./MarkdownStream.css";
 
 // react-markdown v10 types target React 19; this project uses React 18.
@@ -32,6 +33,18 @@ export interface MarkdownStreamProps {
 
 const remarkPlugins = [remarkGfm];
 
+/**
+ * Apply splitSentences to plain-text children only; non-string children
+ * (e.g. inline code, links) pass through unchanged.
+ */
+function splitProseChildren(children: ReactNode): ReactNode {
+  if (typeof children === "string") return splitSentences(children);
+  if (!Array.isArray(children)) return children;
+  return children.map((child) =>
+    typeof child === "string" ? splitSentences(child) : child,
+  );
+}
+
 /** Custom components — code blocks get the md-code class for --font-mono. */
 const mdComponents = {
   code({
@@ -47,6 +60,12 @@ const mdComponents = {
         {children}
       </code>
     );
+  },
+  p({ children, ...props }: HTMLAttributes<HTMLParagraphElement>) {
+    return <p {...props}>{splitProseChildren(children)}</p>;
+  },
+  li({ children, ...props }: HTMLAttributes<HTMLLIElement>) {
+    return <li {...props}>{splitProseChildren(children)}</li>;
   },
 };
 
