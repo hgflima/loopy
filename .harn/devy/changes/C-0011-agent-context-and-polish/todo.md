@@ -25,7 +25,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/main.tsx, apps/menubar/src-tauri/src/main.rs. Scope: S.
 
-- [ ] T-002: `sentence-split.ts` (puro) + aplicação em MarkdownStream (#7)
+- [x] T-002: `sentence-split.ts` (puro) + aplicação em MarkdownStream (#7)
     NOVO `apps/menubar/src/ui/sentence-split.ts` — função **pura** `splitSentences(prose): string`
     (AD-6) que quebra prosa em um período por linha, **conservadora** (refine #5): quebra só em
     `. ` seguido de Maiúscula/início de sentença, com **whitelist negativa** — NÃO quebra em
