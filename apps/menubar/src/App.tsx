@@ -7,6 +7,8 @@ import { Banner } from "./panes/Banner";
 import { headApproval } from "./panes/ApprovalPrompt";
 import { LaunchConfig } from "./panes/LaunchConfig";
 import { CardDetail } from "./kanban/CardDetail";
+import { useStreamHeight } from "./panes/useStreamHeight";
+import { fractionToPercent } from "./panes/resize-helpers";
 import { Pill, type Tone } from "./ui";
 import logoGradient from "./assets/loopy-lockup-horizontal-gradient.svg";
 import logoBlack from "./assets/loopy-lockup-horizontal-black.svg";
@@ -62,6 +64,9 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   }, []);
   const handleCloseDrawer = useCallback(() => setSelectedTaskId(null), []);
 
+  // Stream height — draggable divider, persisted in localStorage (T-011).
+  const streamHeight = useStreamHeight();
+
   // Gate auto-open (D6): pending approval forces the drawer to that card.
   const effectiveTaskId = currentApproval?.taskId ?? selectedTaskId;
 
@@ -110,7 +115,10 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
         </div>
       ) : (
         <div className="app-body">
-          <div className="app-body__left">
+          <div
+            className={`app-body__left${streamHeight.dragging ? " app-body__left--dragging" : ""}`}
+            style={{ "--stream-h": fractionToPercent(streamHeight.fraction) } as React.CSSProperties}
+          >
             <div className="app-main">
               <ViewSwitcher
                 store={store}
@@ -118,6 +126,17 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 selectedTaskId={selectedTaskId}
                 onSelectTask={handleSelectTask}
               />
+            </div>
+            <div
+              className="resize-divider"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Redimensionar painel de streams"
+              onMouseDown={streamHeight.onDragStart}
+              onDoubleClick={streamHeight.onReset}
+              data-testid="resize-divider"
+            >
+              <span className="resize-divider__handle" />
             </div>
             <StreamPanel store={store} transcript={state.transcript} />
           </div>
