@@ -26,3 +26,8 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+.step-divider__usage {
+  color: var(--ink-quaternary, var(--ink-tertiary));
+  text-transform: none;
+}

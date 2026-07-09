@@ -22,6 +22,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import type { StoreState } from "loopy/tui/store";
 import { segmentsFor, type Transcript, type StreamSegment } from "../state/stream-history";
 import { StatusDot, MarkdownStream, StepDivider } from "../ui";
+import { formatUsage } from "../ui/context-window";
 import "./StreamPanel.css";
 
 // ---------------------------------------------------------------------------
@@ -117,7 +118,13 @@ function StreamPane({ col }: { readonly col: StreamColumn }) {
       >
         {col.segments.map((seg, i) => (
           <div key={`${seg.stepId}-${i}`}>
-            {i > 0 && <StepDivider label={seg.label} />}
+            {i > 0 && (
+              <StepDivider
+                label={seg.label}
+                agent={seg.agent}
+                usage={formatUsage(seg.usedTokens, seg.size, seg.model)}
+              />
+            )}
             <MarkdownStream
               text={seg.text}
               streaming={i === lastIdx}
