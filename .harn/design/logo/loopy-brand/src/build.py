@@ -4,18 +4,22 @@ import loopy; importlib.reload(loopy)
 import cairosvg
 from PIL import Image
 
-OUT = "/sessions/relaxed-vibrant-planck/mnt/outputs/loopy-brand"
+OUT = "/sessions/relaxed-vibrant-planck/mnt/logo/loopy-brand"
 def P(*a):
     p = os.path.join(OUT, *a); os.makedirs(os.path.dirname(p), exist_ok=True); return p
 
-# ---------- symbol visual bbox (for lockup layout) ----------
+# ---------- symbol visual bbox (dynamic: ribbon + arrow, adapts to geometry) ----------
 _p = loopy._ribbon_pts()
 xs = [x for x,y in _p]; ys = [y for x,y in _p]
-hw = loopy.SW/2 + 1
-SX0, SX1 = min(xs)-hw, max(xs)+loopy.SW  # arrow extends right/down a bit
-SY0, SY1 = min(ys)-hw, max(ys)+loopy.SW
-# use symmetric-ish real bbox
-SX0, SY0, SX1, SY1 = 3.0, 27.0, 178.0, 175.0
+_hw = loopy.SW/2
+# arrow polygon points (mirror loopy.arrow_d)
+_x2,_y2 = _p[-1]; _x1,_y1 = _p[-7]
+_dx,_dy = _x2-_x1, _y2-_y1; _L = math.hypot(_dx,_dy) or 1.0; _dx/=_L; _dy/=_L
+_px,_py = -_dy,_dx; _f = loopy.SW*loopy.ARROW_F
+_ax = [(_x2+_dx*_f,_y2+_dy*_f),(_x2+_px*_f,_y2+_py*_f),(_x2-_px*_f,_y2-_py*_f)]
+_axx = [a for a,b in _ax]; _ayy = [b for a,b in _ax]
+SX0 = min(min(xs)-_hw, min(_axx)); SX1 = max(max(xs)+_hw, max(_axx))
+SY0 = min(min(ys)-_hw, min(_ayy)); SY1 = max(max(ys)+_hw, max(_ayy))
 
 GRAD_DEF = (f'<defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">'
             f'<stop offset="0" stop-color="{loopy.GRAD[0]}"/>'
@@ -135,15 +139,17 @@ for s in (1024,512,256,128):
 print("core PNGs written")
 
 # ================= 6. FAVICONS =================
+# small tab favicons: transparent symbol
 for s in (16,32,48):
     rp(sym_grad_svg, P('favicon', f'favicon-{s}x{s}.png'), s)
-rp(icon_svg, P('favicon','apple-touch-icon.png'), 180)
-rp(icon_svg, P('favicon','android-chrome-192x192.png'), 192)
-rp(icon_svg, P('favicon','android-chrome-512x512.png'), 512)
-# favicon.ico multi-res from symbol
-ims = [Image.open(P('favicon',f'favicon-{s}x{s}.png')).convert('RGBA') for s in (16,32,48)]
-ims[0].save(P('favicon','favicon.ico'), format='ICO',
-            sizes=[(16,16),(32,32),(48,48)], append_images=ims[1:])
+# touch/tile icons: FULL-BLEED OPAQUE square (OS applies its own mask)
+icon_square = svg_icon_rounded(radius_ratio=0.0, inset=0.66)
+for f,s in [('apple-touch-icon.png',180),('android-chrome-192x192.png',192),('android-chrome-512x512.png',512)]:
+    rp(icon_square, P('favicon', f), s)
+    Image.open(P('favicon', f)).convert('RGB').save(P('favicon', f))  # flatten to opaque
+# favicon.ico multi-res (save from largest base so all sizes embed)
+Image.open(P('favicon','favicon-48x48.png')).convert('RGBA').save(
+    P('favicon','favicon.ico'), format='ICO', sizes=[(16,16),(32,32),(48,48)])
 print("favicons written")
 
 # ================= 7. WINDOWS ICO (app, up to 256) =================

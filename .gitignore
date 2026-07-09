@@ -14,3 +14,7 @@ opentui-examples
 target/
 **/src-tauri/bin/
 **/src-tauri/gen/
+
+# Python bytecode cache (scripts de geração de brand em .harn/design/logo/)
+__pycache__/
+*.pyc

@@ -12,21 +12,42 @@ DARK = '#17171A'
 WHITE = '#FFFFFF'
 ICON_BG = '#26262B'
 
-# ================= SYMBOL (figure-8 + arrow) =================
+# ================= SYMBOL (two-circle rounded figure-8 + arrow) =================
+# The infinity is built from two real circles joined by the crossing (X) at the
+# centre, giving genuinely round loops (not the pointed lemniscate lobes).
 CX, CY = 100.0, 100.0
-AX = AY = 84.0
-SW = 21.0
-ARROW_T = 44.0
-GAP_DEG = 26.0
+R_ = 41.0          # loop radius  (round loops)
+D_ = 49.0          # half-distance between the two loop centres (must be > R_)
+SW = 25.5          # stroke width
+GAP_PTS = 62       # opening between the arrow tip and the other strand end
+ARROW_EOFF = 13    # how far before the lobe bottom the ribbon terminates
+ARROW_F = 1.08     # arrowhead size factor (× stroke width)
+_N = 200
 
-def _pt(t):
-    return CX + AX*math.cos(t), CY + AY*math.sin(t)*math.cos(t)
+def _full_pts():
+    r, D = R_, D_
+    L = math.sqrt(D*D - r*r); ax = (D*D - r*r)/D; ay = r*L/D
+    Tru = (ax, -ay); Trl = (ax, ay); Tlu = (-ax, -ay); Tll = (-ax, ay)
+    CRc = (D, 0.0); CLc = (-D, 0.0)
+    tr = lambda p: (CX + p[0], CY + p[1])
+    ang = lambda c, p: math.atan2(p[1]-c[1], p[0]-c[0])
+    def arc(c, a0, a1, d):
+        da = (a1 - a0) % (2*math.pi)
+        if d < 0: da -= 2*math.pi
+        m = max(2, int(abs(da)/(2*math.pi)*_N*2))
+        return [(CX+c[0]+r*math.cos(a0+da*i/m), CY+c[1]+r*math.sin(a0+da*i/m)) for i in range(m+1)]
+    def line(p, q, m=30):
+        return [tr((p[0]+(q[0]-p[0])*i/m, p[1]+(q[1]-p[1])*i/m)) for i in range(m+1)]
+    return (line(Tru, Tll)                                  # crossing strand 1
+            + arc(CLc, ang(CLc, Tll), ang(CLc, Tlu), +1)    # left loop (outer/major)
+            + line(Tlu, Trl)                                # crossing strand 2
+            + arc(CRc, ang(CRc, Trl), ang(CRc, Tru), -1))   # right loop (outer/major)
 
 def _ribbon_pts():
-    t_end = math.radians(ARROW_T) + 2*math.pi
-    t_start = t_end - (2*math.pi - math.radians(GAP_DEG))
-    N = 600
-    return [_pt(t_start + (t_end-t_start)*i/N) for i in range(N+1)]
+    pts = _full_pts()
+    bi = max(range(len(pts)), key=lambda i: pts[i][1] if pts[i][0] > CX else -1e9)
+    end = bi - ARROW_EOFF; start = end + GAP_PTS
+    return pts[start:] + pts[:end]     # open ribbon, ends at the arrow
 
 def ribbon_d():
     p = _ribbon_pts()
@@ -34,11 +55,11 @@ def ribbon_d():
 
 def arrow_d():
     p = _ribbon_pts()
-    x2, y2 = p[-1]; x1, y1 = p[-8]
+    x2, y2 = p[-1]; x1, y1 = p[-7]
     dx, dy = x2-x1, y2-y1
-    L = math.hypot(dx, dy); dx/=L; dy/=L
+    L = math.hypot(dx, dy) or 1.0; dx/=L; dy/=L
     px, py = -dy, dx
-    f = SW*1.05
+    f = SW*ARROW_F
     tip = (x2+dx*f, y2+dy*f)
     b1 = (x2+px*f, y2+py*f); b2 = (x2-px*f, y2-py*f)
     return f"M {tip[0]:.3f} {tip[1]:.3f} L {b1[0]:.3f} {b1[1]:.3f} L {b2[0]:.3f} {b2[1]:.3f} Z"
