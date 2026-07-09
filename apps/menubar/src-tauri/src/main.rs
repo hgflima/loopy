@@ -71,6 +71,7 @@ fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
 /// (no Dock icon, menu bar only).
 #[tauri::command]
 fn hide_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    eprintln!("[window] hide_main_window invoked");
     if let Some(w) = app.get_webview_window("main") {
         w.hide().map_err(|e| e.to_string())?;
     }
@@ -93,6 +94,20 @@ fn update_tray_title(app: tauri::AppHandle, title: String) -> Result<(), String>
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+/// Debug aid: route uncaught webview errors to the Rust process stderr, which
+/// outlives the webview. Lets us tell a native hide/close apart from a React
+/// render crash when the main window "vanishes" back to the popover mid-Run.
+#[tauri::command]
+fn log_error(source: String, message: String, stack: String, component_stack: String) {
+    eprintln!("[webview-error:{source}] {message}");
+    if !stack.is_empty() {
+        eprintln!("  stack: {stack}");
+    }
+    if !component_stack.is_empty() {
+        eprintln!("  componentStack: {component_stack}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +156,7 @@ fn main() {
                 let win = main_win.clone();
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        eprintln!("[window] CloseRequested on main -> hiding (Run continues)");
                         api.prevent_close();
                         let _ = win.hide();
                         #[cfg(target_os = "macos")]
@@ -163,6 +179,7 @@ fn main() {
             update_tray_title,
             load_launch_config,
             save_launch_config,
+            log_error,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")
