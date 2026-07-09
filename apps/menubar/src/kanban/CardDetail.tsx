@@ -20,6 +20,7 @@ import { segmentsFor, type Transcript } from "../state/stream-history";
 import type { ApprovalRequest } from "../state/store-bridge";
 import { escalationCost } from "../panes/ApprovalPrompt";
 import { TaskStatusDot, MarkdownStream, StepDivider } from "../ui";
+import { formatUsage } from "../ui/context-window";
 import "./CardDetail.css";
 
 export interface CardDetailProps {
@@ -175,7 +176,13 @@ export function CardDetail({
           <section className="card-detail__log">
             {segments.map((seg, i) => (
               <div key={`${seg.stepId}-${i}`}>
-                {i > 0 && <StepDivider label={seg.label} />}
+                {i > 0 && (
+                  <StepDivider
+                    label={seg.label}
+                    agent={seg.agent}
+                    usage={formatUsage(seg.usedTokens, seg.size, seg.model)}
+                  />
+                )}
                 <MarkdownStream text={seg.text} />
               </div>
             ))}
