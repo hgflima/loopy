@@ -117,8 +117,8 @@ function Root() {
     if (!IS_TAURI || IS_POPOVER) return;
     const count = state.ui.pendingApprovals.length;
 
-    // Badge: "● ⚠" while approvals pending, "●" otherwise
-    const title = count > 0 ? "● ⚠" : "●";
+    // Empty title when idle/running (icon-only); "⚠ N" when approvals pending
+    const title = count === 0 ? "" : count === 1 ? "⚠" : `⚠ ${count}`;
     invoke("update_tray_title", { title }).catch(() => {});
 
     // Surface window when a new approval arrives
