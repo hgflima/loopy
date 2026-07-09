@@ -42,7 +42,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/sentence-split.ts, apps/menubar/src/ui/sentence-split.test.ts, apps/menubar/src/ui/MarkdownStream.tsx. Scope: S.
 
-- [ ] T-003: `context-window.ts` — `formatUsage` (puro) (#5)
+- [x] T-003: `context-window.ts` — `formatUsage` (puro) (#5)
     NOVO `apps/menubar/src/ui/context-window.ts` — `formatUsage(used?, size?, model?): string`
     **puro** (AD-6): `win = size && size > 0 ? size : (model ? WINDOW_FALLBACK[model] : undefined)`;
     se `used == null || win == null` → `""` (best-effort, sem parênteses); senão
