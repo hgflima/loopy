@@ -91,8 +91,9 @@
   --z-tooltip: 600;
 
   /* ---- Layout — structural dimensions (theme-invariant) ---------------- */
-  --kanban-col-min: 220px;
+  --kanban-col-min: 286px;
   --drawer-w: 400px;
+  --logo-h: 22px;
   --stream-h: 45%;
   --stream-fold-h: 28px;
 
