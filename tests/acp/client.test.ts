@@ -36,6 +36,7 @@ import {
   pickOptionByKind,
   resolvePermissionOutcome,
   usageUpdateCost,
+  usageUpdateUsed,
   type TerminalManager,
 } from "../../src/acp/client";
 import type { AcpTrafficEntry } from "../../src/logging/logger";
@@ -237,6 +238,39 @@ describe("usageUpdateCost", () => {
       content: { type: "text", text: "hi" },
     };
     expect(usageUpdateCost(update)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// usageUpdateUsed — extract used/size from a usage_update (T-007)
+// ---------------------------------------------------------------------------
+
+describe("usageUpdateUsed", () => {
+  it("extracts used and size from a usage_update with both present", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "usage_update",
+      used: 50000,
+      size: 200000,
+    };
+    expect(usageUpdateUsed(update)).toEqual({ used: 50000, size: 200000 });
+  });
+
+  it("returns undefined when used/size are non-numeric (defensive)", () => {
+    // Force non-numeric values to test runtime guard (adapters may deviate).
+    const update = {
+      sessionUpdate: "usage_update",
+      used: "not-a-number",
+      size: null,
+    } as unknown as SessionUpdate;
+    expect(usageUpdateUsed(update)).toBeUndefined();
+  });
+
+  it("returns undefined for non-usage_update updates", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hi" },
+    };
+    expect(usageUpdateUsed(update)).toBeUndefined();
   });
 });
 

@@ -231,6 +231,23 @@ export function usageUpdateCost(
   return cost ?? undefined;
 }
 
+/**
+ * Extract `used` and `size` from a `usage_update`, or `undefined` for any
+ * other update type. These are the live context-window occupancy fields the
+ * ACP SDK exposes (`types.gen.d.ts:3898/3902`). Feeds the `usage_sample`
+ * event (T-007, C-0011). Best-effort: returns `undefined` when the update is
+ * not a `usage_update` or when `used`/`size` are absent (some adapters may
+ * not report them).
+ */
+export function usageUpdateUsed(
+  update: SessionUpdate,
+): { readonly used: number; readonly size: number } | undefined {
+  if (update.sessionUpdate !== "usage_update") return undefined;
+  const u = update as { used?: number; size?: number };
+  if (typeof u.used !== "number" || typeof u.size !== "number") return undefined;
+  return { used: u.used, size: u.size };
+}
+
 // ---------------------------------------------------------------------------
 // Per-session cost buffer (C-0005 T-003) — fed by `usage_update`
 // ---------------------------------------------------------------------------
