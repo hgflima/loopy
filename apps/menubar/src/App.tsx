@@ -8,6 +8,9 @@ import { headApproval } from "./panes/ApprovalPrompt";
 import { LaunchConfig } from "./panes/LaunchConfig";
 import { CardDetail } from "./kanban/CardDetail";
 import { Pill, type Tone } from "./ui";
+import logoGradient from "./assets/loopy-lockup-horizontal-gradient.svg";
+import logoBlack from "./assets/loopy-lockup-horizontal-black.svg";
+import logoWhite from "./assets/loopy-lockup-horizontal-white.svg";
 import "./App.css";
 
 /** Pulse interval — same cadence as the TUI timer (500 ms). */
@@ -71,7 +74,9 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     <main className="app-shell">
       <header className="app-header">
         <div className="app-header__brand">
-          <span className="app-header__wordmark t-title">Loopy</span>
+          <img className="app-header__logo app-header__logo--gradient" src={logoGradient} alt="Loopy" />
+          <img className="app-header__logo app-header__logo--light" src={logoBlack} alt="Loopy" />
+          <img className="app-header__logo app-header__logo--dark" src={logoWhite} alt="Loopy" />
           <Pill tone={runPill.tone} pulse={ui.runStatus === "running"}>
             {runPill.label}
           </Pill>

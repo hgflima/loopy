@@ -180,7 +180,7 @@
     Deps: T-004
     Files: apps/menubar/src/kanban/kanban.css. Scope: XS.
 
-- [ ] T-010: Logo colorido no header (#6)
+- [x] T-010: Logo colorido no header (#6)
     Copiar (read-only) de `.harn/design/logo/loopy-brand/svg/lockup/` para NOVO
     `apps/menubar/src/assets/`: `loopy-lockup-horizontal-gradient.svg` (primário) + variantes
     `-black`/`-white` (para swap por tema). Em `apps/menubar/src/App.tsx:73-74`: trocar
