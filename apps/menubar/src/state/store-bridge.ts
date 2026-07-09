@@ -17,7 +17,7 @@
 
 import { parseTransportLine, type ControlFrame } from "loopy/tui/transport";
 import { reduce, initialState, type StoreState } from "loopy/tui/store";
-import type { Transcript } from "./stream-history";
+import type { Transcript, TranscriptEntry } from "./stream-history";
 
 // ---------------------------------------------------------------------------
 // UI state (control frames only — never touches StoreState)
@@ -141,18 +141,28 @@ export function applyLine(state: BridgeState, line: string): BridgeState {
       if (nextStore === state.store) return state;
 
       // Accumulate stream_chunk into append-only transcript (tagged by currentStepId)
+      // Telemetry (agent/model/used/size) is derived from the step in nextStore.
       if (result.event.type === "stream_chunk") {
         const { taskId, text } = result.event;
         const task = nextStore.tasks.find((t) => t.id === taskId);
         const stepId = task?.currentStepId;
         if (stepId) {
+          const step = task!.steps.find((s) => s.id === stepId);
           const existing = state.transcript[taskId] ?? [];
+          const entry: TranscriptEntry = {
+            stepId,
+            text,
+            agent: step?.agentName,
+            model: step?.model,
+            usedTokens: step?.used,
+            size: step?.size,
+          };
           return {
             ...state,
             store: nextStore,
             transcript: {
               ...state.transcript,
-              [taskId]: [...existing, { stepId, text }],
+              [taskId]: [...existing, entry],
             },
           };
         }
