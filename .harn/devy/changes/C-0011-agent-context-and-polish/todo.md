@@ -11,7 +11,7 @@
 
 ## Fase 0 — Quick wins & fundações puras (T-001 ∥ T-002 ∥ T-003 ∥ T-004)
 
-- [ ] T-001: Tray sem `●` (#9)
+- [x] T-001: Tray sem `●` (#9)
     Em `apps/menubar/src/main.tsx:120-122` o título do tray hoje é `count > 0 ? "● ⚠" : "●"`.
     Trocar por: ocioso/rodando = **título vazio** (`""`) → só o ícone template (C-0010 T-001);
     com aprovação pendente = **apenas** o indicador de gate (`"⚠"`, opcionalmente `⚠ N` com a
@@ -42,7 +42,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/sentence-split.ts, apps/menubar/src/ui/sentence-split.test.ts, apps/menubar/src/ui/MarkdownStream.tsx. Scope: S.
 
-- [ ] T-003: `context-window.ts` — `formatUsage` (puro) (#5)
+- [x] T-003: `context-window.ts` — `formatUsage` (puro) (#5)
     NOVO `apps/menubar/src/ui/context-window.ts` — `formatUsage(used?, size?, model?): string`
     **puro** (AD-6): `win = size && size > 0 ? size : (model ? WINDOW_FALLBACK[model] : undefined)`;
     se `used == null || win == null` → `""` (best-effort, sem parênteses); senão
@@ -59,7 +59,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/context-window.ts, apps/menubar/src/ui/context-window.test.ts. Scope: S.
 
-- [ ] T-004: Tokens de layout — único escritor de `tokens.css` (#1 + suporte a #3/#6)
+- [x] T-004: Tokens de layout — único escritor de `tokens.css` (#1 + suporte a #3/#6)
     Em `apps/menubar/src/ui/tokens.css` (o **único** ponto desta change que escreve `tokens.css` —
     espelho de C-0010 T-002): (a) `--kanban-col-min: 220px → 286px` (#1, 220×1.30); (b) adicionar
     `--logo-h` (altura do lockup no header, ~20–24px) que #6 consome; (c) manter `--stream-h: 45%`
