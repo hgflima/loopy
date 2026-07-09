@@ -59,7 +59,7 @@
     Deps: nenhuma
     Files: apps/menubar/src/ui/context-window.ts, apps/menubar/src/ui/context-window.test.ts. Scope: S.
 
-- [ ] T-004: Tokens de layout — único escritor de `tokens.css` (#1 + suporte a #3/#6)
+- [x] T-004: Tokens de layout — único escritor de `tokens.css` (#1 + suporte a #3/#6)
     Em `apps/menubar/src/ui/tokens.css` (o **único** ponto desta change que escreve `tokens.css` —
     espelho de C-0010 T-002): (a) `--kanban-col-min: 220px → 286px` (#1, 220×1.30); (b) adicionar
     `--logo-h` (altura do lockup no header, ~20–24px) que #6 consome; (c) manter `--stream-h: 45%`
