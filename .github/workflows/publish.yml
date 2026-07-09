@@ -7,9 +7,12 @@ name: publish
 # apontando para este repo + este arquivo de workflow (publish.yml).
 #
 # Fluxo: bumpa a versao -> cria um GitHub Release (tag vX.Y.Z) -> esta esteira roda.
+# workflow_dispatch permite re-disparar o publish manualmente (ex.: recuperar de
+# uma falha de infra do runner) sem recriar o Release.
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
   publish:
@@ -26,8 +29,12 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
 
-      # Trusted Publishing exige npm >= 11.5.1 (mais novo que o bundlado no Node 24).
-      - run: npm install -g npm@latest
+      # Trusted Publishing exige npm >= 11.5.1 — o Node 24 ja bundla acima disso
+      # (24.18 = npm 11.16). NAO fazer `npm i -g npm@latest`: o upgrade in-place
+      # corrompe a arvore global do npm ("removed N packages"), remove `sigstore`
+      # e quebra a geracao de provenance no `npm publish` (Cannot find module
+      # 'sigstore'). Usa-se o npm bundlado, que tem a arvore integra.
+      - run: node --version && npm --version
 
       - run: npm ci
 
