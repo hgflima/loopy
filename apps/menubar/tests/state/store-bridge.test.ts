@@ -377,6 +377,152 @@ describe("store-bridge", () => {
       expect(next.transcript).toEqual({});
     });
 
+    it("propagates agent/model from step_started into transcript entries", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "implement",
+          stepType: "agent",
+          agentName: "Claude Code",
+          model: "claude-opus-4-6",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "hello" },
+      ]);
+
+      const bridge = feedLines(lines);
+      const entries = bridge.transcript["T-001"]!;
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        stepId: "implement",
+        text: "hello",
+        agent: "Claude Code",
+        model: "claude-opus-4-6",
+      });
+    });
+
+    it("propagates used/size from usage_sample into transcript entries", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "implement",
+          stepType: "agent",
+          agentName: "Codex",
+          model: "codex-mini",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "a" },
+        {
+          type: "usage_sample",
+          taskId: "T-001",
+          stepId: "implement",
+          used: 5000,
+          size: 200_000,
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "b" },
+      ]);
+
+      const bridge = feedLines(lines);
+      const entries = bridge.transcript["T-001"]!;
+
+      expect(entries).toHaveLength(2);
+      // First chunk: no usage yet
+      expect(entries[0]!.usedTokens).toBeUndefined();
+      expect(entries[0]!.size).toBeUndefined();
+      // Second chunk: usage propagated from step
+      expect(entries[1]).toMatchObject({
+        stepId: "implement",
+        text: "b",
+        agent: "Codex",
+        model: "codex-mini",
+        usedTokens: 5000,
+        size: 200_000,
+      });
+    });
+
+    it("different steps carry their own telemetry in transcript", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "implement",
+          stepType: "agent",
+          agentName: "Claude Code",
+          model: "opus",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "code" },
+        {
+          type: "step_finished",
+          taskId: "T-001",
+          stepId: "implement",
+          ok: true,
+        },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "review",
+          stepType: "agent",
+          agentName: "Codex",
+          model: "codex-mini",
+        },
+        {
+          type: "usage_sample",
+          taskId: "T-001",
+          stepId: "review",
+          used: 3000,
+          size: 128_000,
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "lgtm" },
+      ]);
+
+      const bridge = feedLines(lines);
+      const entries = bridge.transcript["T-001"]!;
+
+      expect(entries).toHaveLength(2);
+      expect(entries[0]).toMatchObject({
+        stepId: "implement",
+        agent: "Claude Code",
+        model: "opus",
+      });
+      expect(entries[1]).toMatchObject({
+        stepId: "review",
+        agent: "Codex",
+        model: "codex-mini",
+        usedTokens: 3000,
+        size: 128_000,
+      });
+    });
+
+    it("absent telemetry produces undefined fields (best-effort)", () => {
+      const lines = serializeEvents([
+        { type: "task_registered", taskId: "T-001", title: "A" },
+        { type: "task_started", taskId: "T-001" },
+        {
+          type: "step_started",
+          taskId: "T-001",
+          stepId: "checks",
+          stepType: "checks",
+        },
+        { type: "stream_chunk", taskId: "T-001", text: "running..." },
+      ]);
+
+      const bridge = feedLines(lines);
+      const entries = bridge.transcript["T-001"]!;
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.agent).toBeUndefined();
+      expect(entries[0]!.model).toBeUndefined();
+      expect(entries[0]!.usedTokens).toBeUndefined();
+      expect(entries[0]!.size).toBeUndefined();
+    });
+
     it("applyLine never throws on stream_chunk (AD-5)", () => {
       const state = initialBridgeState();
       // malformed, missing fields, etc. — all no-op
