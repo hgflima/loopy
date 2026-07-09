@@ -125,7 +125,7 @@
     Deps: nenhuma
     Files: src/types.ts, src/config/schema.ts, src/tui/store.ts, src/loop/orchestrator.ts, tests/tui/store.test.ts, tests/loop/run-loop.test.ts. Scope: M. RISCO MÉDIO.
 
-- [ ] T-007: `usage_sample` ao vivo — `used`/`size` do ACP por Step (#5)
+- [x] T-007: `usage_sample` ao vivo — `used`/`size` do ACP por Step (#5)
     Extensão ADITIVA. Em `src/acp/client.ts`: o handler de `usage_update` (`:226-232` extrai só
     `cost`; alimenta `costBuffer` em `:587-588`) passa a **também** extrair `used`+`size`
     (obrigatórios no SDK, `types.gen.d.ts:3898/3902`) e expô-los ao seam `onUpdate` (`:584`) — o
