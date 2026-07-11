@@ -30,7 +30,7 @@
     Verificação: `cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy --manifest-path apps/menubar/src-tauri/Cargo.toml`.
     Deps: nenhuma. Files: apps/menubar/src-tauri/src/main.rs. Scope: S.
 
-- [ ] T-008: `panel.rs` — material `Popover` → `Menu` (chrome de menu nativo)
+- [x] T-008: `panel.rs` — material `Popover` → `Menu` (chrome de menu nativo)
     `src-tauri/src/panel.rs`: trocar `NSVisualEffectMaterial::Popover` por `::Menu` no `apply_vibrancy` (backdrop mais sólido/opaco, fiel a um `NSMenu`). Confirmar que a variante `Menu` existe no `window-vibrancy` 0.6. Manter `POPOVER_CORNER_RADIUS` (10pt), o rim/hairline do topo e **não regredir** o overlay fullscreen (não tocar level/collection-behaviour). Manter os testes existentes de `panel.rs` verdes.
     Aceite: material = `Menu`; corner radius + rim preservados; overlay em app fullscreen intacto; testes de `panel.rs` verdes.
     Verificação: `cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy ...`; validação visual (T-007/checkpoint).
