@@ -1,7 +1,7 @@
 /**
  * About — the dedicated "Sobre" window (C-0012, T-006).
  *
- * A small (~360×320) titlebar-overlay window: brand wordmark + product version
+ * A small (~360×256) titlebar-overlay window: animated brand wordmark + version
  * (from `getVersion()`) + PT tagline + GitHub/npm links (opened in the system
  * browser via `openUrl`) + author/copyright. Every colour/space/type value comes
  * from tokens.css — zero literals. The header is a `data-tauri-drag-region` with
@@ -10,10 +10,13 @@
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
-// Brand wordmark — dark text for light surfaces, white text for dark; the
-// visible one is chosen by theme in About.css (mirrors App.css).
-import logoOnLight from "../assets/loopy-wordmark-pink-dark.svg";
-import logoOnDark from "../assets/loopy-wordmark-pink-white.svg";
+// Animated brand wordmark ("flow") — dark text for light surfaces, white text
+// for dark; the visible one is chosen by theme in About.css (mirrors App.css).
+// Animated GIFs: a CSS-@keyframes SVG is frozen when loaded via <img> under this
+// WebKit webview, so the loop wouldn't play — a raster GIF always animates. Both
+// GIFs carry alpha, so each sits cleanly on its matching themed surface.
+import logoOnLight from "../assets/loopy-wordmark-flow-dark.gif";
+import logoOnDark from "../assets/loopy-wordmark-flow-white.gif";
 import "./About.css";
 
 /** Reuses the root package `description` as PT copy (spec §Decisões). */

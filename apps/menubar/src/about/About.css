@@ -7,34 +7,39 @@
  * value via var(--…) from tokens.css.
  */
 
+/* Centred stack with a single, uniform rhythm between blocks — no auto-margin
+   spacer, so the space is shared evenly top-to-bottom instead of pooling above
+   the footer. Vertical centring keeps it balanced independent of the exact
+   window height (which is intentionally snug — see tauri.conf.json). */
 .about {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: var(--sp-lg);
   height: 100vh;
-  padding: 0 var(--sp-xl) var(--sp-xl);
+  padding: var(--sp-lg) var(--sp-xl);
   background: var(--bg);
   color: var(--ink);
   text-align: center;
 }
 
-/* Drag strip — the padding-top clears the overlaid traffic lights. Composed
-   from spacing tokens (not a magic pixel) so it tracks the scale. */
+/* Drag strip spans the width for the titlebar-overlay grab. The logo and
+   version are one brand unit, held tight (--sp-xs); the traffic lights sit at
+   the top-left while this content is centred, so no top padding is needed to
+   clear them. */
 .about__drag {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--sp-xs);
   align-self: stretch;
-  padding-top: calc(var(--sp-lg) + var(--sp-md));
-  padding-bottom: var(--sp-md);
 }
 
-/* Brand wordmark — the pink loop carries the brand colour; only the text tone
-   flips for contrast: dark text on light surfaces, white text on dark. Slightly
-   larger than the header logo for this focal surface. */
+/* Animated brand wordmark (GIF) — medium presence for this focal surface: 2× the
+   small header mark (token-composed, no magic pixel). Aspect is preserved. */
 .about__logo {
-  height: calc(var(--logo-h) + var(--sp-sm));
+  height: calc(var(--logo-h) * 2);
   width: auto;
   display: none;
 }
@@ -74,7 +79,7 @@
 
 .about__tagline {
   max-width: 30ch;
-  margin: 0 0 var(--sp-lg);
+  margin: 0;
   color: var(--ink-secondary);
 }
 
@@ -83,7 +88,6 @@
 .about__links {
   display: flex;
   gap: var(--sp-lg);
-  margin-bottom: auto;
 }
 
 .about__link {

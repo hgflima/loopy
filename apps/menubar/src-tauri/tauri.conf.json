@@ -34,7 +34,7 @@
         "label": "about",
         "title": "Loopy",
         "width": 360,
-        "height": 320,
+        "height": 256,
         "visible": false,
         "resizable": false,
         "center": true,
