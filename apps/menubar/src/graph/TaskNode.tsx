@@ -16,13 +16,14 @@ import type { TaskStatus } from "loopy/tui/store";
 export interface TaskNodeData {
   readonly status: TaskStatus;
   readonly tick: number;
+  readonly onFocusNode?: (id: string) => void;
   [key: string]: unknown;
 }
 
 export type TaskNodeType = Node<TaskNodeData, "task">;
 
 function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
-  const { status, tick } = data;
+  const { status, tick, onFocusNode } = data;
   const color = COLORS.task[status];
   const glyph = SYMBOLS.task[status];
   const isRunning = status === "running";
@@ -31,6 +32,8 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
   return (
     <div
       data-testid={`task-node-${id}`}
+      tabIndex={0}
+      onFocus={() => onFocusNode?.(id)}
       style={{
         color,
         fontFamily: "monospace",
