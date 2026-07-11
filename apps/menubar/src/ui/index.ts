@@ -9,6 +9,7 @@ export {
   type Tone,
 } from "./StatusIndicator";
 export { SegmentedControl, type Segment } from "./SegmentedControl";
+export { Menu, MenuItem, MenuSeparator } from "./Menu";
 export { MarkdownStream, type MarkdownStreamProps } from "./MarkdownStream";
 export { StepDivider } from "./StepDivider";
 export { IconOpen, IconStop, IconInfo, IconPower } from "./icons";

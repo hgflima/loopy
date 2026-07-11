@@ -37,6 +37,12 @@ const POPOVER: &str = "popover";
 /// macOS menubar popover (~ the `--r-lg` token on the web side).
 const POPOVER_CORNER_RADIUS: f64 = 10.0;
 
+/// Native material behind the popover webview. `Menu` (not `Popover`) gives the
+/// more solid, opaque backdrop of a real `NSMenu` — the tray popover is styled
+/// and operated as a native menu (C-0012), so its chrome should match. Both are
+/// non-deprecated semantic materials in `window-vibrancy` 0.6 (macOS 10.11+).
+const POPOVER_MATERIAL: NSVisualEffectMaterial = NSVisualEffectMaterial::Menu;
+
 /// Popover content width, in points — mirrors the `popover` window in
 /// `tauri.conf.json`. Height is driven by content (see `resize_popover_panel`).
 const POPOVER_WIDTH: f64 = 320.0;
@@ -72,16 +78,15 @@ pub fn install_popover_panel(app: &AppHandle) {
         return;
     };
 
-    // Native macOS material behind the transparent popover webview, so it reads
-    // as a real menubar surface (translucent + rounded) instead of a flat opaque
-    // box. `Popover` is the semantic material; `Active` (not the default
-    // follows-window-active) keeps it vibrant even though this panel never
-    // activates the app — otherwise it would render permanently greyed-out.
-    // Errors as values (AD-5): log and carry on; a missing material is cosmetic,
-    // not a reason to skip the whole panel install.
+    // `POPOVER_MATERIAL` behind the transparent popover webview, so it reads as a
+    // real menubar surface (translucent + rounded) instead of a flat opaque box.
+    // `Active` (not the default follows-window-active) keeps it vibrant even
+    // though this panel never activates the app — otherwise it would render
+    // permanently greyed-out. Errors as values (AD-5): log and carry on; a
+    // missing material is cosmetic, not a reason to skip the whole panel install.
     if let Err(err) = apply_vibrancy(
         &window,
-        NSVisualEffectMaterial::Popover,
+        POPOVER_MATERIAL,
         Some(NSVisualEffectState::Active),
         Some(POPOVER_CORNER_RADIUS),
     ) {
@@ -239,6 +244,14 @@ mod tests {
 
         assert_eq!(origin.x, 2404.0);
         assert_eq!(origin.y, 74.0 + POPOVER_TOP_GAP * 2.0);
+    }
+
+    #[test]
+    fn popover_uses_the_native_menu_material() {
+        // C-0012: the tray popover mimics a native `NSMenu`, so its backdrop must
+        // be the `Menu` material — more solid/opaque than `Popover`. Guards against
+        // a silent regression back to `Popover`.
+        assert_eq!(POPOVER_MATERIAL, NSVisualEffectMaterial::Menu);
     }
 
     #[test]

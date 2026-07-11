@@ -1,6 +1,6 @@
 {
   "productName": "Loopy",
-  "version": "0.1.0",
+  "version": "../../../package.json",
   "identifier": "com.hgflima.loopy.menubar",
   "build": {
     "beforeDevCommand": "vite",

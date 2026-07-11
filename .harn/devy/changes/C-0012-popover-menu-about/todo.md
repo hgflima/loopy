@@ -6,7 +6,7 @@
 
 ## Fase 1 — Fundação & de-risco (T-001 ∥ T-002 ∥ T-004 ∥ T-008)
 
-- [ ] T-001: Versão single-sourced — `tauri.conf.json.version` → path-ref da raiz (de-risco)
+- [x] T-001: Versão single-sourced — `tauri.conf.json.version` → path-ref da raiz (de-risco)
     `apps/menubar/src-tauri/tauri.conf.json`: trocar `"version": "0.1.0"` literal por path-ref `"../../../package.json"` (resolve a partir de `src-tauri/` para a raiz do monorepo, já 0.3.0). Confirmar suporte a path-ref no Tauri v2 via Context7 **antes** de escrever; se não suportado, fallback = script de prebuild que sincroniza a versão da raiz para o `tauri.conf.json` (adicionar ao `build:sidecar`/pre-build). Alinhar `apps/menubar/package.json` a 0.3.0 por higiene (não é a fonte).
     Aceite: build/dev do app reporta versão 0.3.0 (não 0.1.0); a raiz `package.json` permanece a única fonte autoritativa; nenhuma regressão no bundle.
     Verificação: `npm run typecheck` && inspeção do config resolvido (dev sobe reportando 0.3.0; ou o script de sync grava 0.3.0). Confirmado por `getVersion()` em T-006.
@@ -18,19 +18,19 @@
     Verificação: `npm test -w apps/menubar -- icons` && `npm run typecheck`.
     Deps: nenhuma. Files: src/ui/icons.tsx, src/ui/icons.test.tsx, src/ui/index.ts. Scope: S.
 
-- [ ] T-003: Primitivos de menu — `Menu`/`MenuItem`/`MenuSeparator` + CSS + testes + export
+- [x] T-003: Primitivos de menu — `Menu`/`MenuItem`/`MenuSeparator` + CSS + testes + export
     NOVO `src/ui/Menu.tsx` + `Menu.css`: `Menu` (`role="menu"`), `MenuItem` (`role="menuitem"`; props `icon`/`disabled`/`onSelect`; ativa por click e Enter; `disabled` → `aria-disabled` e **não** dispara `onSelect`), `MenuSeparator` (`role="separator"`). Set de estados completo (default/hover/focus-visible/active/disabled). Realce do item highlighted (hover **e** foco ↑/↓) = **fill accent cheio** (`--accent` + `--accent-ink`); item disabled **nunca** acende. Roving focus por teclado (↑/↓ move entre itens habilitados, pula separadores/disabled). Exportar pelo barrel.
     Aceite: itens+ícones renderizam com `role` correto; `disabled` recebe `aria-disabled` e não chama `onSelect`; separadores presentes; `onSelect` no click e no Enter; ↑/↓ movem o foco entre itens habilitados; zero literal de cor.
     Verificação: `npm test -w apps/menubar -- Menu` && `npm run typecheck`.
     Deps: T-002 (barrel `index.ts` compartilhado). Files: src/ui/Menu.tsx, src/ui/Menu.css, src/ui/Menu.test.tsx, src/ui/index.ts. Scope: M.
 
-- [ ] T-004: Rust — `quit_app` + extrair `confirm_quit_if_running(app) -> bool` (DRY do guard)
+- [x] T-004: Rust — `quit_app` + extrair `confirm_quit_if_running(app) -> bool` (DRY do guard)
     `src-tauri/src/main.rs`: extrair o confirm inline do `ExitRequested` para helper `confirm_quit_if_running(app: &AppHandle) -> bool` (idle → `true` sem diálogo; rodando → diálogo "A Run is active. Quit anyway?", retorna o veredito). Reusar nos dois caminhos. Novo `#[tauri::command] quit_app`: se confirmado → `state.stop()` + `app.exit(0)`. Registrar no `invoke_handler!`. Teste unitário do ramo não-diálogo (`!is_running → true`).
     Aceite: Cmd+Q e `quit_app` compartilham `confirm_quit_if_running`; idle sai direto; rodando exige confirm; guard **não** é burlado; ramo não-diálogo testado.
     Verificação: `cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy --manifest-path apps/menubar/src-tauri/Cargo.toml`.
     Deps: nenhuma. Files: apps/menubar/src-tauri/src/main.rs. Scope: S.
 
-- [ ] T-008: `panel.rs` — material `Popover` → `Menu` (chrome de menu nativo)
+- [x] T-008: `panel.rs` — material `Popover` → `Menu` (chrome de menu nativo)
     `src-tauri/src/panel.rs`: trocar `NSVisualEffectMaterial::Popover` por `::Menu` no `apply_vibrancy` (backdrop mais sólido/opaco, fiel a um `NSMenu`). Confirmar que a variante `Menu` existe no `window-vibrancy` 0.6. Manter `POPOVER_CORNER_RADIUS` (10pt), o rim/hairline do topo e **não regredir** o overlay fullscreen (não tocar level/collection-behaviour). Manter os testes existentes de `panel.rs` verdes.
     Aceite: material = `Menu`; corner radius + rim preservados; overlay em app fullscreen intacto; testes de `panel.rs` verdes.
     Verificação: `cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy ...`; validação visual (T-007/checkpoint).

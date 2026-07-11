@@ -126,6 +126,18 @@ fn log_error(source: String, message: String, stack: String, component_stack: St
 }
 
 // ---------------------------------------------------------------------------
+// Quit (shares the Run-active guard with Cmd+Q — see quit_if_confirmed)
+// ---------------------------------------------------------------------------
+
+/// Quit the app through the shared Run-active guard, so the menu's "Sair" and
+/// Cmd+Q behave identically. Idle → exits immediately; a Run active → confirms
+/// first and, on confirmation, stops the Run before exiting.
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    quit_if_confirmed(&app);
+}
+
+// ---------------------------------------------------------------------------
 // App entry point
 // ---------------------------------------------------------------------------
 
@@ -214,6 +226,7 @@ fn main() {
             load_launch_config,
             save_launch_config,
             log_error,
+            quit_app,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")
@@ -226,37 +239,58 @@ fn main() {
             if code.is_some() {
                 return;
             }
-            let state = app_handle.state::<SidecarState>();
-            if !state.is_running() {
-                return;
-            }
 
+            // Defer this OS-driven exit and route it through the shared quit path
+            // (the same one `quit_app` uses). Idle → quits immediately with no
+            // dialog. A Run active → confirm; on cancel we stay, since
+            // prevent_exit already held.
             api.prevent_exit();
-
-            let confirmed = app_handle
-                .dialog()
-                .message(
-                    "A Run is active. Quit anyway?\n\
-                     The Run will be checkpointed for later resume.",
-                )
-                .title("Confirm Quit")
-                .kind(MessageDialogKind::Warning)
-                .buttons(MessageDialogButtons::OkCancelCustom(
-                    "Quit".into(),
-                    "Cancel".into(),
-                ))
-                .blocking_show();
-
-            if confirmed {
-                let _ = state.stop();
-                app_handle.exit(0);
-            }
+            quit_if_confirmed(app_handle);
         });
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Decide whether the app may quit. Idle → quit immediately (`true`, no
+/// dialog). A Run is active → ask the user via `ask` and return their verdict.
+///
+/// Pure over `is_running`; `ask` isolates the dialog side effect so the
+/// non-dialog branch stays unit-testable without an `AppHandle`.
+fn confirm_quit(is_running: bool, ask: impl FnOnce() -> bool) -> bool {
+    if !is_running {
+        return true;
+    }
+    ask()
+}
+
+/// Shared quit path for Cmd+Q (`ExitRequested`) and the `quit_app` command, so
+/// both honour the "Run active" confirmation identically (the guard is never
+/// bypassed). Idle → stop (a no-op) and `exit(0)` with no dialog. A Run active →
+/// confirm "A Run is active. Quit anyway?"; on approval stop the Run and
+/// `exit(0)`, on cancel do nothing (the caller stays alive).
+fn quit_if_confirmed(app: &tauri::AppHandle) {
+    let is_running = app.state::<SidecarState>().is_running();
+    let confirmed = confirm_quit(is_running, || {
+        app.dialog()
+            .message(
+                "A Run is active. Quit anyway?\n\
+                 The Run will be checkpointed for later resume.",
+            )
+            .title("Confirm Quit")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Quit".into(),
+                "Cancel".into(),
+            ))
+            .blocking_show()
+    });
+    if confirmed {
+        let _ = app.state::<SidecarState>().stop();
+        app.exit(0);
+    }
+}
 
 /// Toggle the tray popover. macOS uses a floating NSPanel that overlays
 /// fullscreen apps (see `panel.rs`); other platforms fall back to a plain window.
@@ -291,5 +325,34 @@ fn toggle_popover_window(app: &tauri::AppHandle) {
         let _ = popover.move_window(tauri_plugin_positioner::Position::TrayCenter);
         let _ = popover.show();
         let _ = popover.set_focus();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The pure decision behind the shared quit path (`quit_if_confirmed`, used by
+    // both Cmd+Q's ExitRequested and the `quit_app` command). The non-dialog
+    // branch is unit-tested here; the dialog branch needs an AppHandle (manual).
+
+    #[test]
+    fn confirm_quit_idle_returns_true_without_asking() {
+        // Arrange: idle (no Run active). The dialog closure must never fire.
+        // Act
+        let proceed = confirm_quit(false, || panic!("idle must not show a dialog"));
+        // Assert
+        assert!(proceed, "idle quit must proceed without confirmation");
+    }
+
+    #[test]
+    fn confirm_quit_running_returns_dialog_verdict() {
+        // A Run is active → the verdict is exactly what the dialog returns.
+        assert!(confirm_quit(true, || true), "confirmed quit must proceed");
+        assert!(!confirm_quit(true, || false), "cancelled quit must be blocked");
     }
 }
