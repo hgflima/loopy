@@ -16,13 +16,14 @@ import type { TaskStatus } from "loopy/tui/store";
 export interface TaskNodeData {
   readonly status: TaskStatus;
   readonly tick: number;
+  readonly selected?: boolean;
   [key: string]: unknown;
 }
 
 export type TaskNodeType = Node<TaskNodeData, "task">;
 
 function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
-  const { status, tick } = data;
+  const { status, tick, selected } = data;
   const color = COLORS.task[status];
   const glyph = SYMBOLS.task[status];
   const isRunning = status === "running";
@@ -39,6 +40,9 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
         padding: "4px 8px",
         fontWeight: isRunning && phase === "on" ? "bold" : undefined,
         opacity: isRunning && phase === "off" ? 0.5 : 1,
+        outline: selected ? `2px solid ${color}` : undefined,
+        borderRadius: selected ? 4 : undefined,
+        cursor: "pointer",
       }}
     >
       <Handle type="target" position={Position.Left} style={{ visibility: "hidden" }} />

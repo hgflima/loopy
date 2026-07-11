@@ -9,13 +9,13 @@
 
 ## Fase 0 — Primitivos (T-001 ∥ T-002 ∥ T-003)
 
-- [ ] T-001: Módulo de escala — `graph/scale.ts` (constantes D2 + CELL_PX derivado + `boxesOverlap`) — DE-RISCO
+- [x] T-001: Módulo de escala — `graph/scale.ts` (constantes D2 + CELL_PX derivado + `boxesOverlap`) — DE-RISCO
     NOVO `src/graph/scale.ts`: constantes nomeadas `CARD_W=220`, `CARD_H=88`, `GUTTER_Y`, `GUTTER_X`, `MIN_ROW_GAP=2` (rows entre nós empilhados na mesma rank: 1 de nó + 1 vazia preservada pela compactação `MAX_EMPTY_ROWS` do motor) e `MIN_RANK_COL_GAP` (menor delta de coluna entre ranks adjacentes p/ ids curtos). Derivar `CELL_PX_Y = (CARD_H + GUTTER_Y) / MIN_ROW_GAP` e `CELL_PX_X = (CARD_W + GUTTER_X) / MIN_RANK_COL_GAP` (fonte única que também vai virar CSS var `--deps-card-w`/`--deps-card-h` no card — D2, sem multiplicador mágico). Exportar helper puro `boxesOverlap(a, b, w, h)` (interseção de duas caixas `w×h` em coords de flow) para o teste de não-sobreposição. `scale.test.ts`: invariantes da derivação (`MIN_ROW_GAP*CELL_PX_Y >= CARD_H+GUTTER_Y`; `MIN_RANK_COL_GAP*CELL_PX_X >= CARD_W+GUTTER_X`) + `boxesOverlap` (caixas sintéticas: adjacentes-sem-tocar=false, sobrepostas=true, encostadas na borda=false).
     Aceite: constantes nomeadas + CELL_PX derivado (nenhum literal 120/50 mágico); `boxesOverlap` puro e correto; invariantes de folga provados por teste.
     Verificação: `npm test -w apps/menubar -- scale` && `npm run typecheck -w apps/menubar` && `npm run lint`.
     Deps: nenhuma. Files: apps/menubar/src/graph/scale.ts, apps/menubar/src/graph/scale.test.ts. Scope: S. RISCO (matemática de escala).
 
-- [ ] T-002: Hook `usePrefersReducedMotion` — gate JS do pulso do nó (D7) + export no barrel
+- [x] T-002: Hook `usePrefersReducedMotion` — gate JS do pulso do nó (D7) + export no barrel
     NOVO `src/ui/usePrefersReducedMotion.ts`: hook que assina `matchMedia('(prefers-reduced-motion: reduce)')` (retorna `boolean`, atualiza no `change`, cleanup do listener; SSR/ausência de `matchMedia` → `false`). Necessário porque o pulso do nó running é **JS/inline** (`pulseFrame(tick)`), então a media query CSS sozinha não o desliga — precisa do gate JS (D7). Exportar via `src/ui/index.ts`. `usePrefersReducedMotion.test.ts` (Testing Library `renderHook`): mock de `matchMedia` → `true`/`false`; reage ao evento `change`; remove o listener no unmount.
     Aceite: hook reflete o estado inicial e reage a mudanças; sem vazar listener; exportado pelo barrel; degrada p/ `false` sem `matchMedia`.
     Verificação: `npm test -w apps/menubar -- usePrefersReducedMotion` && `npm run typecheck -w apps/menubar`.
@@ -51,7 +51,7 @@
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`.
     Deps: T-004, T-005, T-003. Files: apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/graph/DepsFlow.test.tsx. Scope: M.
 
-- [ ] T-007: ViewSwitcher propaga seleção ao DepsFlow + integração no App
+- [x] T-007: ViewSwitcher propaga seleção ao DepsFlow + integração no App
     `src/panes/ViewSwitcher.tsx`: passar `selectedTaskId` e `onSelectTask` (já recebidos, hoje só o Kanban usa) também ao `<DepsFlow>`. Nada mais muda (ambas as views seguem montadas, estado preservado). NOVO `src/panes/ViewSwitcher.test.tsx` (mock de `DepsFlow` e `KanbanBoard` capturando props): `DepsFlow` recebe `selectedTaskId` + `onSelectTask`; acionar o `onSelectTask` do mock chama o handler do `App`; trocar de view preserva o estado (ambas montadas). `App.test.tsx` (integração): selecionar uma task no grafo (via o `onSelectTask` propagado) abre o **mesmo** `CardDetail` que o Kanban abre, com a task correta; re-clicar fecha (toggle existente do `App`); uma aprovação pendente ainda força o drawer (D6/C-0011). `App.tsx` fica **inalterado**.
     Aceite: `DepsFlow` recebe as duas props; clique no nó (mock) chega ao `App` e abre o `CardDetail` certo (mesmo painel do Kanban); toggle fecha; aprovação pendente força o drawer; `App.tsx` sem diff.
     Verificação: `npm test -w apps/menubar -- ViewSwitcher App` && `npm run typecheck -w apps/menubar`.
@@ -67,7 +67,7 @@
 
 ## Fase 4 — Arestas vivas + a11y (T-009 → T-010)
 
-- [ ] T-009: DepsFlow — arestas `smoothstep` + incidentes a running acesas/animadas (D3)
+- [x] T-009: DepsFlow — arestas `smoothstep` + incidentes a running acesas/animadas (D3)
     `src/graph/DepsFlow.tsx`: derivar o **running set** (ids com `status === "running"`) e o conjunto de **arestas incidentes** (aresta cujo `from` ou `to` está no running set). Montar `rfEdges` com `type: "smoothstep"`; incidentes → `animated: true` + `className` de recolor `state-running` (ex. `deps-edge--running`) + `style.stroke` `var(--state-running)`; demais → neutro quieto (`style.stroke` `var(--border)`), **sem** esmaecimento extra. `src/graph/DepsFlow.css`: classe da aresta running (stroke `--state-running`) e `@media (prefers-reduced-motion: reduce) { .react-flow__edge.animated .react-flow__edge-path { animation: none } }` → recolor **estático** (sem marcha). `DepsFlow.test.tsx`: arestas = arestas da geometry com `type:"smoothstep"`; incidentes a um nó running → `animated:true` + classe de recolor; demais quietas (sem `animated`).
     Aceite: arestas `smoothstep`; incidentes a running acesas (`state-running`) + `animated`; demais neutras/quietas; reduced-motion → recolor estático (CSS); marcha é animação **CSS** do RF (sem timer JS).
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação visual (arestas incidentes marchando; reduced-motion estático).

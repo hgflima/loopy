@@ -15,6 +15,10 @@ interface CapturedEdge {
   id: string;
   source: string;
   target: string;
+  type?: string;
+  animated?: boolean;
+  className?: string;
+  style?: Record<string, string>;
 }
 
 let captured: { nodes: CapturedNode[]; edges: CapturedEdge[] } = {
@@ -142,6 +146,72 @@ describe("DepsFlow — edges from StoreState.edges", () => {
       expect(rfEdge, `RF edge ${ge.from}→${ge.to}`).toBeTruthy();
     }
     expect(captured.edges.length).toBe(geo.edges.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edges — smoothstep type + running incident animation (D3)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — edge type and running animation (D3)", () => {
+  it("all edges use type smoothstep", () => {
+    const tasks = [task("T-001"), task("T-002"), task("T-003")];
+    const edges: [string, string][] = [
+      ["T-001", "T-002"],
+      ["T-001", "T-003"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    for (const e of captured.edges) {
+      expect(e.type).toBe("smoothstep");
+    }
+  });
+
+  it("edges incident to a running node are animated with running class", () => {
+    const tasks = [
+      task("T-001", "done"),
+      task("T-002", "running"),
+      task("T-003", "pending"),
+    ];
+    const edges: [string, string][] = [
+      ["T-001", "T-002"],
+      ["T-002", "T-003"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const e1 = captured.edges.find(
+      (e) => e.source === "T-001" && e.target === "T-002",
+    )!;
+    expect(e1.animated).toBe(true);
+    expect(e1.className).toContain("deps-edge--running");
+    expect(e1.style?.stroke).toBe("var(--state-running)");
+
+    const e2 = captured.edges.find(
+      (e) => e.source === "T-002" && e.target === "T-003",
+    )!;
+    expect(e2.animated).toBe(true);
+    expect(e2.className).toContain("deps-edge--running");
+    expect(e2.style?.stroke).toBe("var(--state-running)");
+  });
+
+  it("edges NOT incident to a running node are quiet (no animated)", () => {
+    const tasks = [
+      task("T-001", "done"),
+      task("T-002", "pending"),
+      task("T-003", "running"),
+    ];
+    const edges: [string, string][] = [["T-001", "T-002"]];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const e = captured.edges.find(
+      (e) => e.source === "T-001" && e.target === "T-002",
+    )!;
+    expect(e.animated).toBeUndefined();
+    expect(e.className).toBeUndefined();
+    expect(e.style?.stroke).toBe("var(--border)");
   });
 });
 

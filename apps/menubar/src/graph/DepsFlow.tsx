@@ -8,7 +8,7 @@
  *
  * Edges from {@link StoreState.edges} are rendered as React Flow edges.
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -18,6 +18,7 @@ import {
   useNodesInitialized,
   type Node,
   type Edge,
+  type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./DepsFlow.css";
@@ -38,9 +39,11 @@ export interface DepsFlowProps {
   readonly tick: number;
   /** Whether the Deps pane is the currently visible view. */
   readonly active?: boolean;
+  readonly selectedTaskId?: string | null;
+  readonly onSelectTask?: (taskId: string) => void;
 }
 
-export function DepsFlow({ tasks, edges, tick, active }: DepsFlowProps) {
+export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectTask }: DepsFlowProps) {
   const { fitView } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
   const hasFitted = useRef(false);
@@ -63,21 +66,36 @@ export function DepsFlow({ tasks, edges, tick, active }: DepsFlowProps) {
         id: n.id,
         type: "task" as const,
         position: { x: n.col * CELL_PX_X, y: n.row * CELL_PX_Y },
-        data: { status: statusById.get(n.id) ?? "pending", tick },
+        data: { status: statusById.get(n.id) ?? "pending", tick, selected: n.id === selectedTaskId },
         draggable: false,
         selectable: false,
       })),
-    [geometry.nodes, statusById, tick],
+    [geometry.nodes, statusById, tick, selectedTaskId],
   );
 
   const rfEdges: Edge[] = useMemo(
     () =>
-      geometry.edges.map((e) => ({
-        id: `${e.from}->${e.to}`,
-        source: e.from,
-        target: e.to,
-      })),
-    [geometry.edges],
+      geometry.edges.map((e) => {
+        const incident =
+          statusById.get(e.from) === "running" ||
+          statusById.get(e.to) === "running";
+        return {
+          id: `${e.from}->${e.to}`,
+          source: e.from,
+          target: e.to,
+          type: "smoothstep" as const,
+          ...(incident && { animated: true, className: "deps-edge--running" }),
+          style: {
+            stroke: incident ? "var(--state-running)" : "var(--border)",
+          },
+        };
+      }),
+    [geometry.edges, statusById],
+  );
+
+  const handleNodeClick: NodeMouseHandler = useCallback(
+    (_event, node) => { onSelectTask?.(node.id); },
+    [onSelectTask],
   );
 
   useEffect(() => {
@@ -93,6 +111,7 @@ export function DepsFlow({ tasks, edges, tick, active }: DepsFlowProps) {
       edges={rfEdges}
       nodeTypes={nodeTypes}
       proOptions={{ hideAttribution: true }}
+      onNodeClick={handleNodeClick}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}
