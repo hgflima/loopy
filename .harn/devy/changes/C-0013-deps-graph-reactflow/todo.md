@@ -51,7 +51,7 @@
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`.
     Deps: T-004, T-005, T-003. Files: apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/graph/DepsFlow.test.tsx. Scope: M.
 
-- [ ] T-007: ViewSwitcher propaga seleção ao DepsFlow + integração no App
+- [x] T-007: ViewSwitcher propaga seleção ao DepsFlow + integração no App
     `src/panes/ViewSwitcher.tsx`: passar `selectedTaskId` e `onSelectTask` (já recebidos, hoje só o Kanban usa) também ao `<DepsFlow>`. Nada mais muda (ambas as views seguem montadas, estado preservado). NOVO `src/panes/ViewSwitcher.test.tsx` (mock de `DepsFlow` e `KanbanBoard` capturando props): `DepsFlow` recebe `selectedTaskId` + `onSelectTask`; acionar o `onSelectTask` do mock chama o handler do `App`; trocar de view preserva o estado (ambas montadas). `App.test.tsx` (integração): selecionar uma task no grafo (via o `onSelectTask` propagado) abre o **mesmo** `CardDetail` que o Kanban abre, com a task correta; re-clicar fecha (toggle existente do `App`); uma aprovação pendente ainda força o drawer (D6/C-0011). `App.tsx` fica **inalterado**.
     Aceite: `DepsFlow` recebe as duas props; clique no nó (mock) chega ao `App` e abre o `CardDetail` certo (mesmo painel do Kanban); toggle fecha; aprovação pendente força o drawer; `App.tsx` sem diff.
     Verificação: `npm test -w apps/menubar -- ViewSwitcher App` && `npm run typecheck -w apps/menubar`.
