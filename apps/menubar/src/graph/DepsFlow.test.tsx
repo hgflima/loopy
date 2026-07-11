@@ -9,7 +9,17 @@ import type { TaskStatus, TaskState } from "loopy/tui/store";
 interface CapturedNode {
   id: string;
   position: { x: number; y: number };
-  data: { status: TaskStatus; tick: number; onFocusNode?: (id: string) => void };
+  data: {
+    status: TaskStatus;
+    tick: number;
+    title?: string;
+    selected?: boolean;
+    isRunning?: boolean;
+    failedAtStepId?: string;
+    reducedMotion?: boolean;
+    onSelect?: (id: string) => void;
+    onFocusNode?: (id: string) => void;
+  };
 }
 interface CapturedEdge {
   id: string;
@@ -25,6 +35,9 @@ let captured: {
   nodes: CapturedNode[];
   edges: CapturedEdge[];
   nodesFocusable?: boolean;
+  elementsSelectable?: boolean;
+  onNodeClick?: (event: unknown, node: { id: string }) => void;
+  onPaneClick?: (() => void) | undefined;
   onInit?: (instance: unknown) => void;
 } = {
   nodes: [],
@@ -41,6 +54,9 @@ vi.mock("@xyflow/react", () => ({
     nodes: CapturedNode[];
     edges: CapturedEdge[];
     nodesFocusable?: boolean;
+    elementsSelectable?: boolean;
+    onNodeClick?: (event: unknown, node: { id: string }) => void;
+    onPaneClick?: () => void;
     onInit?: (instance: unknown) => void;
     children?: React.ReactNode;
   }) => {
@@ -48,6 +64,9 @@ vi.mock("@xyflow/react", () => ({
       nodes: props.nodes,
       edges: props.edges,
       nodesFocusable: props.nodesFocusable,
+      elementsSelectable: props.elementsSelectable,
+      onNodeClick: props.onNodeClick,
+      onPaneClick: props.onPaneClick,
       onInit: props.onInit,
     };
     return props.children ?? null;
@@ -66,6 +85,15 @@ vi.mock("@xyflow/react", () => ({
   useReactFlow: () => ({ fitView: mockFitView }),
   useNodesInitialized: () => mockNodesInitialized,
 }));
+
+let mockReducedMotion = false;
+vi.mock("../ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ui")>();
+  return {
+    ...actual,
+    usePrefersReducedMotion: () => mockReducedMotion,
+  };
+});
 
 const { DepsFlow } = await import("./DepsFlow");
 const { render } = await import("@testing-library/react");
@@ -99,6 +127,7 @@ beforeEach(() => {
   capturedChildren = [];
   mockFitView.mockClear();
   mockNodesInitialized = false;
+  mockReducedMotion = false;
 });
 
 // ---------------------------------------------------------------------------
@@ -409,5 +438,109 @@ describe("DepsFlow — non-overlap (D2)", () => {
         ).toBe(false);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-006 — card data: title, failedAtStepId, isRunning, selected, reducedMotion
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — card data fields (T-006)", () => {
+  it("each node data carries title from task.title", () => {
+    const tasks = [
+      { ...task("T-001"), title: "Setup infra" },
+      { ...task("T-002"), title: "Build UI" },
+    ];
+    render(<DepsFlow tasks={tasks} edges={[["T-001", "T-002"]]} tick={0} />);
+
+    expect(captured.nodes.find((n) => n.id === "T-001")!.data.title).toBe("Setup infra");
+    expect(captured.nodes.find((n) => n.id === "T-002")!.data.title).toBe("Build UI");
+  });
+
+  it("isRunning is true only for running tasks", () => {
+    const tasks = [task("T-001", "running"), task("T-002", "done")];
+    render(<DepsFlow tasks={tasks} edges={[["T-001", "T-002"]]} tick={0} />);
+
+    expect(captured.nodes.find((n) => n.id === "T-001")!.data.isRunning).toBe(true);
+    expect(captured.nodes.find((n) => n.id === "T-002")!.data.isRunning).toBe(false);
+  });
+
+  it("failedAtStepId is set for escalated tasks with a failed step", () => {
+    const escalatedTask: TaskState = {
+      id: "T-001",
+      title: "Broken",
+      status: "escalated",
+      steps: [
+        { id: "build", type: "shell", status: "ok", checks: [] },
+        { id: "test", type: "checks", status: "failed", checks: [] },
+      ],
+      stream: "",
+    };
+    const okTask = task("T-002", "done");
+    render(<DepsFlow tasks={[escalatedTask, okTask]} edges={[["T-001", "T-002"]]} tick={0} />);
+
+    expect(captured.nodes.find((n) => n.id === "T-001")!.data.failedAtStepId).toBe("test");
+    expect(captured.nodes.find((n) => n.id === "T-002")!.data.failedAtStepId).toBeUndefined();
+  });
+
+  it("reducedMotion reflects the hook value", () => {
+    mockReducedMotion = true;
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} />);
+
+    expect(captured.nodes[0]!.data.reducedMotion).toBe(true);
+  });
+
+  it("selected is true only for node matching selectedTaskId", () => {
+    const tasks = [task("T-001"), task("T-002"), task("T-003")];
+    render(
+      <DepsFlow tasks={tasks} edges={[]} tick={0} selectedTaskId="T-002" />,
+    );
+
+    expect(captured.nodes.find((n) => n.id === "T-001")!.data.selected).toBe(false);
+    expect(captured.nodes.find((n) => n.id === "T-002")!.data.selected).toBe(true);
+    expect(captured.nodes.find((n) => n.id === "T-003")!.data.selected).toBe(false);
+  });
+
+  it("each node data carries an onSelect callback", () => {
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} />);
+
+    for (const n of captured.nodes) {
+      expect(typeof n.data.onSelect).toBe("function");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-006 — onNodeClick → onSelectTask; onPaneClick is absent (no deselect)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — selection + click (T-006)", () => {
+  it("onNodeClick calls onSelectTask with the node id", () => {
+    const spy = vi.fn();
+    const tasks = [task("T-001"), task("T-002")];
+    render(
+      <DepsFlow tasks={tasks} edges={[["T-001", "T-002"]]} tick={0} onSelectTask={spy} />,
+    );
+
+    expect(captured.onNodeClick).toBeDefined();
+    captured.onNodeClick!(new MouseEvent("click"), { id: "T-002" });
+    expect(spy).toHaveBeenCalledWith("T-002");
+  });
+
+  it("onPaneClick is not wired (clicking empty canvas does not deselect)", () => {
+    const spy = vi.fn();
+    render(
+      <DepsFlow tasks={[task("T-001")]} edges={[]} tick={0} onSelectTask={spy} />,
+    );
+
+    // onPaneClick should not be set (no-op = absent)
+    expect(captured.onPaneClick).toBeUndefined();
+  });
+
+  it("elementsSelectable is true", () => {
+    render(<DepsFlow tasks={[task("T-001")]} edges={[]} tick={0} />);
+    expect(captured.elementsSelectable).toBe(true);
   });
 });
