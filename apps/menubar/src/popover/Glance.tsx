@@ -1,34 +1,66 @@
 /**
- * Glance — compact popover summary for the tray.
+ * Glance — the tray popover, styled and operated as a native macOS NSMenu
+ * (C-0012). A glanceable status header (`done/total · running · ⚠`) sits above
+ * the menu, preserving the "altitude of the glance"; below it, four items grouped
+ * by separators:
  *
- * Shows `done/total · running · gates` at a glance with two actions:
- * - **Abrir**: expand the full dashboard window (accent primary)
- * - **Parar**: stop the running sidecar (secondary)
+ *   [⤢] Abrir  → show_main_window
+ *   [■] Parar  → stop_sidecar   (disabled while idle)
+ *   ───────────
+ *   [ⓘ] Sobre  → show_about_window
+ *   [⏻] Sair   → quit_app
  *
- * Three states: idle (no run), running (progress), gate (pending approvals).
- * All styling via design system classes + tokens.css — zero inline colors.
+ * Native-menu semantics: every activation closes the popover — Parar included
+ * (its feedback comes from the tray badge/title, not a lingering menu). Esc
+ * closes too. Both reuse the same order-out path the resign-key handler uses
+ * (panel.rs `hide_popover_panel`). No resting highlight on open: rows are
+ * `tabIndex=-1`, so the roving highlight only appears once the user presses ↑/↓.
+ *
+ * All styling via the design system + tokens.css — zero inline colors.
  */
 
 import { useEffect, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { BridgeState } from "../state/store-bridge";
-import { Button, StatusDot, Pill } from "../ui";
+import {
+  StatusDot,
+  Pill,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+  IconOpen,
+  IconStop,
+  IconInfo,
+  IconPower,
+} from "../ui";
 import "./Glance.css";
 
 interface GlanceProps {
   state: BridgeState;
-  yesFlag: boolean;
 }
 
-/** Drop focus off any control so no resting `:focus-visible` ring shows. */
+/** Drop focus off any menu row so no resting highlight shows when the popover
+ *  opens — the roving highlight only appears once the user presses ↑/↓. */
 function dropControlFocus(): void {
   const el = document.activeElement;
-  if (el instanceof HTMLElement && el.classList.contains("btn")) {
+  if (el instanceof HTMLElement && el.getAttribute("role") === "menuitem") {
     el.blur();
   }
 }
 
-export function Glance({ state, yesFlag }: GlanceProps) {
+/** Close the popover like a native NSMenu: order the panel out via the same
+ *  hide path the resign-key handler uses (panel.rs `hide_popover_panel` →
+ *  `order_out`). Routed through the `hide_popover` command — not
+ *  `Window.hide()`, which needs the `core:window:allow-hide` permission the app
+ *  doesn't grant (and wouldn't reliably order a swizzled NSPanel out anyway).
+ *  Every activation and Esc route through here. No-op outside Tauri (the
+ *  dev:web preview and jsdom have no panel to hide). */
+function closePopover(): void {
+  if (!isTauri()) return;
+  invoke("hide_popover").catch(() => {});
+}
+
+export function Glance({ state }: GlanceProps) {
   const { store, ui } = state;
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -38,9 +70,9 @@ export function Glance({ state, yesFlag }: GlanceProps) {
   //     vibrant card hugs its content instead of standing tall. Re-measured on
   //     open (window `focus`) and on any content change (`ResizeObserver`), so a
   //     run starting while the popover is open re-fits it live.
-  //  2. Drop the resting magenta focus ring: the panel grabs key focus on open
-  //     and the webview auto-focuses the primary button. The rAF pass covers the
-  //     auto-focus that lands a frame later; a real keyboard Tab still rings.
+  //  2. Drop the resting highlight: the panel grabs key focus on open. The rAF
+  //     pass covers a focus that lands a frame later; a real keyboard ↑/↓ still
+  //     lights the roving row.
   useEffect(() => {
     if (!isTauri()) return;
     const card = cardRef.current;
@@ -70,6 +102,15 @@ export function Glance({ state, yesFlag }: GlanceProps) {
     };
   }, []);
 
+  // Esc closes the popover, like a native menu.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePopover();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const total = store.tasks.length;
   const done = store.tasks.filter((t) => t.status === "done").length;
   const running = store.tasks.filter((t) => t.status === "running").length;
@@ -78,9 +119,16 @@ export function Glance({ state, yesFlag }: GlanceProps) {
   const isRunning = ui.runStatus === "running";
   const isIdle = ui.runStatus === "idle";
 
+  // Every activation invokes its command AND closes the popover (native menu
+  // semantics) — Parar included.
+  const runAndClose = (command: string) => () => {
+    invoke(command).catch(() => {});
+    closePopover();
+  };
+
   return (
     <div className="glance t-body" ref={cardRef}>
-      {/* Status line */}
+      {/* Status header — the glanceable altitude above the menu */}
       <div className="glance__status">
         {isIdle ? (
           <span className="glance__idle">Nenhum run ativo</span>
@@ -108,27 +156,30 @@ export function Glance({ state, yesFlag }: GlanceProps) {
         )}
       </div>
 
-      {/* Delegation info */}
-      {!isIdle && (
-        <div className="glance__delegation t-label u-muted">
-          delegação: --yes {yesFlag ? "ON" : "OFF"} · {warnings} gate
-          {warnings !== 1 ? "s" : ""}
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="glance__actions">
-        <Button variant="primary" onClick={() => invoke("show_main_window")}>
+      {/* Menu — Abrir/Parar · Sobre/Sair, each with a monochrome icon */}
+      <Menu ariaLabel="Ações">
+        <MenuSeparator />
+        <MenuItem icon={<IconOpen />} onSelect={runAndClose("show_main_window")}>
           Abrir
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => invoke("stop_sidecar")}
+        </MenuItem>
+        <MenuItem
+          icon={<IconStop />}
           disabled={!isRunning}
+          onSelect={runAndClose("stop_sidecar")}
         >
           Parar
-        </Button>
-      </div>
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem
+          icon={<IconInfo />}
+          onSelect={runAndClose("show_about_window")}
+        >
+          Sobre
+        </MenuItem>
+        <MenuItem icon={<IconPower />} onSelect={runAndClose("quit_app")}>
+          Sair
+        </MenuItem>
+      </Menu>
     </div>
   );
 }

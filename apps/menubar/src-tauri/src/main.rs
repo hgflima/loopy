@@ -101,6 +101,15 @@ fn resize_popover(app: tauri::AppHandle, height: f64) {
     }
 }
 
+/// Order the tray popover out — the native NSMenu "dismiss on activation/Esc"
+/// path the frontend calls when a menu item is chosen or Esc is pressed. Reuses
+/// the resign-key order-out route (panel.rs `hide_popover_panel`), so it needs
+/// no window `hide` permission and reliably dismisses the swizzled NSPanel.
+#[tauri::command]
+fn hide_popover(app: tauri::AppHandle) {
+    hide_tray_popover(&app);
+}
+
 /// Update the tray icon title (used by the frontend to echo `pulseFrame`).
 #[tauri::command]
 fn update_tray_title(app: tauri::AppHandle, title: String) -> Result<(), String> {
@@ -222,6 +231,7 @@ fn main() {
             hide_main_window,
             bring_to_front,
             resize_popover,
+            hide_popover,
             update_tray_title,
             load_launch_config,
             save_launch_config,
