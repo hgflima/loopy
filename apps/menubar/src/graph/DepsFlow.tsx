@@ -8,12 +8,18 @@
  *
  * Edges from {@link StoreState.edges} are rendered as React Flow edges.
  */
-import { useMemo, useRef, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  useReactFlow,
+  useNodesInitialized,
   type Node,
   type Edge,
   type ReactFlowInstance,
+  type NodeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import "./DepsFlow.css";
@@ -29,10 +35,17 @@ export interface DepsFlowProps {
   readonly tasks: readonly TaskState[];
   readonly edges: readonly [string, string][];
   readonly tick: number;
+  /** Whether the Deps pane is the currently visible view. */
+  readonly active?: boolean;
+  readonly selectedTaskId?: string | null;
+  readonly onSelectTask?: (taskId: string) => void;
 }
 
-export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
+export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectTask }: DepsFlowProps) {
   const instanceRef = useRef<ReactFlowInstance<Node<TaskNodeType["data"]>> | null>(null);
+  const { fitView } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const hasFitted = useRef(false);
 
   const onFocusNode = useCallback((id: string) => {
     const inst = instanceRef.current;
@@ -44,7 +57,6 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
       duration: 300,
     });
   }, []);
-
   const statusById = useMemo(() => {
     const m = new Map<string, TaskStatus>();
     for (const t of tasks) m.set(t.id, t.status);
@@ -68,11 +80,12 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
           status: statusById.get(n.id) ?? "pending",
           tick,
           onFocusNode,
+          selected: n.id === selectedTaskId,
         },
         draggable: false,
         selectable: false,
       })),
-    [geometry.nodes, statusById, tick, onFocusNode],
+    [geometry.nodes, statusById, tick, onFocusNode, selectedTaskId],
   );
 
   const rfEdges: Edge[] = useMemo(
@@ -95,13 +108,25 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
     [geometry.edges, statusById],
   );
 
+  const handleNodeClick: NodeMouseHandler = useCallback(
+    (_event, node) => { onSelectTask?.(node.id); },
+    [onSelectTask],
+  );
+
+  useEffect(() => {
+    if (active && nodesInitialized && !hasFitted.current) {
+      hasFitted.current = true;
+      fitView();
+    }
+  }, [active, nodesInitialized, fitView]);
+
   return (
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
       nodeTypes={nodeTypes}
-      fitView
       proOptions={{ hideAttribution: true }}
+      onNodeClick={handleNodeClick}
       nodesDraggable={false}
       nodesConnectable={false}
       nodesFocusable={false}
@@ -114,6 +139,9 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
       onInit={(instance) => {
         instanceRef.current = instance;
       }}
-    />
+    >
+      <Background variant={BackgroundVariant.Dots} gap={18} color="var(--border)" />
+      <Controls />
+    </ReactFlow>
   );
 }

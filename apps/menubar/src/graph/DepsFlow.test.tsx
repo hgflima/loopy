@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { computeDagreLayout, type GraphGeometry } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
 
@@ -31,12 +31,18 @@ let captured: {
   edges: [],
 };
 
+let capturedChildren: string[] = [];
+
+const mockFitView = vi.fn();
+let mockNodesInitialized = false;
+
 vi.mock("@xyflow/react", () => ({
   ReactFlow: (props: {
     nodes: CapturedNode[];
     edges: CapturedEdge[];
     nodesFocusable?: boolean;
     onInit?: (instance: unknown) => void;
+    children?: React.ReactNode;
   }) => {
     captured = {
       nodes: props.nodes,
@@ -44,15 +50,26 @@ vi.mock("@xyflow/react", () => ({
       nodesFocusable: props.nodesFocusable,
       onInit: props.onInit,
     };
+    return props.children ?? null;
+  },
+  Background: () => {
+    capturedChildren.push("Background");
+    return null;
+  },
+  BackgroundVariant: { Dots: "dots", Lines: "lines", Cross: "cross" },
+  Controls: () => {
+    capturedChildren.push("Controls");
     return null;
   },
   Handle: () => null,
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
+  useReactFlow: () => ({ fitView: mockFitView }),
+  useNodesInitialized: () => mockNodesInitialized,
 }));
 
 const { DepsFlow } = await import("./DepsFlow");
 const { render } = await import("@testing-library/react");
-const { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H } = await import("./scale");
+const { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H, boxesOverlap } = await import("./scale");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -76,6 +93,13 @@ function geometry(
     tasks.map((t) => t.id),
   );
 }
+
+beforeEach(() => {
+  captured = { nodes: [], edges: [] };
+  capturedChildren = [];
+  mockFitView.mockClear();
+  mockNodesInitialized = false;
+});
 
 // ---------------------------------------------------------------------------
 // Layout positions match computeDagreLayout (SC #4)
@@ -284,5 +308,106 @@ describe("DepsFlow — a11y (D5)", () => {
     const n1 = captured.nodes.find((n) => n.id === "T-001")!;
     // Should not throw
     expect(() => n1.data.onFocusNode!("T-001")).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Background and Controls are mounted
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — Background & Controls", () => {
+  it("renders Background and Controls as children of ReactFlow", () => {
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} />);
+
+    expect(capturedChildren).toContain("Background");
+    expect(capturedChildren).toContain("Controls");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fitView — only on first reveal (active + nodesInitialized)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — fitView on first reveal", () => {
+  it("does NOT call fitView when active=false", () => {
+    mockNodesInitialized = true;
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} active={false} />);
+
+    expect(mockFitView).not.toHaveBeenCalled();
+  });
+
+  it("calls fitView once when active becomes true and nodes are initialized", () => {
+    mockNodesInitialized = true;
+    const tasks = [task("T-001")];
+    const { rerender } = render(
+      <DepsFlow tasks={tasks} edges={[]} tick={0} active={false} />,
+    );
+
+    expect(mockFitView).not.toHaveBeenCalled();
+
+    rerender(<DepsFlow tasks={tasks} edges={[]} tick={0} active={true} />);
+    expect(mockFitView).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT re-fit on subsequent toggles", () => {
+    mockNodesInitialized = true;
+    const tasks = [task("T-001")];
+    const { rerender } = render(
+      <DepsFlow tasks={tasks} edges={[]} tick={0} active={true} />,
+    );
+
+    expect(mockFitView).toHaveBeenCalledTimes(1);
+
+    rerender(<DepsFlow tasks={tasks} edges={[]} tick={0} active={false} />);
+    rerender(<DepsFlow tasks={tasks} edges={[]} tick={0} active={true} />);
+
+    expect(mockFitView).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-overlap: no two CARD_W×CARD_H boxes overlap (D2 guardrail)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — non-overlap (D2)", () => {
+  it("no two cards overlap in a DAG with stacking and adjacent ranks", () => {
+    // Representative DAG: A fans out to B,C,D (stacked in same rank),
+    // then B,C,D converge into E (adjacent rank after the stack).
+    //
+    //       ┌─► B ─┐
+    //  A ───┼─► C ─┼──► E
+    //       └─► D ─┘
+    //
+    const tasks = ["A", "B", "C", "D", "E"].map((id) => task(id));
+    const edges: [string, string][] = [
+      ["A", "B"],
+      ["A", "C"],
+      ["A", "D"],
+      ["B", "E"],
+      ["C", "E"],
+      ["D", "E"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const positions = captured.nodes.map((n) => ({
+      id: n.id,
+      ...n.position,
+    }));
+
+    // For every pair, assert no overlap of CARD_W×CARD_H boxes
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const a = positions[i]!;
+        const b = positions[j]!;
+        expect(
+          boxesOverlap(a, b, CARD_W, CARD_H),
+          `cards ${a.id} (${a.x},${a.y}) and ${b.id} (${b.x},${b.y}) must not overlap ` +
+            `(CARD_W=${CARD_W}, CARD_H=${CARD_H})`,
+        ).toBe(false);
+      }
+    }
   });
 });
