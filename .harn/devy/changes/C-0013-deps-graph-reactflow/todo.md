@@ -67,7 +67,7 @@
 
 ## Fase 4 — Arestas vivas + a11y (T-009 → T-010)
 
-- [ ] T-009: DepsFlow — arestas `smoothstep` + incidentes a running acesas/animadas (D3)
+- [x] T-009: DepsFlow — arestas `smoothstep` + incidentes a running acesas/animadas (D3)
     `src/graph/DepsFlow.tsx`: derivar o **running set** (ids com `status === "running"`) e o conjunto de **arestas incidentes** (aresta cujo `from` ou `to` está no running set). Montar `rfEdges` com `type: "smoothstep"`; incidentes → `animated: true` + `className` de recolor `state-running` (ex. `deps-edge--running`) + `style.stroke` `var(--state-running)`; demais → neutro quieto (`style.stroke` `var(--border)`), **sem** esmaecimento extra. `src/graph/DepsFlow.css`: classe da aresta running (stroke `--state-running`) e `@media (prefers-reduced-motion: reduce) { .react-flow__edge.animated .react-flow__edge-path { animation: none } }` → recolor **estático** (sem marcha). `DepsFlow.test.tsx`: arestas = arestas da geometry com `type:"smoothstep"`; incidentes a um nó running → `animated:true` + classe de recolor; demais quietas (sem `animated`).
     Aceite: arestas `smoothstep`; incidentes a running acesas (`state-running`) + `animated`; demais neutras/quietas; reduced-motion → recolor estático (CSS); marcha é animação **CSS** do RF (sem timer JS).
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação visual (arestas incidentes marchando; reduced-motion estático).
