@@ -15,6 +15,7 @@
  * the reducer resets `currentStepId` to the goto target on `step_started`.
  */
 import type { StoreState, TaskState, TaskStatus } from "loopy/tui/store";
+import { failedStepId } from "./failed-step";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -45,26 +46,14 @@ const TERMINAL: ReadonlySet<TaskStatus> = new Set([
   "paused",
 ]);
 
-/** Find the last step with status "failed" in a task's step history. */
-function lastFailedStepId(task: TaskState): string | undefined {
-  for (let i = task.steps.length - 1; i >= 0; i--) {
-    const step = task.steps[i]!;
-    if (step.status === "failed") return step.id;
-  }
-  return undefined;
-}
-
 function toCard(task: TaskState): KanbanCard {
-  const card: KanbanCard = {
+  const fid = failedStepId(task);
+  return {
     taskId: task.id,
     title: task.title,
     status: task.status,
+    ...(fid && { failedAtStepId: fid }),
   };
-  if (task.status === "escalated") {
-    const fid = lastFailedStepId(task);
-    if (fid) return { ...card, failedAtStepId: fid };
-  }
-  return card;
 }
 
 // ---------------------------------------------------------------------------
