@@ -187,15 +187,13 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 function Root() {
   const [state, setState] = useState(initialBridgeState);
   const prevApprovalCount = useRef(0);
-  const [yesFlag, setYesFlag] = useState(false);
 
   // ----------------------------------------------------------
-  // LaunchConfig callback (reset state + track --yes flag)
+  // LaunchConfig callback (reset state for a fresh run)
   // ----------------------------------------------------------
 
-  const handleStartRun = useCallback((yes: boolean) => {
+  const handleStartRun = useCallback(() => {
     setState(initialBridgeState);
-    setYesFlag(yes);
   }, []);
 
   // ----------------------------------------------------------
@@ -275,7 +273,7 @@ function Root() {
   }, []);
 
   return IS_POPOVER ? (
-    <Glance state={state} yesFlag={yesFlag} />
+    <Glance state={state} />
   ) : (
     <App state={state} onStartRun={handleStartRun} onApprovalDecision={handleApprovalDecision} />
   );
