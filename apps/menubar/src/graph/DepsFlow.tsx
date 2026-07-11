@@ -8,9 +8,19 @@
  *
  * Edges from {@link StoreState.edges} are rendered as React Flow edges.
  */
-import { useMemo } from "react";
-import { ReactFlow, type Node, type Edge } from "@xyflow/react";
+import { useEffect, useMemo, useRef } from "react";
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  useReactFlow,
+  useNodesInitialized,
+  type Node,
+  type Edge,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import "./DepsFlow.css";
 import { computeDagreLayout } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
 import TaskNode, { type TaskNodeType } from "./TaskNode";
@@ -26,9 +36,14 @@ export interface DepsFlowProps {
   readonly tasks: readonly TaskState[];
   readonly edges: readonly [string, string][];
   readonly tick: number;
+  /** Whether the Deps pane is the currently visible view. */
+  readonly active?: boolean;
 }
 
-export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
+export function DepsFlow({ tasks, edges, tick, active }: DepsFlowProps) {
+  const { fitView } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const hasFitted = useRef(false);
   const statusById = useMemo(() => {
     const m = new Map<string, TaskStatus>();
     for (const t of tasks) m.set(t.id, t.status);
@@ -65,21 +80,25 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
     [geometry.edges],
   );
 
+  useEffect(() => {
+    if (active && nodesInitialized && !hasFitted.current) {
+      hasFitted.current = true;
+      fitView();
+    }
+  }, [active, nodesInitialized, fitView]);
+
   return (
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
       nodeTypes={nodeTypes}
-      fitView
       proOptions={{ hideAttribution: true }}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}
-      panOnDrag={false}
-      zoomOnScroll={false}
-      zoomOnPinch={false}
-      zoomOnDoubleClick={false}
-      preventScrolling={false}
-    />
+    >
+      <Background variant={BackgroundVariant.Dots} gap={18} color="var(--border)" />
+      <Controls />
+    </ReactFlow>
   );
 }

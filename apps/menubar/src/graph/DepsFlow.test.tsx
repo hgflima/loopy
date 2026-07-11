@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { computeDagreLayout, type GraphGeometry } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
 
@@ -22,13 +22,33 @@ let captured: { nodes: CapturedNode[]; edges: CapturedEdge[] } = {
   edges: [],
 };
 
+let capturedChildren: string[] = [];
+
+const mockFitView = vi.fn();
+let mockNodesInitialized = false;
+
 vi.mock("@xyflow/react", () => ({
-  ReactFlow: (props: { nodes: CapturedNode[]; edges: CapturedEdge[] }) => {
+  ReactFlow: (props: {
+    nodes: CapturedNode[];
+    edges: CapturedEdge[];
+    children?: React.ReactNode;
+  }) => {
     captured = { nodes: props.nodes, edges: props.edges };
+    return props.children ?? null;
+  },
+  Background: () => {
+    capturedChildren.push("Background");
+    return null;
+  },
+  BackgroundVariant: { Dots: "dots", Lines: "lines", Cross: "cross" },
+  Controls: () => {
+    capturedChildren.push("Controls");
     return null;
   },
   Handle: () => null,
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
+  useReactFlow: () => ({ fitView: mockFitView }),
+  useNodesInitialized: () => mockNodesInitialized,
 }));
 
 const { DepsFlow } = await import("./DepsFlow");
@@ -59,6 +79,13 @@ function geometry(
     tasks.map((t) => t.id),
   );
 }
+
+beforeEach(() => {
+  captured = { nodes: [], edges: [] };
+  capturedChildren = [];
+  mockFitView.mockClear();
+  mockNodesInitialized = false;
+});
 
 // ---------------------------------------------------------------------------
 // Layout positions match computeDagreLayout (SC #4)
@@ -134,5 +161,61 @@ describe("DepsFlow — node data", () => {
     const n2 = captured.nodes.find((n) => n.id === "T-002")!;
     expect(n2.data.status).toBe("done");
     expect(n2.data.tick).toBe(42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Background and Controls are mounted
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — Background & Controls", () => {
+  it("renders Background and Controls as children of ReactFlow", () => {
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} />);
+
+    expect(capturedChildren).toContain("Background");
+    expect(capturedChildren).toContain("Controls");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// fitView — only on first reveal (active + nodesInitialized)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — fitView on first reveal", () => {
+  it("does NOT call fitView when active=false", () => {
+    mockNodesInitialized = true;
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} active={false} />);
+
+    expect(mockFitView).not.toHaveBeenCalled();
+  });
+
+  it("calls fitView once when active becomes true and nodes are initialized", () => {
+    mockNodesInitialized = true;
+    const tasks = [task("T-001")];
+    const { rerender } = render(
+      <DepsFlow tasks={tasks} edges={[]} tick={0} active={false} />,
+    );
+
+    expect(mockFitView).not.toHaveBeenCalled();
+
+    rerender(<DepsFlow tasks={tasks} edges={[]} tick={0} active={true} />);
+    expect(mockFitView).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT re-fit on subsequent toggles", () => {
+    mockNodesInitialized = true;
+    const tasks = [task("T-001")];
+    const { rerender } = render(
+      <DepsFlow tasks={tasks} edges={[]} tick={0} active={true} />,
+    );
+
+    expect(mockFitView).toHaveBeenCalledTimes(1);
+
+    rerender(<DepsFlow tasks={tasks} edges={[]} tick={0} active={false} />);
+    rerender(<DepsFlow tasks={tasks} edges={[]} tick={0} active={true} />);
+
+    expect(mockFitView).toHaveBeenCalledTimes(1);
   });
 });
