@@ -12,7 +12,7 @@
     Verificação: `npm run typecheck` && inspeção do config resolvido (dev sobe reportando 0.3.0; ou o script de sync grava 0.3.0). Confirmado por `getVersion()` em T-006.
     Deps: nenhuma. Files: apps/menubar/src-tauri/tauri.conf.json, apps/menubar/package.json, (fallback) apps/menubar/package.json script + script de sync. Scope: S. RISCO (path-ref).
 
-- [ ] T-002: Ícones monocromáticos — `icons.tsx` (IconOpen/IconStop/IconInfo/IconPower) + export + smoke
+- [x] T-002: Ícones monocromáticos — `icons.tsx` (IconOpen/IconStop/IconInfo/IconPower) + export + smoke
     NOVO `src/ui/icons.tsx`: 4 SVGs 16×16, `viewBox="0 0 16 16"`, `fill="currentColor"`, `aria-hidden`, estilo SF Symbols (§Decisões #6: `macwindow`/`stop.fill`/`info.circle`/`power`). Sem cor hardcoded (herdam `currentColor`). Exportar via `src/ui/index.ts`. Teste de smoke: monta cada ícone, confirma `aria-hidden` e uso de `currentColor` (nenhum hex).
     Aceite: os 4 ícones renderizam; todos `aria-hidden`; nenhum literal de cor no SVG; exportados pelo barrel.
     Verificação: `npm test -w apps/menubar -- icons` && `npm run typecheck`.
