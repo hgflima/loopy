@@ -1,0 +1,9 @@
+.deps-edge--running .react-flow__edge-path {
+  stroke: var(--state-running);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.animated .react-flow__edge-path {
+    animation: none;
+  }
+}
