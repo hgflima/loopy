@@ -15,13 +15,13 @@
     Verificação: `npm test -w apps/menubar -- scale` && `npm run typecheck -w apps/menubar` && `npm run lint`.
     Deps: nenhuma. Files: apps/menubar/src/graph/scale.ts, apps/menubar/src/graph/scale.test.ts. Scope: S. RISCO (matemática de escala).
 
-- [ ] T-002: Hook `usePrefersReducedMotion` — gate JS do pulso do nó (D7) + export no barrel
+- [x] T-002: Hook `usePrefersReducedMotion` — gate JS do pulso do nó (D7) + export no barrel
     NOVO `src/ui/usePrefersReducedMotion.ts`: hook que assina `matchMedia('(prefers-reduced-motion: reduce)')` (retorna `boolean`, atualiza no `change`, cleanup do listener; SSR/ausência de `matchMedia` → `false`). Necessário porque o pulso do nó running é **JS/inline** (`pulseFrame(tick)`), então a media query CSS sozinha não o desliga — precisa do gate JS (D7). Exportar via `src/ui/index.ts`. `usePrefersReducedMotion.test.ts` (Testing Library `renderHook`): mock de `matchMedia` → `true`/`false`; reage ao evento `change`; remove o listener no unmount.
     Aceite: hook reflete o estado inicial e reage a mudanças; sem vazar listener; exportado pelo barrel; degrada p/ `false` sem `matchMedia`.
     Verificação: `npm test -w apps/menubar -- usePrefersReducedMotion` && `npm run typecheck -w apps/menubar`.
     Deps: nenhuma. Files: apps/menubar/src/ui/usePrefersReducedMotion.ts, apps/menubar/src/ui/usePrefersReducedMotion.test.ts, apps/menubar/src/ui/index.ts. Scope: XS.
 
-- [ ] T-003: Helper `failedStepId(task)` — extrair do `grouper` (DRY, paridade Kanban↔Deps)
+- [x] T-003: Helper `failedStepId(task)` — extrair do `grouper` (DRY, paridade Kanban↔Deps)
     NOVO `src/kanban/failed-step.ts` (ou `src/graph/`): função pura `failedStepId(task: TaskState): string | undefined` que replica a regra atual do `grouper` — retorna o **último step com status "failed"** somente quando `task.status === "escalated"` (paridade exata com o `@step` do card do Kanban). Refatorar `grouper.ts` para importar e usar esse helper no lugar do `lastFailedStepId`/ramo inline em `toCard` (comportamento **idêntico**; suíte do Kanban permanece verde). `failed-step.test.ts`: escalated com step failed → id; escalated sem failed → undefined; não-escalated com step failed → undefined.
     Aceite: helper puro compartilhado; `grouper` reusa-o sem mudança de comportamento; casos de borda testados.
     Verificação: `npm test -w apps/menubar -- failed-step grouper KanbanBoard` && `npm run typecheck -w apps/menubar`.
