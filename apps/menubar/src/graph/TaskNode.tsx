@@ -1,58 +1,96 @@
 /**
- * Custom React Flow node for a backlog task.
+ * Custom React Flow node — card de design-system (paridade .kanban-card).
  *
- * Colors by {@link COLORS}.task[status] (CSS keywords directly) and pulses on
- * `running` via {@link pulseFrame}(tick). The tick counter is driven by a
- * **single** `setInterval` in `App` — no timer per node.
+ * Dot de status (estático, sem pulse) + ID (mono) + título (sans, clamp 3) +
+ * step falho (@id). Running pulsa a **borda interna** via {@link pulseFrame};
+ * o dot não pulsa (D7). Selected + running = anéis concêntricos (D4).
  *
- * Handles are positioned Left (target) / Right (source) because the dagre
- * layout uses `rankdir: "LR"`.
+ * Handles Left (target) / Right (source), hidden (rankdir LR).
  */
 import { memo } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { COLORS, SYMBOLS, pulseFrame } from "loopy/tui/view";
+import { pulseFrame } from "loopy/tui/view";
 import type { TaskStatus } from "loopy/tui/store";
+import { StatusDot, TASK_STATUS_META } from "../ui";
+import "./TaskNode.css";
 
 export interface TaskNodeData {
   readonly status: TaskStatus;
   readonly tick: number;
-  readonly onFocusNode?: (id: string) => void;
+  /** All fields below degrade gracefully when omitted (spec: "todos opcionais degradam"). */
+  readonly title?: string;
   readonly selected?: boolean;
+  readonly isRunning?: boolean;
+  readonly failedAtStepId?: string;
+  readonly reducedMotion?: boolean;
+  readonly onSelect?: (id: string) => void;
+  readonly onFocusNode?: (id: string) => void;
   [key: string]: unknown;
 }
 
 export type TaskNodeType = Node<TaskNodeData, "task">;
 
 function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
-  const { status, tick, onFocusNode, selected } = data;
-  const color = COLORS.task[status];
-  const glyph = SYMBOLS.task[status];
-  const isRunning = status === "running";
-  const phase = pulseFrame(tick);
+  const {
+    status,
+    title = "",
+    tick,
+    selected = false,
+    isRunning = false,
+    failedAtStepId,
+    reducedMotion = false,
+    onSelect,
+    onFocusNode,
+  } = data;
+
+  const meta = TASK_STATUS_META[status];
+
+  const isPulseOff = isRunning && !reducedMotion && pulseFrame(tick) === "off";
+
+  const cls = [
+    "deps-node",
+    selected && "deps-node--selected",
+    isRunning && "deps-node--running",
+    isPulseOff && "deps-node--pulse-off",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const handleSelect = () => {
+    onSelect?.(id);
+  };
 
   return (
     <div
-      data-testid={`task-node-${id}`}
+      className={cls}
+      role="button"
       tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`${id}: ${title}`}
+      data-testid={`task-node-${id}`}
+      onClick={handleSelect}
       onFocus={() => onFocusNode?.(id)}
-      style={{
-        color,
-        fontFamily: "monospace",
-        fontSize: 13,
-        whiteSpace: "nowrap",
-        padding: "4px 8px",
-        fontWeight: isRunning && phase === "on" ? "bold" : undefined,
-        opacity: isRunning && phase === "off" ? 0.5 : 1,
-        outline: selected ? `2px solid ${color}` : undefined,
-        borderRadius: selected ? 4 : undefined,
-        cursor: "pointer",
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleSelect();
+        }
       }}
     >
       <Handle type="target" position={Position.Left} style={{ visibility: "hidden" }} />
-      {glyph} {id}
+      <StatusDot tone={meta.tone} hollow={meta.hollow} label={meta.label} />
+      <span className="deps-node__id t-data">{id}</span>
+      <span className="deps-node__title t-body">{title}</span>
+      {failedAtStepId && (
+        <span className="deps-node__failed t-data">@{failedAtStepId}</span>
+      )}
       <Handle type="source" position={Position.Right} style={{ visibility: "hidden" }} />
     </div>
   );
 }
 
-export default memo(TaskNodeComponent);
+const MemoTaskNode = memo(TaskNodeComponent);
+export default MemoTaskNode;
+
+/** Stable nodeTypes object — outside the component to avoid RF re-registration. */
+export const nodeTypes = { task: MemoTaskNode } as const;

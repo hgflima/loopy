@@ -1,0 +1,90 @@
+/* TaskNode — card de design-system no grafo de deps (paridade .kanban-card).
+   --_lift: base elevation shadow (light = shadow-sm, dark = none via transparent). */
+
+.deps-node {
+  --deps-card-w: 220px;
+  --deps-card-h: 88px;
+  --_lift: var(--shadow-sm);
+
+  width: var(--deps-card-w);
+  min-height: var(--deps-card-h);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md);
+  border-radius: var(--r-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--_lift);
+  cursor: pointer;
+  outline: none;
+}
+
+/* Focus-visible / selected: anel externo accent */
+.deps-node:focus-visible,
+.deps-node--selected {
+  box-shadow: var(--_lift), 0 0 0 2px var(--accent);
+}
+
+.deps-node--selected {
+  background: var(--accent-subtle);
+}
+
+/* Running: realce interno state-running (pulsado via class deps-node--pulse-off) */
+.deps-node--running {
+  box-shadow: var(--_lift), inset 0 0 0 2px var(--state-running);
+}
+
+/* Selected/focus + running: dois anéis concêntricos (D4) */
+.deps-node--selected.deps-node--running,
+.deps-node:focus-visible.deps-node--running {
+  box-shadow: var(--_lift), 0 0 0 2px var(--accent), inset 0 0 0 2px var(--state-running);
+}
+
+/* Pulse "off" phase: running inset fades to transparent */
+.deps-node--running.deps-node--pulse-off {
+  box-shadow: var(--_lift), inset 0 0 0 2px transparent;
+}
+.deps-node--selected.deps-node--running.deps-node--pulse-off {
+  box-shadow: var(--_lift), 0 0 0 2px var(--accent), inset 0 0 0 2px transparent;
+}
+
+/* Dark: shadows read poorly — hairline border + kill base shadow via --_lift. */
+@media (prefers-color-scheme: dark) {
+  .deps-node {
+    --_lift: 0 0 0 0 transparent;
+    border: 1px solid var(--border);
+  }
+  .deps-node--running {
+    border-color: var(--state-running);
+  }
+}
+
+.deps-node__id {
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.deps-node__title {
+  color: var(--ink-secondary);
+  flex: 1;
+  min-width: 0;
+  min-height: 3lh;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.deps-node__failed {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--state-failed-ink);
+}
+
+/* Reduced motion: congela o realce interno (sem pulso). */
+@media (prefers-reduced-motion: reduce) {
+  .deps-node--running {
+    box-shadow: var(--_lift), inset 0 0 0 2px var(--state-running);
+  }
+}
