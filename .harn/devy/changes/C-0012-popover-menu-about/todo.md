@@ -18,13 +18,13 @@
     Verificação: `npm test -w apps/menubar -- icons` && `npm run typecheck`.
     Deps: nenhuma. Files: src/ui/icons.tsx, src/ui/icons.test.tsx, src/ui/index.ts. Scope: S.
 
-- [ ] T-003: Primitivos de menu — `Menu`/`MenuItem`/`MenuSeparator` + CSS + testes + export
+- [x] T-003: Primitivos de menu — `Menu`/`MenuItem`/`MenuSeparator` + CSS + testes + export
     NOVO `src/ui/Menu.tsx` + `Menu.css`: `Menu` (`role="menu"`), `MenuItem` (`role="menuitem"`; props `icon`/`disabled`/`onSelect`; ativa por click e Enter; `disabled` → `aria-disabled` e **não** dispara `onSelect`), `MenuSeparator` (`role="separator"`). Set de estados completo (default/hover/focus-visible/active/disabled). Realce do item highlighted (hover **e** foco ↑/↓) = **fill accent cheio** (`--accent` + `--accent-ink`); item disabled **nunca** acende. Roving focus por teclado (↑/↓ move entre itens habilitados, pula separadores/disabled). Exportar pelo barrel.
     Aceite: itens+ícones renderizam com `role` correto; `disabled` recebe `aria-disabled` e não chama `onSelect`; separadores presentes; `onSelect` no click e no Enter; ↑/↓ movem o foco entre itens habilitados; zero literal de cor.
     Verificação: `npm test -w apps/menubar -- Menu` && `npm run typecheck`.
     Deps: T-002 (barrel `index.ts` compartilhado). Files: src/ui/Menu.tsx, src/ui/Menu.css, src/ui/Menu.test.tsx, src/ui/index.ts. Scope: M.
 
-- [ ] T-004: Rust — `quit_app` + extrair `confirm_quit_if_running(app) -> bool` (DRY do guard)
+- [x] T-004: Rust — `quit_app` + extrair `confirm_quit_if_running(app) -> bool` (DRY do guard)
     `src-tauri/src/main.rs`: extrair o confirm inline do `ExitRequested` para helper `confirm_quit_if_running(app: &AppHandle) -> bool` (idle → `true` sem diálogo; rodando → diálogo "A Run is active. Quit anyway?", retorna o veredito). Reusar nos dois caminhos. Novo `#[tauri::command] quit_app`: se confirmado → `state.stop()` + `app.exit(0)`. Registrar no `invoke_handler!`. Teste unitário do ramo não-diálogo (`!is_running → true`).
     Aceite: Cmd+Q e `quit_app` compartilham `confirm_quit_if_running`; idle sai direto; rodando exige confirm; guard **não** é burlado; ramo não-diálogo testado.
     Verificação: `cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy --manifest-path apps/menubar/src-tauri/Cargo.toml`.
@@ -44,7 +44,7 @@
     Verificação: `cargo build --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy ...`; abrir a janela manualmente (invoke temporário) confirma dimensão/titlebar overlay.
     Deps: T-001, T-004 (`tauri.conf.json`/`main.rs` compartilhados). Files: apps/menubar/src-tauri/tauri.conf.json, apps/menubar/src-tauri/src/main.rs, apps/menubar/src-tauri/Cargo.toml, apps/menubar/src-tauri/capabilities/default.json. Scope: M.
 
-- [ ] T-006: Webview "Sobre" — `About.tsx`/`.css`/`.test.tsx` + roteamento em `main.tsx`
+- [x] T-006: Webview "Sobre" — `About.tsx`/`.css`/`.test.tsx` + roteamento em `main.tsx`
     NOVO `src/about/About.tsx` + `About.css`: wordmark (reusa os SVGs de brand, swap light/dark como `App.css`) + versão via `getVersion()` (`@tauri-apps/api/app`) + tagline PT ("Motor de loop agêntico config-driven via ACP") + links GitHub/npm que chamam `openUrl` (`@tauri-apps/plugin-opener`) + autor/copyright ("© Henrique Lima", ano via `new Date().getFullYear()`). Header com `data-tauri-drag-region` + `padding-top` que livra os traffic lights (titlebar overlay). `main.tsx`: flag `IS_ABOUT` (label `about`) → renderiza `<About/>` (espelha `IS_POPOVER`→`<Glance/>`); tag no `documentElement` se precisar de estilo por-janela.
     Aceite: mostra versão (mock `getVersion` → "0.3.0"), tagline e autor; click nos links chama `openUrl` com o destino certo (mock); temas claro/escuro; zero literal de cor.
     Verificação: `npm test -w apps/menubar -- About` && `npm run typecheck`.

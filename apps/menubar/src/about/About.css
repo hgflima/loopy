@@ -1,0 +1,125 @@
+/**
+ * About window — the "Sobre" surface (DESIGN.md tokens only).
+ *
+ * Titlebar-overlay window: the drag header carries a padding-top that clears the
+ * floating traffic lights. Neutral chrome; the only colour is the accent on the
+ * links (interaction) and the brand wordmark. Zero hardcoded colours — every
+ * value via var(--…) from tokens.css.
+ */
+
+.about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  padding: 0 var(--sp-xl) var(--sp-xl);
+  background: var(--bg);
+  color: var(--ink);
+  text-align: center;
+}
+
+/* Drag strip — the padding-top clears the overlaid traffic lights. Composed
+   from spacing tokens (not a magic pixel) so it tracks the scale. */
+.about__drag {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-xs);
+  align-self: stretch;
+  padding-top: calc(var(--sp-lg) + var(--sp-md));
+  padding-bottom: var(--sp-md);
+}
+
+/* Brand wordmark — the pink loop carries the brand colour; only the text tone
+   flips for contrast: dark text on light surfaces, white text on dark. Slightly
+   larger than the header logo for this focal surface. */
+.about__logo {
+  height: calc(var(--logo-h) + var(--sp-sm));
+  width: auto;
+  display: none;
+}
+
+/* Default surface is light (see tokens.css): show the dark-text wordmark. */
+.about__logo--on-light {
+  display: block;
+}
+
+/* Explicit theme overrides (data-theme set by the host, if ever). */
+[data-theme="light"] .about__logo--on-light {
+  display: block;
+}
+[data-theme="light"] .about__logo--on-dark {
+  display: none;
+}
+[data-theme="dark"] .about__logo--on-light {
+  display: none;
+}
+[data-theme="dark"] .about__logo--on-dark {
+  display: block;
+}
+
+/* OS dark mode (no data-theme set): swap to the white-text wordmark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .about__logo--on-light {
+    display: none;
+  }
+  :root:not([data-theme]) .about__logo--on-dark {
+    display: block;
+  }
+}
+
+.about__version {
+  color: var(--ink-tertiary);
+}
+
+.about__tagline {
+  max-width: 30ch;
+  margin: 0 0 var(--sp-lg);
+  color: var(--ink-secondary);
+}
+
+/* ---- Links — accent-as-text, full state set ---------------------------- */
+
+.about__links {
+  display: flex;
+  gap: var(--sp-lg);
+  margin-bottom: auto;
+}
+
+.about__link {
+  padding: var(--sp-xs) var(--sp-sm);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--accent-text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out;
+}
+
+.about__link:hover {
+  background: var(--accent-subtle);
+}
+
+.about__link:active {
+  color: var(--accent-pressed);
+}
+
+.about__link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.about__credit {
+  color: var(--ink-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about__link {
+    transition: none;
+  }
+}
