@@ -6,7 +6,7 @@
 
 ## Fase 1 — Fundação & de-risco (T-001 ∥ T-002 ∥ T-004 ∥ T-008)
 
-- [ ] T-001: Versão single-sourced — `tauri.conf.json.version` → path-ref da raiz (de-risco)
+- [x] T-001: Versão single-sourced — `tauri.conf.json.version` → path-ref da raiz (de-risco)
     `apps/menubar/src-tauri/tauri.conf.json`: trocar `"version": "0.1.0"` literal por path-ref `"../../../package.json"` (resolve a partir de `src-tauri/` para a raiz do monorepo, já 0.3.0). Confirmar suporte a path-ref no Tauri v2 via Context7 **antes** de escrever; se não suportado, fallback = script de prebuild que sincroniza a versão da raiz para o `tauri.conf.json` (adicionar ao `build:sidecar`/pre-build). Alinhar `apps/menubar/package.json` a 0.3.0 por higiene (não é a fonte).
     Aceite: build/dev do app reporta versão 0.3.0 (não 0.1.0); a raiz `package.json` permanece a única fonte autoritativa; nenhuma regressão no bundle.
     Verificação: `npm run typecheck` && inspeção do config resolvido (dev sobe reportando 0.3.0; ou o script de sync grava 0.3.0). Confirmado por `getVersion()` em T-006.
