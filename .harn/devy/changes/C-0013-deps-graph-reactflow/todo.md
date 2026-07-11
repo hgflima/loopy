@@ -29,7 +29,7 @@
 
 ## Fase 1 — Geometria + card (T-004 ∥ T-005)
 
-- [ ] T-004: DepsFlow — escala derivada de `scale.ts` + teste de não-sobreposição (nó ainda mono)
+- [x] T-004: DepsFlow — escala derivada de `scale.ts` + teste de não-sobreposição (nó ainda mono)
     `src/graph/DepsFlow.tsx`: substituir os literais `CELL_PX_X=120`/`CELL_PX_Y=50` por `import { CELL_PX_X, CELL_PX_Y } from "./scale"`; a matemática de posição (`n.col * CELL_PX_X`, `n.row * CELL_PX_Y`) permanece ancorada em `computeDagreLayout` (AD-6). **Não** tocar o `TaskNode` ainda (segue mono) — o teste independe do que é renderizado, só das posições. `DepsFlow.test.tsx`: (a) atualizar a asserção de posição p/ a escala derivada (mantém a prova AD-6/SC #4); (b) NOVO teste de **não-sobreposição** — DAG representativo com empilhamento (≥2 nós na mesma rank) **e** ranks adjacentes; para todo par de nós, `boxesOverlap(posA, posB, CARD_W, CARD_H)` é `false`. Se falhar, ajustar gutters/`MIN_RANK_COL_GAP` em `scale.ts` (o teste é o guardrail de D2).
     Aceite: escala vem de `scale.ts` (sem literais); posições = `computeDagreLayout` × escala derivada; **nenhuma** caixa `CARD_W×CARD_H` de dois cards se sobrepõe no DAG representativo; `tasks: []` → nós/arestas vazios (mantido).
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`.
@@ -51,7 +51,7 @@
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`.
     Deps: T-004, T-005, T-003. Files: apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/graph/DepsFlow.test.tsx. Scope: M.
 
-- [ ] T-007: ViewSwitcher propaga seleção ao DepsFlow + integração no App
+- [x] T-007: ViewSwitcher propaga seleção ao DepsFlow + integração no App
     `src/panes/ViewSwitcher.tsx`: passar `selectedTaskId` e `onSelectTask` (já recebidos, hoje só o Kanban usa) também ao `<DepsFlow>`. Nada mais muda (ambas as views seguem montadas, estado preservado). NOVO `src/panes/ViewSwitcher.test.tsx` (mock de `DepsFlow` e `KanbanBoard` capturando props): `DepsFlow` recebe `selectedTaskId` + `onSelectTask`; acionar o `onSelectTask` do mock chama o handler do `App`; trocar de view preserva o estado (ambas montadas). `App.test.tsx` (integração): selecionar uma task no grafo (via o `onSelectTask` propagado) abre o **mesmo** `CardDetail` que o Kanban abre, com a task correta; re-clicar fecha (toggle existente do `App`); uma aprovação pendente ainda força o drawer (D6/C-0011). `App.tsx` fica **inalterado**.
     Aceite: `DepsFlow` recebe as duas props; clique no nó (mock) chega ao `App` e abre o `CardDetail` certo (mesmo painel do Kanban); toggle fecha; aprovação pendente força o drawer; `App.tsx` sem diff.
     Verificação: `npm test -w apps/menubar -- ViewSwitcher App` && `npm run typecheck -w apps/menubar`.
@@ -59,7 +59,7 @@
 
 ## Fase 3 — Canvas navegável (T-008)
 
-- [ ] T-008: DepsFlow — pan/zoom + `Background` + `Controls` (tematizados) + viewport persistente (D6)
+- [x] T-008: DepsFlow — pan/zoom + `Background` + `Controls` (tematizados) + viewport persistente (D6)
     `src/graph/DepsFlow.tsx`: habilitar navegação — remover `panOnDrag={false}`/`zoomOnScroll={false}`/`zoomOnPinch={false}`/`zoomOnDoubleClick={false}` (deixar RF navegável); manter `nodesDraggable={false}`/`nodesConnectable={false}`. Montar `<Background variant={BackgroundVariant.Dots} gap={~18} color="<token>"/>` e `<Controls/>` (de `@xyflow/react`; `Controls` já tem o CSS base importado). **Viewport (D6):** remover o prop `fitView` sempre-ligado; disparar `fitView()` **imperativo** (`useReactFlow`) **uma vez** no **primeiro reveal** da pane Deps — usar um novo prop `active` (de `ViewSwitcher`) + `useNodesInitialized()` + `useRef` guard ("já enquadrou"); nunca re-enquadrar em toggle nem em update de status. `src/panes/ViewSwitcher.tsx`: passar `active={view === "deps"}` ao `DepsFlow` (as duas views seguem montadas). NOVO `src/graph/DepsFlow.css`: sobrescrever o chrome default do RF com tokens em light **e** dark — `.react-flow__controls`/`.react-flow__controls-button` (fundo `--surface-elevated`, borda `--border`, `fill`/hover por token) e a cor do `Background` (`--border` sutil). `DepsFlow.test.tsx`: assertar que `Background`/`Controls` são montados (via mock capturando children/props) e que `fitView` **não** é chamado no mount com `active=false` (só quando `active` vira `true`).
     Aceite: pan/zoom operam; `Background` de pontos + `Controls` tematizados (light+dark), **sem** MiniMap; `fitView` só no 1º reveal; toggle e updates preservam pan/zoom; botão fit re-enquadra sob demanda.
     Verificação: `npm test -w apps/menubar -- DepsFlow ViewSwitcher` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação visual manual (pan/zoom, Background, Controls light+dark, preservação de viewport no toggle).
@@ -67,13 +67,13 @@
 
 ## Fase 4 — Arestas vivas + a11y (T-009 → T-010)
 
-- [ ] T-009: DepsFlow — arestas `smoothstep` + incidentes a running acesas/animadas (D3)
+- [x] T-009: DepsFlow — arestas `smoothstep` + incidentes a running acesas/animadas (D3)
     `src/graph/DepsFlow.tsx`: derivar o **running set** (ids com `status === "running"`) e o conjunto de **arestas incidentes** (aresta cujo `from` ou `to` está no running set). Montar `rfEdges` com `type: "smoothstep"`; incidentes → `animated: true` + `className` de recolor `state-running` (ex. `deps-edge--running`) + `style.stroke` `var(--state-running)`; demais → neutro quieto (`style.stroke` `var(--border)`), **sem** esmaecimento extra. `src/graph/DepsFlow.css`: classe da aresta running (stroke `--state-running`) e `@media (prefers-reduced-motion: reduce) { .react-flow__edge.animated .react-flow__edge-path { animation: none } }` → recolor **estático** (sem marcha). `DepsFlow.test.tsx`: arestas = arestas da geometry com `type:"smoothstep"`; incidentes a um nó running → `animated:true` + classe de recolor; demais quietas (sem `animated`).
     Aceite: arestas `smoothstep`; incidentes a running acesas (`state-running`) + `animated`; demais neutras/quietas; reduced-motion → recolor estático (CSS); marcha é animação **CSS** do RF (sem timer JS).
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação visual (arestas incidentes marchando; reduced-motion estático).
     Deps: T-008. Files: apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/graph/DepsFlow.css, apps/menubar/src/graph/DepsFlow.test.tsx. Scope: S.
 
-- [ ] T-010: DepsFlow — a11y do canvas: um tab stop por card + pan-to-focus (D5)
+- [x] T-010: DepsFlow — a11y do canvas: um tab stop por card + pan-to-focus (D5)
     `src/graph/DepsFlow.tsx`: `nodesFocusable={false}` no `ReactFlow` (desabilita o foco de nó nativo — o `div` do card, `tabIndex=0`, é o **único** tab stop; a ordem de Tab segue a ordem dagre dos nós). **pan-to-focus:** ao focar um card, panear o viewport p/ ele ficar visível — o card chama um callback (`onFocus` → `data.onFocusNode?.(id)`) que usa `useReactFlow().setCenter(x, y, { zoom, duration })` com a posição do nó (`getNode(id)`), já que o pan do RF é `transform` e o foco fora da tela não auto-rola. Sem navegação por setas (YAGNI). `DepsFlow.test.tsx`: `nodesFocusable` é `false`; focar um nó (disparar `onFocusNode`) chama `setCenter` com a posição do nó (mock de `useReactFlow`).
     Aceite: um único tab stop por card (foco nativo do RF off); Enter/Space abre o `CardDetail`; focar um card **paneia** o viewport p/ ele; ordem de Tab = ordem dagre.
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação manual por teclado (Tab percorre os cards, foco visível, pan-to-focus traz o card à vista, Enter abre o painel).

@@ -24,6 +24,7 @@ export interface TaskNodeData {
   readonly failedAtStepId?: string;
   readonly reducedMotion?: boolean;
   readonly onSelect?: (id: string) => void;
+  readonly onFocusNode?: (id: string) => void;
   [key: string]: unknown;
 }
 
@@ -39,6 +40,7 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
     failedAtStepId,
     reducedMotion = false,
     onSelect,
+    onFocusNode,
   } = data;
 
   const meta = TASK_STATUS_META[status];
@@ -67,6 +69,7 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
       aria-label={`${id}: ${title}`}
       data-testid={`task-node-${id}`}
       onClick={handleSelect}
+      onFocus={() => onFocusNode?.(id)}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
