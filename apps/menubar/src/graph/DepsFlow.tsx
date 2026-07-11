@@ -11,6 +11,7 @@
 import { useCallback, useMemo } from "react";
 import { ReactFlow, type Node, type Edge, type NodeMouseHandler } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import "./DepsFlow.css";
 import { computeDagreLayout } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
 import TaskNode, { type TaskNodeType } from "./TaskNode";
@@ -59,12 +60,22 @@ export function DepsFlow({ tasks, edges, tick, selectedTaskId, onSelectTask }: D
 
   const rfEdges: Edge[] = useMemo(
     () =>
-      geometry.edges.map((e) => ({
-        id: `${e.from}->${e.to}`,
-        source: e.from,
-        target: e.to,
-      })),
-    [geometry.edges],
+      geometry.edges.map((e) => {
+        const incident =
+          statusById.get(e.from) === "running" ||
+          statusById.get(e.to) === "running";
+        return {
+          id: `${e.from}->${e.to}`,
+          source: e.from,
+          target: e.to,
+          type: "smoothstep" as const,
+          ...(incident && { animated: true, className: "deps-edge--running" }),
+          style: {
+            stroke: incident ? "var(--state-running)" : "var(--border)",
+          },
+        };
+      }),
+    [geometry.edges, statusById],
   );
 
   const handleNodeClick: NodeMouseHandler = useCallback(
