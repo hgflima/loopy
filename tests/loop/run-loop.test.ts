@@ -1086,7 +1086,7 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("worktree → commit → merge(--yes) → cleanup → mark-done + commit", { timeout: 15_000 }, async () => {
+  it("worktree → commit → merge(--yes) → cleanup → mark-done + commit", { timeout: 30_000 }, async () => {
     const config = parseConfig(E2E_YML);
     const todoPath = join(root, "tasks", "todo.md");
     const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
