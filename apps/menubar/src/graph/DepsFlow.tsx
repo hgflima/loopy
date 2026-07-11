@@ -8,8 +8,8 @@
  *
  * Edges from {@link StoreState.edges} are rendered as React Flow edges.
  */
-import { useMemo } from "react";
-import { ReactFlow, type Node, type Edge } from "@xyflow/react";
+import { useCallback, useMemo } from "react";
+import { ReactFlow, type Node, type Edge, type NodeMouseHandler } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { computeDagreLayout } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
@@ -26,9 +26,11 @@ export interface DepsFlowProps {
   readonly tasks: readonly TaskState[];
   readonly edges: readonly [string, string][];
   readonly tick: number;
+  readonly selectedTaskId?: string | null;
+  readonly onSelectTask?: (taskId: string) => void;
 }
 
-export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
+export function DepsFlow({ tasks, edges, tick, selectedTaskId, onSelectTask }: DepsFlowProps) {
   const statusById = useMemo(() => {
     const m = new Map<string, TaskStatus>();
     for (const t of tasks) m.set(t.id, t.status);
@@ -48,11 +50,11 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
         id: n.id,
         type: "task" as const,
         position: { x: n.col * CELL_PX_X, y: n.row * CELL_PX_Y },
-        data: { status: statusById.get(n.id) ?? "pending", tick },
+        data: { status: statusById.get(n.id) ?? "pending", tick, selected: n.id === selectedTaskId },
         draggable: false,
         selectable: false,
       })),
-    [geometry.nodes, statusById, tick],
+    [geometry.nodes, statusById, tick, selectedTaskId],
   );
 
   const rfEdges: Edge[] = useMemo(
@@ -65,6 +67,11 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
     [geometry.edges],
   );
 
+  const handleNodeClick: NodeMouseHandler = useCallback(
+    (_event, node) => { onSelectTask?.(node.id); },
+    [onSelectTask],
+  );
+
   return (
     <ReactFlow
       nodes={rfNodes}
@@ -72,6 +79,7 @@ export function DepsFlow({ tasks, edges, tick }: DepsFlowProps) {
       nodeTypes={nodeTypes}
       fitView
       proOptions={{ hideAttribution: true }}
+      onNodeClick={handleNodeClick}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}

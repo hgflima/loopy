@@ -53,7 +53,13 @@ export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask }: View
       >
         <ReactFlowProvider>
           <div style={{ width: "100%", height: "100%" }}>
-            <DepsFlow tasks={store.tasks} edges={store.edges} tick={tick} />
+            <DepsFlow
+              tasks={store.tasks}
+              edges={store.edges}
+              tick={tick}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={onSelectTask}
+            />
           </div>
         </ReactFlowProvider>
       </div>
