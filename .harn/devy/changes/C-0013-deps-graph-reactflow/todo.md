@@ -45,7 +45,7 @@
 
 ## Fase 2 — Cards vivos + clique → CardDetail (T-006 → T-007)
 
-- [ ] T-006: DepsFlow — alimenta a `data` do card + seleção + clique
+- [x] T-006: DepsFlow — alimenta a `data` do card + seleção + clique
     `src/graph/DepsFlow.tsx`: novos props `selectedTaskId?: string | null` e `onSelectTask?: (id: string) => void`. Computar o `reducedMotion` **uma vez** via `usePrefersReducedMotion()` (T-002). Ao montar `rfNodes`, preencher a `data` completa do card: `title` (de `task.title`), `failedAtStepId` (via `failedStepId(task)` — T-003), `isRunning` (`status === "running"`), `selected` (`id === selectedTaskId`), `reducedMotion`, e `onSelect: (id) => onSelectTask?.(id)`. Habilitar `elementsSelectable`; `onNodeClick={(_, node) => onSelectTask?.(node.id)}`; `onPaneClick` **no-op** (não desseleciona — D5/defaults). Alimentar `--deps-card-w`/`--deps-card-h` (de `scale.ts`) no container do RF p/ o CSS do card. `nodeTypes` já aponta p/ `TaskNode` (agora o card). `DepsFlow.test.tsx`: cada `data` de nó carrega `selected`/`isRunning`/`title`/`failedAtStepId`/`reducedMotion`; `onNodeClick` chama `onSelectTask(id)`; `onPaneClick` **não** chama; nó com `id===selectedTaskId` → `selected:true`.
     Aceite: grafo renderiza **cards**; `data` correta por nó; clique no nó → `onSelectTask(id)`; clique no canvas vazio não desseleciona; `reducedMotion` computado só uma vez; imutável a cada update.
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`.
