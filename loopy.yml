@@ -14,9 +14,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: ".harn/devy/changes/C-0011-agent-context-and-polish/spec.md"
-  plan: ".harn/devy/changes/C-0011-agent-context-and-polish/plan.md"
-  todo: ".harn/devy/changes/C-0011-agent-context-and-polish/todo.md"
+  spec: ".harn/devy/changes/C-0012-popover-menu-about/spec.md"
+  plan: ".harn/devy/changes/C-0012-popover-menu-about/plan.md"
+  todo: ".harn/devy/changes/C-0012-popover-menu-about/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
