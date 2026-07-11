@@ -18,7 +18,7 @@
     Verificação: `npm test -w apps/menubar -- icons` && `npm run typecheck`.
     Deps: nenhuma. Files: src/ui/icons.tsx, src/ui/icons.test.tsx, src/ui/index.ts. Scope: S.
 
-- [ ] T-003: Primitivos de menu — `Menu`/`MenuItem`/`MenuSeparator` + CSS + testes + export
+- [x] T-003: Primitivos de menu — `Menu`/`MenuItem`/`MenuSeparator` + CSS + testes + export
     NOVO `src/ui/Menu.tsx` + `Menu.css`: `Menu` (`role="menu"`), `MenuItem` (`role="menuitem"`; props `icon`/`disabled`/`onSelect`; ativa por click e Enter; `disabled` → `aria-disabled` e **não** dispara `onSelect`), `MenuSeparator` (`role="separator"`). Set de estados completo (default/hover/focus-visible/active/disabled). Realce do item highlighted (hover **e** foco ↑/↓) = **fill accent cheio** (`--accent` + `--accent-ink`); item disabled **nunca** acende. Roving focus por teclado (↑/↓ move entre itens habilitados, pula separadores/disabled). Exportar pelo barrel.
     Aceite: itens+ícones renderizam com `role` correto; `disabled` recebe `aria-disabled` e não chama `onSelect`; separadores presentes; `onSelect` no click e no Enter; ↑/↓ movem o foco entre itens habilitados; zero literal de cor.
     Verificação: `npm test -w apps/menubar -- Menu` && `npm run typecheck`.
