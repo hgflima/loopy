@@ -24,7 +24,7 @@
     Verificação: `npm test -w apps/menubar -- Menu` && `npm run typecheck`.
     Deps: T-002 (barrel `index.ts` compartilhado). Files: src/ui/Menu.tsx, src/ui/Menu.css, src/ui/Menu.test.tsx, src/ui/index.ts. Scope: M.
 
-- [ ] T-004: Rust — `quit_app` + extrair `confirm_quit_if_running(app) -> bool` (DRY do guard)
+- [x] T-004: Rust — `quit_app` + extrair `confirm_quit_if_running(app) -> bool` (DRY do guard)
     `src-tauri/src/main.rs`: extrair o confirm inline do `ExitRequested` para helper `confirm_quit_if_running(app: &AppHandle) -> bool` (idle → `true` sem diálogo; rodando → diálogo "A Run is active. Quit anyway?", retorna o veredito). Reusar nos dois caminhos. Novo `#[tauri::command] quit_app`: se confirmado → `state.stop()` + `app.exit(0)`. Registrar no `invoke_handler!`. Teste unitário do ramo não-diálogo (`!is_running → true`).
     Aceite: Cmd+Q e `quit_app` compartilham `confirm_quit_if_running`; idle sai direto; rodando exige confirm; guard **não** é burlado; ramo não-diálogo testado.
     Verificação: `cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy --manifest-path apps/menubar/src-tauri/Cargo.toml`.
