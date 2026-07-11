@@ -1,0 +1,96 @@
+/* Menu — native macOS NSMenu chrome (DESIGN.md §5). Tokens only, no literals. */
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-xs);
+  outline: none;
+}
+
+/* ---- Row --------------------------------------------------------------- */
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  width: 100%;
+  padding: 6px var(--sp-sm);
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color 0.1s ease-out,
+    color 0.1s ease-out;
+}
+
+/* Icon gutter — reserved so labels align whether or not a row has an icon.
+   The glyph inherits currentColor, so it tracks the row's ink in every state. */
+.menu__item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  color: var(--ink-secondary);
+}
+
+.menu__item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Highlight — hover AND ↑/↓ focus paint a full accent fill ----------- *
+ * Exactly one row is highlighted at a time; the glyph flips to --accent-ink. */
+.menu__item:not([aria-disabled="true"]):hover,
+.menu__item:not([aria-disabled="true"]):focus-visible {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.menu__item:not([aria-disabled="true"]):hover .menu__item-icon,
+.menu__item:not([aria-disabled="true"]):focus-visible .menu__item-icon {
+  color: var(--accent-ink);
+}
+
+/* ---- Active (pressed) — a touch deeper than the highlight --------------- */
+.menu__item:not([aria-disabled="true"]):active {
+  background: var(--accent-pressed);
+  color: var(--accent-ink);
+}
+.menu__item:not([aria-disabled="true"]):active .menu__item-icon {
+  color: var(--accent-ink);
+}
+
+/* The accent fill IS the focus affordance — suppress the global focus ring. */
+.menu__item:focus,
+.menu__item:focus-visible {
+  outline: none;
+}
+
+/* ---- Disabled — muted, never highlights -------------------------------- */
+.menu__item[aria-disabled="true"] {
+  color: var(--ink-tertiary);
+  cursor: default;
+}
+.menu__item[aria-disabled="true"] .menu__item-icon {
+  color: var(--ink-tertiary);
+}
+
+/* ---- Separator — hairline between item groups -------------------------- */
+.menu__separator {
+  height: 1px;
+  margin: var(--sp-xs) var(--sp-sm);
+  background: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu__item {
+    transition: none;
+  }
+}
