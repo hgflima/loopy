@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { computeDagreLayout, type GraphGeometry } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
+import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H, boxesOverlap } from "./scale";
 
 // ---------------------------------------------------------------------------
 // Mock — capture ReactFlow props for assertion
@@ -41,9 +42,6 @@ const { render } = await import("@testing-library/react");
 function task(id: string, status: TaskStatus = "pending"): TaskState {
   return { id, title: id, status, steps: [], stream: "" };
 }
-
-const CELL_PX_X = 120;
-const CELL_PX_Y = 50;
 
 /** Compute geometry from tasks+edges (same inputs DepsFlow uses internally). */
 function geometry(
@@ -134,5 +132,50 @@ describe("DepsFlow — node data", () => {
     const n2 = captured.nodes.find((n) => n.id === "T-002")!;
     expect(n2.data.status).toBe("done");
     expect(n2.data.tick).toBe(42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Non-overlap: no two CARD_W×CARD_H boxes overlap (D2 guardrail)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — non-overlap (D2)", () => {
+  it("no two cards overlap in a DAG with stacking and adjacent ranks", () => {
+    // Representative DAG: A fans out to B,C,D (stacked in same rank),
+    // then B,C,D converge into E (adjacent rank after the stack).
+    //
+    //       ┌─► B ─┐
+    //  A ───┼─► C ─┼──► E
+    //       └─► D ─┘
+    //
+    const tasks = ["A", "B", "C", "D", "E"].map((id) => task(id));
+    const edges: [string, string][] = [
+      ["A", "B"],
+      ["A", "C"],
+      ["A", "D"],
+      ["B", "E"],
+      ["C", "E"],
+      ["D", "E"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const positions = captured.nodes.map((n) => ({
+      id: n.id,
+      ...n.position,
+    }));
+
+    // For every pair, assert no overlap of CARD_W×CARD_H boxes
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const a = positions[i]!;
+        const b = positions[j]!;
+        expect(
+          boxesOverlap(a, b, CARD_W, CARD_H),
+          `cards ${a.id} (${a.x},${a.y}) and ${b.id} (${b.x},${b.y}) must not overlap ` +
+            `(CARD_W=${CARD_W}, CARD_H=${CARD_H})`,
+        ).toBe(false);
+      }
+    }
   });
 });
