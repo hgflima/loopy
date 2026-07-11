@@ -25,10 +25,7 @@ import "./DepsFlow.css";
 import { computeDagreLayout } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
 import TaskNode, { type TaskNodeType } from "./TaskNode";
-
-/** Pixels per cell unit — chosen so labels don't overlap at typical font size. */
-const CELL_PX_X = 120;
-const CELL_PX_Y = 50;
+import { CELL_PX_X, CELL_PX_Y } from "./scale";
 
 /** Stable reference — must live outside the component to avoid re-registration. */
 const nodeTypes = { task: TaskNode } as const;

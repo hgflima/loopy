@@ -11,10 +11,10 @@ export const CARD_W = 220;
 export const CARD_H = 88;
 
 /** Vertical gutter between cards (px). */
-export const GUTTER_Y = 12;
+export const GUTTER_Y = 24;
 
 /** Horizontal gutter between cards (px). */
-export const GUTTER_X = 20;
+export const GUTTER_X = 40;
 
 /**
  * Minimum row gap between stacked nodes in the same rank (cell units).
@@ -26,9 +26,9 @@ export const MIN_ROW_GAP = 2;
 /**
  * Minimum column delta between adjacent ranks for short task ids (cell units).
  * dagre uses ranksep:4 + node char-width; for short ids the snapped delta can
- * be as low as 2 columns. This is the adjustment lever if scale errs.
+ * be as low as 5 columns. This is the adjustment lever if scale errs.
  */
-export const MIN_RANK_COL_GAP = 2;
+export const MIN_RANK_COL_GAP = 5;
 
 /**
  * Vertical pixels per cell row.
