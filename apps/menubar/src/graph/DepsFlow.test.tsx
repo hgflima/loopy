@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { computeDagreLayout, type GraphGeometry } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
-import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H, boxesOverlap } from "./scale";
 
 // ---------------------------------------------------------------------------
 // Mock — capture ReactFlow props for assertion
@@ -10,7 +9,7 @@ import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H, boxesOverlap } from "./scale";
 interface CapturedNode {
   id: string;
   position: { x: number; y: number };
-  data: { status: TaskStatus; tick: number };
+  data: { status: TaskStatus; tick: number; onFocusNode?: (id: string) => void };
 }
 interface CapturedEdge {
   id: string;
@@ -22,7 +21,12 @@ interface CapturedEdge {
   style?: Record<string, string>;
 }
 
-let captured: { nodes: CapturedNode[]; edges: CapturedEdge[] } = {
+let captured: {
+  nodes: CapturedNode[];
+  edges: CapturedEdge[];
+  nodesFocusable?: boolean;
+  onInit?: (instance: unknown) => void;
+} = {
   nodes: [],
   edges: [],
 };
@@ -36,9 +40,16 @@ vi.mock("@xyflow/react", () => ({
   ReactFlow: (props: {
     nodes: CapturedNode[];
     edges: CapturedEdge[];
+    nodesFocusable?: boolean;
+    onInit?: (instance: unknown) => void;
     children?: React.ReactNode;
   }) => {
-    captured = { nodes: props.nodes, edges: props.edges };
+    captured = {
+      nodes: props.nodes,
+      edges: props.edges,
+      nodesFocusable: props.nodesFocusable,
+      onInit: props.onInit,
+    };
     return props.children ?? null;
   },
   Background: () => {
@@ -58,6 +69,7 @@ vi.mock("@xyflow/react", () => ({
 
 const { DepsFlow } = await import("./DepsFlow");
 const { render } = await import("@testing-library/react");
+const { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H, boxesOverlap } = await import("./scale");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -229,6 +241,73 @@ describe("DepsFlow — node data", () => {
     const n2 = captured.nodes.find((n) => n.id === "T-002")!;
     expect(n2.data.status).toBe("done");
     expect(n2.data.tick).toBe(42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a11y — nodesFocusable=false + pan-to-focus (D5)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — a11y (D5)", () => {
+  it("nodesFocusable is false (native RF node focus disabled)", () => {
+    const tasks = [task("T-001"), task("T-002")];
+    render(<DepsFlow tasks={tasks} edges={[["T-001", "T-002"]]} tick={0} />);
+
+    expect(captured.nodesFocusable).toBe(false);
+  });
+
+  it("each node data carries an onFocusNode callback", () => {
+    const tasks = [task("T-001"), task("T-002")];
+    render(<DepsFlow tasks={tasks} edges={[["T-001", "T-002"]]} tick={0} />);
+
+    for (const n of captured.nodes) {
+      expect(typeof n.data.onFocusNode).toBe("function");
+    }
+  });
+
+  it("onFocusNode calls setCenter with node center position (pan-to-focus)", () => {
+    const tasks = [task("T-001"), task("T-002"), task("T-003")];
+    const edges: [string, string][] = [
+      ["T-001", "T-002"],
+      ["T-001", "T-003"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    // Simulate onInit — provide a mock ReactFlow instance
+    const mockSetCenter = vi.fn();
+    const nodeMap = new Map(
+      captured.nodes.map((n) => [n.id, { position: n.position }]),
+    );
+    const mockInstance = {
+      setCenter: mockSetCenter,
+      getNode: (id: string) => nodeMap.get(id) ?? null,
+    };
+
+    // Call onInit to register the instance
+    expect(captured.onInit).toBeDefined();
+    captured.onInit!(mockInstance);
+
+    // Trigger onFocusNode for T-002
+    const n2 = captured.nodes.find((n) => n.id === "T-002")!;
+    n2.data.onFocusNode!("T-002");
+
+    expect(mockSetCenter).toHaveBeenCalledTimes(1);
+    const [x, y, opts] = mockSetCenter.mock.calls[0];
+    // setCenter should target the center of the node (position + half card size)
+    expect(x).toBe(n2.position.x + CARD_W / 2);
+    expect(y).toBe(n2.position.y + CARD_H / 2);
+    expect(opts).toEqual(expect.objectContaining({ duration: expect.any(Number) }));
+  });
+
+  it("onFocusNode is a no-op if instance is not yet initialized", () => {
+    const tasks = [task("T-001")];
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} />);
+
+    // Do NOT call onInit — instance is null
+    const n1 = captured.nodes.find((n) => n.id === "T-001")!;
+    // Should not throw
+    expect(() => n1.data.onFocusNode!("T-001")).not.toThrow();
   });
 });
 
