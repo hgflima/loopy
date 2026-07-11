@@ -73,7 +73,7 @@
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação visual (arestas incidentes marchando; reduced-motion estático).
     Deps: T-008. Files: apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/graph/DepsFlow.css, apps/menubar/src/graph/DepsFlow.test.tsx. Scope: S.
 
-- [ ] T-010: DepsFlow — a11y do canvas: um tab stop por card + pan-to-focus (D5)
+- [x] T-010: DepsFlow — a11y do canvas: um tab stop por card + pan-to-focus (D5)
     `src/graph/DepsFlow.tsx`: `nodesFocusable={false}` no `ReactFlow` (desabilita o foco de nó nativo — o `div` do card, `tabIndex=0`, é o **único** tab stop; a ordem de Tab segue a ordem dagre dos nós). **pan-to-focus:** ao focar um card, panear o viewport p/ ele ficar visível — o card chama um callback (`onFocus` → `data.onFocusNode?.(id)`) que usa `useReactFlow().setCenter(x, y, { zoom, duration })` com a posição do nó (`getNode(id)`), já que o pan do RF é `transform` e o foco fora da tela não auto-rola. Sem navegação por setas (YAGNI). `DepsFlow.test.tsx`: `nodesFocusable` é `false`; focar um nó (disparar `onFocusNode`) chama `setCenter` com a posição do nó (mock de `useReactFlow`).
     Aceite: um único tab stop por card (foco nativo do RF off); Enter/Space abre o `CardDetail`; focar um card **paneia** o viewport p/ ele; ordem de Tab = ordem dagre.
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`; validação manual por teclado (Tab percorre os cards, foco visível, pan-to-focus traz o card à vista, Enter abre o painel).
