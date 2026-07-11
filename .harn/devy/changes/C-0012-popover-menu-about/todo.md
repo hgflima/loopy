@@ -44,7 +44,7 @@
     Verificação: `cargo build --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy ...`; abrir a janela manualmente (invoke temporário) confirma dimensão/titlebar overlay.
     Deps: T-001, T-004 (`tauri.conf.json`/`main.rs` compartilhados). Files: apps/menubar/src-tauri/tauri.conf.json, apps/menubar/src-tauri/src/main.rs, apps/menubar/src-tauri/Cargo.toml, apps/menubar/src-tauri/capabilities/default.json. Scope: M.
 
-- [ ] T-006: Webview "Sobre" — `About.tsx`/`.css`/`.test.tsx` + roteamento em `main.tsx`
+- [x] T-006: Webview "Sobre" — `About.tsx`/`.css`/`.test.tsx` + roteamento em `main.tsx`
     NOVO `src/about/About.tsx` + `About.css`: wordmark (reusa os SVGs de brand, swap light/dark como `App.css`) + versão via `getVersion()` (`@tauri-apps/api/app`) + tagline PT ("Motor de loop agêntico config-driven via ACP") + links GitHub/npm que chamam `openUrl` (`@tauri-apps/plugin-opener`) + autor/copyright ("© Henrique Lima", ano via `new Date().getFullYear()`). Header com `data-tauri-drag-region` + `padding-top` que livra os traffic lights (titlebar overlay). `main.tsx`: flag `IS_ABOUT` (label `about`) → renderiza `<About/>` (espelha `IS_POPOVER`→`<Glance/>`); tag no `documentElement` se precisar de estilo por-janela.
     Aceite: mostra versão (mock `getVersion` → "0.3.0"), tagline e autor; click nos links chama `openUrl` com o destino certo (mock); temas claro/escuro; zero literal de cor.
     Verificação: `npm test -w apps/menubar -- About` && `npm run typecheck`.
