@@ -52,7 +52,7 @@
 
 ## Fase 3 — Montagem do popover (T-007)
 
-- [ ] T-007: Reescrita do `Glance` — header de status → menu (Abrir/Parar · Sobre/Sair)
+- [x] T-007: Reescrita do `Glance` — header de status → menu (Abrir/Parar · Sobre/Sair)
     `src/popover/Glance.tsx`: header de status glanceável (`done/total · running · ⚠`) → `MenuSeparator` → **Abrir** (`show_main_window`) / **Parar** (`stop_sidecar`, `disabled` quando idle) → `MenuSeparator` → **Sobre** (`show_about_window`) / **Sair** (`quit_app`), cada item com ícone (T-002) via `Menu`/`MenuItem` (T-003). Remover a sub-linha "delegação: --yes …". Manter o re-measure de altura (ResizeObserver → `resize_popover`). Semântica de menu nativo: toda ativação **fecha o popover** (inclusive Parar; reusa o caminho resign-key/`hide_popover_panel`), `Esc` fecha, sem highlight de repouso ao abrir (roving inicia do topo na primeira seta), foco visível. `Glance.css`: estilos do header; superfície transparente sobre a vibrancy (preservar `.popover-window` transparente). `Glance.test.tsx`: atualizar — Abrir/Parar/Sobre/Sair + ícones presentes; **Parar** desabilitado idle / habilitado running; cada item chama o `invoke` correto (mock `@tauri-apps/api/core`); header ainda renderiza; zero literal de cor.
     Aceite: layout header→sep→Abrir/Parar→sep→Sobre/Sair com ícones; Parar `aria-disabled` quando idle; cada item invoca o comando certo; ↑/↓/Enter/Esc funcionam; re-measure preservado; zero literal de cor no DOM.
     Verificação: `npm test -w apps/menubar -- Glance` && `npm run typecheck`.
