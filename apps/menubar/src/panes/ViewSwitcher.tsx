@@ -57,6 +57,7 @@ export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask }: View
               tasks={store.tasks}
               edges={store.edges}
               tick={tick}
+              active={view === "deps"}
               selectedTaskId={selectedTaskId}
               onSelectTask={onSelectTask}
             />

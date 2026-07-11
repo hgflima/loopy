@@ -1,3 +1,42 @@
+/**
+ * DepsFlow — themed overrides for React Flow chrome.
+ *
+ * Controls and Background use design tokens so they blend with the
+ * neutral chrome in both light and dark (prefers-color-scheme).
+ */
+
+/* ---- Controls toolbar --------------------------------------------------- */
+
+.react-flow__controls {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.react-flow__controls-button {
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border);
+  fill: var(--ink-secondary);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--surface);
+  fill: var(--ink);
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+/* ---- Background dots ---------------------------------------------------- */
+
+.react-flow__background {
+  background-color: transparent;
+}
+
+/* ---- Running edges ------------------------------------------------------ */
+
 .deps-edge--running .react-flow__edge-path {
   stroke: var(--state-running);
 }
