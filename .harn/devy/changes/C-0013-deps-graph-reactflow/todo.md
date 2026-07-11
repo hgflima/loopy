@@ -21,7 +21,7 @@
     Verificação: `npm test -w apps/menubar -- usePrefersReducedMotion` && `npm run typecheck -w apps/menubar`.
     Deps: nenhuma. Files: apps/menubar/src/ui/usePrefersReducedMotion.ts, apps/menubar/src/ui/usePrefersReducedMotion.test.ts, apps/menubar/src/ui/index.ts. Scope: XS.
 
-- [ ] T-003: Helper `failedStepId(task)` — extrair do `grouper` (DRY, paridade Kanban↔Deps)
+- [x] T-003: Helper `failedStepId(task)` — extrair do `grouper` (DRY, paridade Kanban↔Deps)
     NOVO `src/kanban/failed-step.ts` (ou `src/graph/`): função pura `failedStepId(task: TaskState): string | undefined` que replica a regra atual do `grouper` — retorna o **último step com status "failed"** somente quando `task.status === "escalated"` (paridade exata com o `@step` do card do Kanban). Refatorar `grouper.ts` para importar e usar esse helper no lugar do `lastFailedStepId`/ramo inline em `toCard` (comportamento **idêntico**; suíte do Kanban permanece verde). `failed-step.test.ts`: escalated com step failed → id; escalated sem failed → undefined; não-escalated com step failed → undefined.
     Aceite: helper puro compartilhado; `grouper` reusa-o sem mudança de comportamento; casos de borda testados.
     Verificação: `npm test -w apps/menubar -- failed-step grouper KanbanBoard` && `npm run typecheck -w apps/menubar`.
