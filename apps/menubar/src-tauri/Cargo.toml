@@ -16,6 +16,11 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-ap
 tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
+# Open external URLs (the "About" window's GitHub/npm links) in the user's
+# default browser. Official v2 successor to `shell.open`; access is locked down
+# to the two loopy destinations via `opener:allow-open-url` (capabilities). Pinned
+# to the current release confirmed against crates.io (C-0012, source-driven).
+tauri-plugin-opener = "2.5.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

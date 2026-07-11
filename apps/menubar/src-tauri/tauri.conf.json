@@ -29,6 +29,17 @@
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true
+      },
+      {
+        "label": "about",
+        "title": "Loopy",
+        "width": 360,
+        "height": 320,
+        "visible": false,
+        "resizable": false,
+        "center": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ]
   },
