@@ -9,7 +9,7 @@
 
 ## Fase 0 — Primitivos (T-001 ∥ T-002 ∥ T-003)
 
-- [ ] T-001: Módulo de escala — `graph/scale.ts` (constantes D2 + CELL_PX derivado + `boxesOverlap`) — DE-RISCO
+- [x] T-001: Módulo de escala — `graph/scale.ts` (constantes D2 + CELL_PX derivado + `boxesOverlap`) — DE-RISCO
     NOVO `src/graph/scale.ts`: constantes nomeadas `CARD_W=220`, `CARD_H=88`, `GUTTER_Y`, `GUTTER_X`, `MIN_ROW_GAP=2` (rows entre nós empilhados na mesma rank: 1 de nó + 1 vazia preservada pela compactação `MAX_EMPTY_ROWS` do motor) e `MIN_RANK_COL_GAP` (menor delta de coluna entre ranks adjacentes p/ ids curtos). Derivar `CELL_PX_Y = (CARD_H + GUTTER_Y) / MIN_ROW_GAP` e `CELL_PX_X = (CARD_W + GUTTER_X) / MIN_RANK_COL_GAP` (fonte única que também vai virar CSS var `--deps-card-w`/`--deps-card-h` no card — D2, sem multiplicador mágico). Exportar helper puro `boxesOverlap(a, b, w, h)` (interseção de duas caixas `w×h` em coords de flow) para o teste de não-sobreposição. `scale.test.ts`: invariantes da derivação (`MIN_ROW_GAP*CELL_PX_Y >= CARD_H+GUTTER_Y`; `MIN_RANK_COL_GAP*CELL_PX_X >= CARD_W+GUTTER_X`) + `boxesOverlap` (caixas sintéticas: adjacentes-sem-tocar=false, sobrepostas=true, encostadas na borda=false).
     Aceite: constantes nomeadas + CELL_PX derivado (nenhum literal 120/50 mágico); `boxesOverlap` puro e correto; invariantes de folga provados por teste.
     Verificação: `npm test -w apps/menubar -- scale` && `npm run typecheck -w apps/menubar` && `npm run lint`.
