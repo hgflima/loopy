@@ -29,7 +29,7 @@
 
 ## Fase 1 — Geometria + card (T-004 ∥ T-005)
 
-- [ ] T-004: DepsFlow — escala derivada de `scale.ts` + teste de não-sobreposição (nó ainda mono)
+- [x] T-004: DepsFlow — escala derivada de `scale.ts` + teste de não-sobreposição (nó ainda mono)
     `src/graph/DepsFlow.tsx`: substituir os literais `CELL_PX_X=120`/`CELL_PX_Y=50` por `import { CELL_PX_X, CELL_PX_Y } from "./scale"`; a matemática de posição (`n.col * CELL_PX_X`, `n.row * CELL_PX_Y`) permanece ancorada em `computeDagreLayout` (AD-6). **Não** tocar o `TaskNode` ainda (segue mono) — o teste independe do que é renderizado, só das posições. `DepsFlow.test.tsx`: (a) atualizar a asserção de posição p/ a escala derivada (mantém a prova AD-6/SC #4); (b) NOVO teste de **não-sobreposição** — DAG representativo com empilhamento (≥2 nós na mesma rank) **e** ranks adjacentes; para todo par de nós, `boxesOverlap(posA, posB, CARD_W, CARD_H)` é `false`. Se falhar, ajustar gutters/`MIN_RANK_COL_GAP` em `scale.ts` (o teste é o guardrail de D2).
     Aceite: escala vem de `scale.ts` (sem literais); posições = `computeDagreLayout` × escala derivada; **nenhuma** caixa `CARD_W×CARD_H` de dois cards se sobrepõe no DAG representativo; `tasks: []` → nós/arestas vazios (mantido).
     Verificação: `npm test -w apps/menubar -- DepsFlow` && `npm run typecheck -w apps/menubar` && `npm run lint`.
