@@ -27,6 +27,8 @@ import { computeDagreLayout } from "loopy/tui/view";
 import type { TaskStatus, TaskState } from "loopy/tui/store";
 import TaskNode, { type TaskNodeType } from "./TaskNode";
 import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H } from "./scale";
+import { usePrefersReducedMotion } from "../ui";
+import { failedStepId } from "../kanban/failed-step";
 
 /** Stable reference — must live outside the component to avoid re-registration. */
 const nodeTypes = { task: TaskNode } as const;
@@ -42,6 +44,7 @@ export interface DepsFlowProps {
 }
 
 export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectTask }: DepsFlowProps) {
+  const reducedMotion = usePrefersReducedMotion();
   const instanceRef = useRef<ReactFlowInstance<Node<TaskNodeType["data"]>> | null>(null);
   const { fitView } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
@@ -70,22 +73,47 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
     [edges, statusById, order],
   );
 
+  const handleSelect = useCallback(
+    (id: string) => { onSelectTask?.(id); },
+    [onSelectTask],
+  );
+
+  const handleNodeClick: NodeMouseHandler = useCallback(
+    (_event, node) => { handleSelect(node.id); },
+    [handleSelect],
+  );
+
+  const taskById = useMemo(() => {
+    const m = new Map<string, TaskState>();
+    for (const t of tasks) m.set(t.id, t);
+    return m;
+  }, [tasks]);
+
   const rfNodes: Node<TaskNodeType["data"]>[] = useMemo(
     () =>
-      geometry.nodes.map((n) => ({
-        id: n.id,
-        type: "task" as const,
-        position: { x: n.col * CELL_PX_X, y: n.row * CELL_PX_Y },
-        data: {
-          status: statusById.get(n.id) ?? "pending",
-          tick,
-          onFocusNode,
-          selected: n.id === selectedTaskId,
-        },
-        draggable: false,
-        selectable: false,
-      })),
-    [geometry.nodes, statusById, tick, onFocusNode, selectedTaskId],
+      geometry.nodes.map((n) => {
+        const t = taskById.get(n.id);
+        const status = statusById.get(n.id) ?? "pending";
+        return {
+          id: n.id,
+          type: "task" as const,
+          position: { x: n.col * CELL_PX_X, y: n.row * CELL_PX_Y },
+          data: {
+            status,
+            tick,
+            title: t?.title,
+            isRunning: status === "running",
+            failedAtStepId: t ? failedStepId(t) : undefined,
+            selected: n.id === selectedTaskId,
+            reducedMotion,
+            onSelect: handleSelect,
+            onFocusNode,
+          },
+          draggable: false,
+          selectable: true,
+        };
+      }),
+    [geometry.nodes, statusById, taskById, tick, onFocusNode, selectedTaskId, reducedMotion, handleSelect],
   );
 
   const rfEdges: Edge[] = useMemo(
@@ -108,11 +136,6 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
     [geometry.edges, statusById],
   );
 
-  const handleNodeClick: NodeMouseHandler = useCallback(
-    (_event, node) => { onSelectTask?.(node.id); },
-    [onSelectTask],
-  );
-
   useEffect(() => {
     if (active && nodesInitialized && !hasFitted.current) {
       hasFitted.current = true;
@@ -130,7 +153,7 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
       nodesDraggable={false}
       nodesConnectable={false}
       nodesFocusable={false}
-      elementsSelectable={false}
+      elementsSelectable={true}
       panOnDrag={false}
       zoomOnScroll={false}
       zoomOnPinch={false}
