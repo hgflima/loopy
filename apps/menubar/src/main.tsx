@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
 import { Glance } from "./popover/Glance";
+import { About } from "./about/About";
 import { parseTransportLine } from "loopy/tui/transport";
 import {
   applyLine,
@@ -74,6 +75,11 @@ function dispatchNotification(line: string): void {
 
 const IS_TAURI = isTauri();
 const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
+const IS_ABOUT = IS_TAURI && getCurrentWindow().label === "about";
+
+// Which window this is, used to attribute crashes in the ErrorBoundary. Falls
+// back to "main" for the main window and for dev:web (non-Tauri, no window).
+const WINDOW_LABEL = IS_ABOUT ? "about" : IS_POPOVER ? "popover" : "main";
 
 // The popover window is `transparent` (tauri.conf.json) with a native
 // NSVisualEffectView behind it (panel.rs). Tag the document so the surface CSS
@@ -273,10 +279,14 @@ function Root() {
   );
 }
 
+// The About window mirrors the popover routing (window label → dedicated
+// component), but branches ABOVE Root: it needs none of Root's BridgeState, and
+// Root's tray-badge/NDJSON-feed effects would clobber the tray and attach idle
+// sidecar listeners in this window. So it renders standalone.
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <ErrorBoundary label={IS_POPOVER ? "popover" : "main"}>
-      <Root />
+    <ErrorBoundary label={WINDOW_LABEL}>
+      {IS_ABOUT ? <About /> : <Root />}
     </ErrorBoundary>
   </React.StrictMode>,
 );

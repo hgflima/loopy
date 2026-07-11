@@ -86,6 +86,36 @@ fn bring_to_front(app: tauri::AppHandle) -> Result<(), String> {
     surface_main_window(&app)
 }
 
+// ---------------------------------------------------------------------------
+// About window (C-0012)
+// ---------------------------------------------------------------------------
+
+/// Decide whether closing the About window should return the app to `Accessory`
+/// (menu-bar-only) identity. Only when the main window is hidden: once no full
+/// window remains, the Dock icon should disappear. Pure (AD-6) — unit-tested;
+/// the `set_activation_policy` side effect around it is validated manually.
+#[cfg(target_os = "macos")]
+fn should_revert_to_accessory(main_visible: bool) -> bool {
+    !main_visible
+}
+
+/// Show + focus the dedicated "About" window, promoting the app to `Regular`
+/// (Dock icon + Cmd+Tab) while it's visible. Closing it hides the window and,
+/// when the main window is also hidden, reverts to `Accessory` — wired by the
+/// `about` close handler in `setup`. The window itself is declared (hidden) in
+/// `tauri.conf.json`, so this only surfaces it.
+#[tauri::command]
+fn show_about_window(app: tauri::AppHandle) -> Result<(), String> {
+    let Some(window) = app.get_webview_window("about") else {
+        return Err("about window not found".into());
+    };
+    window.show().map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(ActivationPolicy::Regular);
+    Ok(())
+}
+
 /// Size the popover to the content height the frontend measured, then re-anchor
 /// it under the tray icon. Called on mount, on open, and whenever the content
 /// changes, so the popover always hugs its content and stays pinned to the icon.
@@ -155,7 +185,10 @@ fn main() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_notification::init())
+        // Opens the "About" window's GitHub/npm links in the default browser.
+        // Locked down to those two hosts by `opener:allow-open-url` (capabilities).
+        .plugin(tauri_plugin_opener::init());
 
     // macOS: the tray popover is a floating NSPanel (see src/panel.rs).
     #[cfg(target_os = "macos")]
@@ -221,6 +254,30 @@ fn main() {
                 });
             }
 
+            // About window: close → hide it (keep the instance alive to re-show),
+            // and drop back to Accessory when the main window is also hidden so the
+            // Dock icon disappears (menu-bar-only again). See `show_about_window`.
+            if let Some(about_win) = app.get_webview_window("about") {
+                let win = about_win.clone();
+                about_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win.hide();
+                        #[cfg(target_os = "macos")]
+                        {
+                            let app = win.app_handle();
+                            let main_visible = app
+                                .get_webview_window("main")
+                                .and_then(|w| w.is_visible().ok())
+                                .unwrap_or(false);
+                            if should_revert_to_accessory(main_visible) {
+                                let _ = app.set_activation_policy(ActivationPolicy::Accessory);
+                            }
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -229,6 +286,7 @@ fn main() {
             stop_sidecar,
             show_main_window,
             hide_main_window,
+            show_about_window,
             bring_to_front,
             resize_popover,
             hide_popover,
@@ -364,5 +422,16 @@ mod tests {
         // A Run is active → the verdict is exactly what the dialog returns.
         assert!(confirm_quit(true, || true), "confirmed quit must proceed");
         assert!(!confirm_quit(true, || false), "cancelled quit must be blocked");
+    }
+
+    // About window: closing it reverts to Accessory only when the main window is
+    // also hidden. Gated to macOS because `should_revert_to_accessory` is macOS-only.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn about_close_reverts_to_accessory_only_when_main_hidden() {
+        // Main hidden → back to menu-bar-only (Accessory), Dock icon gone.
+        assert!(should_revert_to_accessory(false));
+        // Main visible → stay Regular; a full window still warrants a Dock icon.
+        assert!(!should_revert_to_accessory(true));
     }
 }

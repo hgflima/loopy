@@ -1,10 +1,18 @@
 {
   "identifier": "default",
   "description": "Default capability for all windows",
-  "windows": ["main", "popover"],
+  "windows": ["main", "popover", "about"],
   "permissions": [
     "core:default",
     "dialog:default",
-    "notification:default"
+    "notification:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/hgflima/loopy" },
+        { "url": "https://github.com/hgflima/loopy/*" },
+        { "url": "https://www.npmjs.com/package/@hgflima/loopy" }
+      ]
+    }
   ]
 }

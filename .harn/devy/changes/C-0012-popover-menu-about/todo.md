@@ -38,13 +38,13 @@
 
 ## Fase 2 — Caminho "Sobre" (T-005 → T-006)
 
-- [ ] T-005: Rust/config — janela `about` + `tauri-plugin-opener` + capabilities
+- [x] T-005: Rust/config — janela `about` + `tauri-plugin-opener` + capabilities
     `tauri.conf.json`: janela `about` (`visible:false`, ~360×320, `resizable:false`, centralizada, `titleBarStyle:"Overlay"` + `hiddenTitle:true`). `main.rs`: `#[tauri::command] show_about_window` (cria/mostra/foca `about`; promove a `Regular` enquanto visível; ao fechar, se `main` está escondida → reverte a `Accessory`) + registrar; wiring do `on_window_event` de close da `about`. `Cargo.toml`: + `tauri-plugin-opener` (versão pinada via Context7) + `.plugin(tauri_plugin_opener::init())`. `capabilities/default.json`: adicionar `about` à lista de janelas + `opener:allow-open-url` **host-scoped** a `github.com/hgflima/loopy` e `npmjs.com/package/@hgflima/loopy`.
     Aceite: `show_about_window` abre janela ~360×320 sem faixa de título; promove/reverte activation policy corretamente; plugin opener registrado; capability restringe `openUrl` aos 2 destinos.
     Verificação: `cargo build --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy ...`; abrir a janela manualmente (invoke temporário) confirma dimensão/titlebar overlay.
     Deps: T-001, T-004 (`tauri.conf.json`/`main.rs` compartilhados). Files: apps/menubar/src-tauri/tauri.conf.json, apps/menubar/src-tauri/src/main.rs, apps/menubar/src-tauri/Cargo.toml, apps/menubar/src-tauri/capabilities/default.json. Scope: M.
 
-- [ ] T-006: Webview "Sobre" — `About.tsx`/`.css`/`.test.tsx` + roteamento em `main.tsx`
+- [x] T-006: Webview "Sobre" — `About.tsx`/`.css`/`.test.tsx` + roteamento em `main.tsx`
     NOVO `src/about/About.tsx` + `About.css`: wordmark (reusa os SVGs de brand, swap light/dark como `App.css`) + versão via `getVersion()` (`@tauri-apps/api/app`) + tagline PT ("Motor de loop agêntico config-driven via ACP") + links GitHub/npm que chamam `openUrl` (`@tauri-apps/plugin-opener`) + autor/copyright ("© Henrique Lima", ano via `new Date().getFullYear()`). Header com `data-tauri-drag-region` + `padding-top` que livra os traffic lights (titlebar overlay). `main.tsx`: flag `IS_ABOUT` (label `about`) → renderiza `<About/>` (espelha `IS_POPOVER`→`<Glance/>`); tag no `documentElement` se precisar de estilo por-janela.
     Aceite: mostra versão (mock `getVersion` → "0.3.0"), tagline e autor; click nos links chama `openUrl` com o destino certo (mock); temas claro/escuro; zero literal de cor.
     Verificação: `npm test -w apps/menubar -- About` && `npm run typecheck`.
