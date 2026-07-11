@@ -38,7 +38,7 @@
 
 ## Fase 2 — Caminho "Sobre" (T-005 → T-006)
 
-- [ ] T-005: Rust/config — janela `about` + `tauri-plugin-opener` + capabilities
+- [x] T-005: Rust/config — janela `about` + `tauri-plugin-opener` + capabilities
     `tauri.conf.json`: janela `about` (`visible:false`, ~360×320, `resizable:false`, centralizada, `titleBarStyle:"Overlay"` + `hiddenTitle:true`). `main.rs`: `#[tauri::command] show_about_window` (cria/mostra/foca `about`; promove a `Regular` enquanto visível; ao fechar, se `main` está escondida → reverte a `Accessory`) + registrar; wiring do `on_window_event` de close da `about`. `Cargo.toml`: + `tauri-plugin-opener` (versão pinada via Context7) + `.plugin(tauri_plugin_opener::init())`. `capabilities/default.json`: adicionar `about` à lista de janelas + `opener:allow-open-url` **host-scoped** a `github.com/hgflima/loopy` e `npmjs.com/package/@hgflima/loopy`.
     Aceite: `show_about_window` abre janela ~360×320 sem faixa de título; promove/reverte activation policy corretamente; plugin opener registrado; capability restringe `openUrl` aos 2 destinos.
     Verificação: `cargo build --manifest-path apps/menubar/src-tauri/Cargo.toml` && `cargo clippy ...`; abrir a janela manualmente (invoke temporário) confirma dimensão/titlebar overlay.
