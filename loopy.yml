@@ -14,9 +14,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: ".harn/devy/changes/C-0012-popover-menu-about/spec.md"
-  plan: ".harn/devy/changes/C-0012-popover-menu-about/plan.md"
-  todo: ".harn/devy/changes/C-0012-popover-menu-about/todo.md"
+  spec: ".harn/devy/changes/C-0013-deps-graph-reactflow/spec.md"
+  plan: ".harn/devy/changes/C-0013-deps-graph-reactflow/plan.md"
+  todo: ".harn/devy/changes/C-0013-deps-graph-reactflow/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
