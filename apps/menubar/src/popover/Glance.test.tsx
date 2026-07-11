@@ -16,10 +16,12 @@ import type { TaskStatus } from "loopy/tui/store";
 
 afterEach(cleanup);
 
-// Mock Tauri invoke — hoisted before dynamic import
+// Mock Tauri invoke — hoisted before dynamic import. `isTauri` returns false so
+// the content-sizing effect (Tauri-only window plumbing) stays inert under jsdom.
 const mockInvoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
+  isTauri: () => false,
 }));
 
 const { Glance } = await import("./Glance");

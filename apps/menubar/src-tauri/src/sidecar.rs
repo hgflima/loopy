@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
@@ -22,6 +22,13 @@ fn resolve_sidecar_path() -> Result<PathBuf, String> {
         .parent()
         .ok_or_else(|| "Executable has no parent directory".to_string())?;
 
+    // NOTE: `build.rs` writes a 0-byte, mode-644 placeholder at
+    // `bin/loopy-<triple>` so `tauri_build` doesn't fail before the real
+    // sidecar is compiled. `tauri dev` copies that placeholder beside the exe.
+    // Selecting by `Path::exists()` would pick the placeholder and spawning it
+    // fails with EACCES (os error 13). We require a runnable executable so the
+    // placeholder is skipped in favour of a real binary (see is_executable_file).
+
     // The bundled `.app` and `tauri dev` name the sidecar differently. When
     // `tauri build` bundles `externalBin: ["bin/loopy"]` it STRIPS both the
     // `bin/` prefix and the `-<triple>` suffix, placing it flat beside the main
@@ -35,17 +42,49 @@ fn resolve_sidecar_path() -> Result<PathBuf, String> {
     ];
 
     for candidate in &candidates {
-        if candidate.exists() {
+        if is_executable_file(candidate) {
             return Ok(candidate.clone());
         }
     }
 
     let searched = candidates
         .iter()
-        .map(|c| format!("  {}", c.display()))
+        .map(|c| {
+            let note = if c.exists() {
+                " (present but not a runnable executable — run `npm run build:sidecar`)"
+            } else {
+                ""
+            };
+            format!("  {}{note}", c.display())
+        })
         .collect::<Vec<_>>()
         .join("\n");
-    Err(format!("Sidecar binary not found. Searched:\n{searched}"))
+    Err(format!("No runnable sidecar binary found. Searched:\n{searched}"))
+}
+
+/// Whether `path` is a regular, non-empty file with an executable bit set.
+///
+/// [`Path::exists`] is `true` for directories and for the 0-byte, mode-644
+/// placeholder that `build.rs` creates (and `tauri dev` copies beside the
+/// exe). Spawning such a path fails with EACCES (os error 13). Requiring a
+/// runnable executable makes the resolver skip the placeholder and fall
+/// through to the real binary — or report a precise, actionable error.
+fn is_executable_file(path: &Path) -> bool {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !meta.is_file() || meta.len() == 0 {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 /// Resolve the user's login-shell `PATH`.
@@ -428,5 +467,65 @@ mod tests {
     fn format_approval_is_single_line() {
         let json = format_approval_decision("req-3", true);
         assert!(!json.contains('\n'), "NDJSON must be a single line");
+    }
+
+    // -- is_executable_file tests -------------------------------------------
+    // These lock in the fix for the EACCES (os error 13) sidecar spawn bug:
+    // the resolver must reject the 0-byte, mode-644 placeholder written by
+    // build.rs and only accept a real, runnable executable.
+
+    /// Unique temp path per test to avoid cross-test collisions.
+    fn temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("loopy-sidecar-test-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn rejects_nonexistent_path() {
+        let p = temp_path("missing");
+        let _ = std::fs::remove_file(&p);
+        assert!(!is_executable_file(&p));
+    }
+
+    #[test]
+    fn rejects_empty_placeholder() {
+        // Mirrors build.rs: File::create yields a 0-byte, non-executable file.
+        let p = temp_path("placeholder");
+        std::fs::File::create(&p).unwrap();
+        let result = is_executable_file(&p);
+        let _ = std::fs::remove_file(&p);
+        assert!(!result, "0-byte placeholder must be rejected");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_non_executable_file_with_content() {
+        use std::os::unix::fs::PermissionsExt;
+        let p = temp_path("nonexec");
+        std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let result = is_executable_file(&p);
+        let _ = std::fs::remove_file(&p);
+        assert!(!result, "mode-644 file must be rejected");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accepts_executable_file_with_content() {
+        use std::os::unix::fs::PermissionsExt;
+        let p = temp_path("exec");
+        std::fs::write(&p, b"#!/bin/sh\necho hi\n").unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let result = is_executable_file(&p);
+        let _ = std::fs::remove_file(&p);
+        assert!(result, "mode-755 non-empty file must be accepted");
+    }
+
+    #[test]
+    fn rejects_directory() {
+        let p = temp_path("dir");
+        std::fs::create_dir_all(&p).unwrap();
+        let result = is_executable_file(&p);
+        let _ = std::fs::remove_dir(&p);
+        assert!(!result, "directory must be rejected even though it exists");
     }
 }

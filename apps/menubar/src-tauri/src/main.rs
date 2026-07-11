@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config;
+#[cfg(target_os = "macos")]
+mod panel;
 mod sidecar;
 
 use config::{load_launch_config, save_launch_config};
@@ -48,9 +50,7 @@ fn stop_sidecar(state: tauri::State<'_, SidecarState>) -> Result<(), String> {
 
 /// Hide popover, show + focus main window, promote to Regular on macOS.
 fn surface_main_window(app: &tauri::AppHandle) -> Result<(), String> {
-    if let Some(popover) = app.get_webview_window("popover") {
-        let _ = popover.hide();
-    }
+    hide_tray_popover(app);
     if let Some(w) = app.get_webview_window("main") {
         w.show().map_err(|e| e.to_string())?;
         w.set_focus().map_err(|e| e.to_string())?;
@@ -86,6 +86,21 @@ fn bring_to_front(app: tauri::AppHandle) -> Result<(), String> {
     surface_main_window(&app)
 }
 
+/// Size the popover to the content height the frontend measured, then re-anchor
+/// it under the tray icon. Called on mount, on open, and whenever the content
+/// changes, so the popover always hugs its content and stays pinned to the icon.
+#[tauri::command]
+fn resize_popover(app: tauri::AppHandle, height: f64) {
+    #[cfg(target_os = "macos")]
+    panel::resize_popover_panel(&app, height);
+    #[cfg(not(target_os = "macos"))]
+    if let Some(window) = app.get_webview_window("popover") {
+        use tauri_plugin_positioner::WindowExt;
+        let _ = window.set_size(tauri::LogicalSize::new(320.0, height));
+        let _ = window.move_window(tauri_plugin_positioner::Position::TrayBottomLeft);
+    }
+}
+
 /// Update the tray icon title (used by the frontend to echo `pulseFrame`).
 #[tauri::command]
 fn update_tray_title(app: tauri::AppHandle, title: String) -> Result<(), String> {
@@ -115,15 +130,30 @@ fn log_error(source: String, message: String, stack: String, component_stack: St
 // ---------------------------------------------------------------------------
 
 fn main() {
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+
+    // macOS: the tray popover is a floating NSPanel (see src/panel.rs).
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
+
+    builder
         .manage(SidecarState::new())
         .setup(|app| {
             // Start as accessory on macOS (no Dock icon, menu bar only)
             #[cfg(target_os = "macos")]
-            app.set_activation_policy(ActivationPolicy::Accessory);
+            {
+                app.set_activation_policy(ActivationPolicy::Accessory);
+                // Swizzle the popover window into a floating NSPanel now that it
+                // exists, so a tray click overlays fullscreen apps in place
+                // instead of opening on a Space you can't see (see panel.rs).
+                panel::install_popover_panel(app.handle());
+            }
 
             // Build tray icon — the loopy loop mark as a macOS template image
             // (monochrome + transparent, so macOS auto-tints it to the menubar
@@ -139,6 +169,9 @@ fn main() {
                         tray_handle.app_handle(),
                         &event,
                     );
+                    // macOS panel positions itself from the raw rect (panel.rs).
+                    #[cfg(target_os = "macos")]
+                    panel::track_tray_rect(tray_handle.app_handle(), &event);
 
                     if let TrayIconEvent::Click {
                         button: MouseButton::Left,
@@ -146,7 +179,7 @@ fn main() {
                         ..
                     } = event
                     {
-                        toggle_popover(tray_handle.app_handle());
+                        toggle_tray_popover(tray_handle.app_handle());
                     }
                 })
                 .build(app)?;
@@ -176,6 +209,7 @@ fn main() {
             show_main_window,
             hide_main_window,
             bring_to_front,
+            resize_popover,
             update_tray_title,
             load_launch_config,
             save_launch_config,
@@ -224,8 +258,29 @@ fn main() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Toggle the popover window: if visible → hide, else → position near tray and show.
-fn toggle_popover(app: &tauri::AppHandle) {
+/// Toggle the tray popover. macOS uses a floating NSPanel that overlays
+/// fullscreen apps (see `panel.rs`); other platforms fall back to a plain window.
+fn toggle_tray_popover(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    panel::toggle_popover_panel(app);
+    #[cfg(not(target_os = "macos"))]
+    toggle_popover_window(app);
+}
+
+/// Hide the tray popover (macOS panel or plain window).
+fn hide_tray_popover(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    panel::hide_popover_panel(app);
+    #[cfg(not(target_os = "macos"))]
+    if let Some(popover) = app.get_webview_window("popover") {
+        let _ = popover.hide();
+    }
+}
+
+/// Non-macOS fallback: toggle the popover as a plain window (no fullscreen
+/// overlay — that's a macOS-only concern handled by the NSPanel path).
+#[cfg(not(target_os = "macos"))]
+fn toggle_popover_window(app: &tauri::AppHandle) {
     let Some(popover) = app.get_webview_window("popover") else {
         return;
     };

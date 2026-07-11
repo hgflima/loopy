@@ -7,9 +7,25 @@ edition = "2021"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# `macos-private-api` unlocks `transparent` windows on macOS — required so the
+# popover webview is see-through and the NSVisualEffectView vibrancy (panel.rs)
+# shows through. The `app.macOSPrivateApi` config flag also enables it, but making
+# it explicit here guarantees the gate is on regardless of codegen. (Private API
+# ⇒ not App Store eligible; loopy ships outside the store, so this is fine.)
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# macOS-only: convert the tray popover into a non-activating NSPanel so it floats
+# over fullscreen apps like a native menubar popover (see src/panel.rs). The CLI
+# publish CI runs on Linux but never compiles this crate, so gating keeps it out.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2" }
+# Native NSVisualEffectView vibrancy for the tray popover, so the panel reads as a
+# real macOS menubar surface (translucent, rounded) instead of a flat opaque box.
+# Already vendored transitively; promoted to a direct dep so panel.rs can call
+# apply_vibrancy(). Needs the popover window `transparent` (tauri.conf.json).
+window-vibrancy = "0.6"

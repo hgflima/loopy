@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "npm run build:sidecar && tauri dev",
     "dev:web": "vite",
     "build:sidecar": "mkdir -p src-tauri/bin && bun build --compile ../../src/index.ts --outfile src-tauri/bin/loopy-aarch64-apple-darwin && (codesign --remove-signature src-tauri/bin/loopy-aarch64-apple-darwin 2>/dev/null || true) && codesign -f -s - src-tauri/bin/loopy-aarch64-apple-darwin",
     "build": "npm run build:sidecar && tauri build",

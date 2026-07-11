@@ -10,6 +10,23 @@
   background: var(--surface-elevated);
 }
 
+/* Popover window only: the surface is a native NSVisualEffectView (panel.rs), so
+   the webview and its content go transparent to let the vibrancy through — the
+   dev:web preview keeps the solid `surface-elevated` fill above. The glance fills
+   the window with a rounded hairline that traces the material's 10px corners
+   (POPOVER_CORNER_RADIUS). */
+.popover-window,
+.popover-window body,
+.popover-window #root {
+  background: transparent;
+}
+
+.popover-window .glance {
+  background: transparent;
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 0 0 0.5px var(--border);
+}
+
 .glance__status {
   display: flex;
   align-items: center;

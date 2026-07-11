@@ -75,6 +75,14 @@ function dispatchNotification(line: string): void {
 const IS_TAURI = isTauri();
 const IS_POPOVER = IS_TAURI && getCurrentWindow().label === "popover";
 
+// The popover window is `transparent` (tauri.conf.json) with a native
+// NSVisualEffectView behind it (panel.rs). Tag the document so the surface CSS
+// can go transparent for THIS window only and let the vibrancy show through —
+// the main window must stay opaque.
+if (IS_POPOVER) {
+  document.documentElement.classList.add("popover-window");
+}
+
 // ---------------------------------------------------------------------------
 // Crash capture net — survives the webview dying (debug aid)
 // ---------------------------------------------------------------------------

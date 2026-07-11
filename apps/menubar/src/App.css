@@ -26,35 +26,29 @@
   gap: var(--sp-sm);
 }
 
-/* Logo — gradient by default; swap to black/white when contrast is poor. */
+/* Brand wordmark — the pink loop carries the brand colour; only the text tone
+   flips for contrast: dark text on light surfaces, white text on dark. */
 .app-header__logo {
   height: var(--logo-h);
   width: auto;
   display: none;
 }
 
-/* Default: show the gradient lockup. */
-.app-header__logo--gradient {
+/* Default surface is light (see tokens.css): show the dark-text wordmark. */
+.app-header__logo--on-light {
   display: block;
 }
 
-/* Light theme override: gradient may lack contrast on very light backgrounds. */
-[data-theme="light"] .app-header__logo--gradient { display: none; }
-[data-theme="light"] .app-header__logo--light { display: block; }
+/* Explicit theme overrides (data-theme set by the host, if ever). */
+[data-theme="light"] .app-header__logo--on-light { display: block; }
+[data-theme="light"] .app-header__logo--on-dark { display: none; }
+[data-theme="dark"] .app-header__logo--on-light { display: none; }
+[data-theme="dark"] .app-header__logo--on-dark { display: block; }
 
-/* Dark theme override: use white variant for readability. */
-[data-theme="dark"] .app-header__logo--gradient { display: none; }
-[data-theme="dark"] .app-header__logo--dark { display: block; }
-
-/* OS-level fallback when no data-theme attribute is set. */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme]) .app-header__logo--gradient { display: none; }
-  :root:not([data-theme]) .app-header__logo--light { display: block; }
-}
-
+/* OS dark mode (no data-theme set): swap to the white-text wordmark. */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .app-header__logo--gradient { display: none; }
-  :root:not([data-theme]) .app-header__logo--dark { display: block; }
+  :root:not([data-theme]) .app-header__logo--on-light { display: none; }
+  :root:not([data-theme]) .app-header__logo--on-dark { display: block; }
 }
 
 .app-header__meta {

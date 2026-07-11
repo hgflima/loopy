@@ -1,5 +1,5 @@
 {
-  "productName": "loopy-menubar",
+  "productName": "Loopy",
   "version": "0.1.0",
   "identifier": "com.hgflima.loopy.menubar",
   "build": {
@@ -9,6 +9,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -25,6 +26,7 @@
         "visible": false,
         "decorations": false,
         "resizable": false,
+        "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true
       }
