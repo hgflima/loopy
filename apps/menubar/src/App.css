@@ -51,6 +51,32 @@
   :root:not([data-theme]) .app-header__logo--on-dark { display: block; }
 }
 
+/* Dir picker in header — idle state (T-006) */
+.app-header__dir {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  flex: 1;
+  min-width: 0;
+  margin: 0 var(--sp-md);
+}
+
+.app-header__dir-input {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+}
+
+.app-header__dir-input::placeholder {
+  color: var(--ink-tertiary);
+}
+
 .app-header__meta {
   display: flex;
   align-items: center;
