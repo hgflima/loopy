@@ -33,7 +33,7 @@
     Files: src/config/serialize.ts, src/config/serialize.test.ts
     Scope: S
 
-- [ ] T-002: Barrels `loopy/config` + `loopy/backlog` (+ exports/tsup) browser-safe
+- [x] T-002: Barrels `loopy/config` + `loopy/backlog` (+ exports/tsup) browser-safe
     NOVO `src/config/index.ts` re-exporta **só a superfície pura**: `loopyConfigSchema`,
     `parseConfig`, `ConfigError` (de `./load`), `serializeConfig`, `parseConfigSource`,
     `initialConfigTemplate` (de `./serialize`) e os tipos (`LoopyConfigParsed`). **NUNCA**
