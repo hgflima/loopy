@@ -58,7 +58,7 @@
 
 ## Fase 1 — Board no idle a partir do `loopy.yml` (T-003 ∥ T-004 → T-005 → T-006)
 
-- [ ] T-003: `configToStore` puro (config + backlog → `StoreState` preview)
+- [x] T-003: `configToStore` puro (config + backlog → `StoreState` preview)
     NOVO `apps/menubar/src/config/configToStore.ts`: função pura `configToStore(config:
     LoopyConfigParsed, tasks: readonly Task[]): StoreState` (tipos de `loopy/config` e
     `loopy/backlog`; `StoreState`/`TaskState` de `loopy/tui/store`) que replica o efeito de
