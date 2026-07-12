@@ -8,7 +8,7 @@
 
 ## Fase 0 — Superfície pura do motor (T-001 → T-002)
 
-- [ ] T-001: `serializeConfig` + `parseConfigSource` + template canônico em `src/config` (puro) — DE-RISCO
+- [x] T-001: `serializeConfig` + `parseConfigSource` + template canônico em `src/config` (puro) — DE-RISCO
     NOVO `src/config/serialize.ts`: (1) função pura `serializeConfig(config: LoopyConfigParsed):
     string` que emite YAML via `yaml.stringify` numa **ordem canônica de seções** = ordem do
     `loopyConfigSchema` (`version, name, workspace, agents, acp, inputs, checks, pipeline,
