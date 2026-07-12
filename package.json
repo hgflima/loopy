@@ -29,6 +29,14 @@
     "./tui/transport": {
       "types": "./dist/tui/transport.d.ts",
       "import": "./dist/tui/transport.js"
+    },
+    "./config": {
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./backlog": {
+      "types": "./dist/backlog.d.ts",
+      "import": "./dist/backlog.js"
     }
   },
   "files": [
