@@ -34,6 +34,14 @@ vi.mock("@xyflow/react", () => ({
   ReactFlowProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+let configPaneProps: Record<string, unknown> = {};
+vi.mock("../config/ConfigPane", () => ({
+  ConfigPane: (props: Record<string, unknown>) => {
+    configPaneProps = props;
+    return <div data-testid="config-pane" />;
+  },
+}));
+
 const { ViewSwitcher } = await import("./ViewSwitcher");
 
 // ---------------------------------------------------------------------------
@@ -44,6 +52,7 @@ afterEach(() => {
   cleanup();
   kanbanProps = {};
   depsFlowProps = {};
+  configPaneProps = {};
 });
 
 function makeStore(taskIds: string[] = ["T-001"]): StoreState {
@@ -119,5 +128,54 @@ describe("ViewSwitcher — both views stay mounted (T-007)", () => {
     // Both still in DOM
     expect(getByTestId("kanban-board")).toBeTruthy();
     expect(getByTestId("deps-flow")).toBeTruthy();
+  });
+});
+
+describe("ViewSwitcher — Config tab (T-008)", () => {
+  const fakeConfigDraft = {
+    draft: { workspace: { root: ".", parent_branch: "main", worktrees_dir: ".worktrees" }, concurrency: 1 },
+    errors: [],
+    dirty: false,
+    tasks: [],
+    load: vi.fn(),
+    patch: vi.fn(),
+    save: vi.fn(),
+  } as unknown as import("../config/useConfigDraft").ConfigDraftAPI;
+
+  it("renders a Config segment that switches to the Config pane", () => {
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={fakeConfigDraft} />,
+    );
+
+    // Config segment exists
+    const configButton = getByRole("radio", { name: "Config" });
+    expect(configButton).toBeTruthy();
+
+    // Click Config
+    fireEvent.click(configButton);
+
+    // ConfigPane is mounted
+    expect(getByTestId("config-pane")).toBeTruthy();
+    // ConfigPane received the draft
+    expect(configPaneProps.configDraft).toBe(fakeConfigDraft);
+  });
+
+  it("all three panes stay mounted when switching to Config", () => {
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={fakeConfigDraft} />,
+    );
+
+    fireEvent.click(getByRole("radio", { name: "Config" }));
+
+    expect(getByTestId("kanban-board")).toBeTruthy();
+    expect(getByTestId("deps-flow")).toBeTruthy();
+    expect(getByTestId("config-pane")).toBeTruthy();
+  });
+
+  it("does not render ConfigPane when configDraft is undefined", () => {
+    const { queryByTestId } = render(
+      <ViewSwitcher store={makeStore()} tick={0} />,
+    );
+    expect(queryByTestId("config-pane")).toBeNull();
   });
 });
