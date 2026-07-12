@@ -27,9 +27,11 @@ inputs:
 
 checks:
   ci:
-    - { name: typecheck, run: "npm run typecheck" }
-    - { name: lint, run: "npm run lint" }
-    - { name: test, run: "npm test" }
+    - { name: typecheck, run: "npm run typecheck" }        # motor + app (o script encadeia tsc -p apps/menubar)
+    - { name: lint, run: "npm run lint" }                  # eslint . cobre o app (sem script lint próprio)
+    - { name: test-engine, run: "npm test" }               # vitest da raiz (src/)
+    - { name: test-app, run: "npm test -w apps/menubar" }  # vitest do app menubar
+    - { name: build, run: "npm run build" }                # tsup: valida exports/tsup/barrels (T-001/T-002)
 
 pipeline:
   - id: create-worktree
