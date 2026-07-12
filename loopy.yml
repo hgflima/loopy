@@ -148,8 +148,9 @@ pipeline:
     type: shell
     always: true
     run:
-      - git -C "${workspace.root}" worktree remove --force "${worktree.path}"
-      - git -C "${workspace.root}" branch -D "${task.branch}"
+      # Teardown idempotente (tolera worktree/branch já removidos num resume
+      # pós-crash; propaga erros genuínos). Ver scripts/cleanup-worktree.sh.
+      - bash "${workspace.root}/scripts/cleanup-worktree.sh" "${workspace.root}" "${worktree.path}" "${task.branch}"
 
 stop_conditions:
   max_iterations: 25
