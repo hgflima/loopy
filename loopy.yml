@@ -156,7 +156,7 @@ stop_conditions:
   max_step_visits: 25
   stop_signal_file: ".loopy.stop"
 
-concurrency: 5
+concurrency: 3
 
 policies:
   escalation:
