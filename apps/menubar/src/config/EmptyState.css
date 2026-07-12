@@ -1,0 +1,30 @@
+/* EmptyState — centered prompt when no loopy.yml exists */
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--sp-6, 2rem);
+}
+
+.empty-state__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-4, 1rem);
+  text-align: center;
+  max-width: 28rem;
+}
+
+.empty-state__title {
+  font-size: var(--fs-lg, 1.125rem);
+  font-weight: 600;
+  margin: 0;
+}
+
+.empty-state__hint {
+  margin: 0;
+  line-height: 1.5;
+}
