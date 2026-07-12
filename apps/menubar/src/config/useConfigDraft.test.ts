@@ -222,6 +222,40 @@ describe("useConfigDraft", () => {
     expect(result.current.draft).not.toBeNull();
     expect(result.current.dirty).toBe(false);
   });
+
+  it("hasConfig is true after dev:web auto-load", async () => {
+    const { result } = await renderAndLoad();
+
+    expect(result.current.hasConfig).toBe(true);
+  });
+
+  it("seedFromTemplate populates draft from template without saving", async () => {
+    const { result } = await renderAndLoad();
+
+    // Patch to make it dirty, then save to clear dirty
+    act(() => { result.current.patch("name", "before-seed"); });
+    await act(async () => { await result.current.save(); });
+    expect(result.current.dirty).toBe(false);
+
+    // Seed from template
+    act(() => { result.current.seedFromTemplate(); });
+
+    expect(result.current.draft).not.toBeNull();
+    expect(result.current.draft!.name).toBe("my-loop");
+    expect(result.current.dirty).toBe(true);
+    expect(result.current.hasConfig).toBe(true);
+    expect(result.current.errors).toHaveLength(0);
+  });
+
+  it("seedFromTemplate produces a valid draft (0 errors)", async () => {
+    const { result } = await renderAndLoad();
+
+    act(() => { result.current.seedFromTemplate(); });
+
+    expect(result.current.errors).toHaveLength(0);
+    expect(result.current.draft!.pipeline).toHaveLength(1);
+    expect(result.current.draft!.pipeline[0]!.id).toBe("implement");
+  });
 });
 
 describe("errorAt", () => {

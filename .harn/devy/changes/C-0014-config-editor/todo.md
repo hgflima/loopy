@@ -180,7 +180,7 @@
     Files: apps/menubar/src/panes/ViewSwitcher.tsx, apps/menubar/src/panes/ViewSwitcher.test.tsx, apps/menubar/src/config/ConfigPane.tsx, apps/menubar/src/config/ConfigPane.css, apps/menubar/src/config/ConfigPane.test.tsx
     Scope: M
 
-- [ ] T-009: Config — **todas** as seções top-level restantes (SC4)
+- [x] T-009: Config — **todas** as seções top-level restantes (SC4)
     `ConfigPane.tsx`: adicionar os `fieldset` restantes reusando as primitivas de T-007, cada campo
     ligado ao schema real: `agents` (`RecordEditor` name→AgentDef: command[list], env[record],
     model/effort/display_name[text]); `acp` (command[list], default_agent[text], request_timeout_
@@ -283,7 +283,7 @@
 
 ## Fase 4 — Iniciar + empty-state + guardas (T-014 ∥ T-015)
 
-- [ ] T-014: Botão **Iniciar** (popover de flags) + auto-save antes + guarda de draft sujo (SC6/R10)
+- [x] T-014: Botão **Iniciar** (popover de flags) + auto-save antes + guarda de draft sujo (SC6/R10)
     `apps/menubar/src/App.tsx`: fiar o botão **Iniciar** do header. Um **popover** (padrão `Menu`/
     popover existente) hospeda os flags de launch (`--yes`/`--task <id>`/`--verbose`) — mantêm o
     contrato `launch-config.json` (C3), **fora** do yml. Ao Iniciar: se `dirty`, **auto-salva**
@@ -300,7 +300,7 @@
     Files: apps/menubar/src/App.tsx, apps/menubar/src/App.test.tsx, apps/menubar/src/panes/LaunchConfig.tsx
     Scope: M
 
-- [ ] T-015: Empty-state (sem `loopy.yml`) + "Criar a partir do template" + dev:web completo (SC8/R11)
+- [x] T-015: Empty-state (sem `loopy.yml`) + "Criar a partir do template" + dev:web completo (SC8/R11)
     `apps/menubar/src/config/`: quando `read_project_files` retorna `loopy_yml: None` (dir sem yml),
     o board mostra um **empty-state** com botão **"Criar loopy.yml a partir do template"** que semeia
     o draft com `initialConfigTemplate` (R1) — **não** auto-grava; só o **Salvar** materializa o

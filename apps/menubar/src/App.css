@@ -126,6 +126,12 @@
   overflow: hidden;
 }
 
+.app-todo-hint {
+  text-align: center;
+  padding: var(--sp-2, 0.5rem) var(--sp-4, 1rem);
+  margin: 0;
+}
+
 /* While dragging the resize divider, disable pointer events on children
    (prevents iframes/selections from stealing mousemove) and force the
    row-resize cursor everywhere. */
