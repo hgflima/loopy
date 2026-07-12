@@ -283,7 +283,7 @@
 
 ## Fase 4 — Iniciar + empty-state + guardas (T-014 ∥ T-015)
 
-- [ ] T-014: Botão **Iniciar** (popover de flags) + auto-save antes + guarda de draft sujo (SC6/R10)
+- [x] T-014: Botão **Iniciar** (popover de flags) + auto-save antes + guarda de draft sujo (SC6/R10)
     `apps/menubar/src/App.tsx`: fiar o botão **Iniciar** do header. Um **popover** (padrão `Menu`/
     popover existente) hospeda os flags de launch (`--yes`/`--task <id>`/`--verbose`) — mantêm o
     contrato `launch-config.json` (C3), **fora** do yml. Ao Iniciar: se `dirty`, **auto-salva**
