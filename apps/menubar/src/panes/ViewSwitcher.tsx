@@ -8,6 +8,7 @@ import { useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { StoreState } from "loopy/tui/store";
 import type { ConfigDraftAPI } from "../config/useConfigDraft";
+import type { OrphanRef } from "../config/pipeline-edit";
 import { KanbanBoard } from "../kanban/KanbanBoard";
 import { DepsFlow } from "../graph/DepsFlow";
 import { ConfigPane } from "../config/ConfigPane";
@@ -30,9 +31,28 @@ interface ViewSwitcherProps {
   configDraft?: ConfigDraftAPI;
   /** Open step editor for a given step id (idle only). */
   onEditStep?: (stepId: string) => void;
+  /** Add a new step (idle only, T-012). */
+  onAddStep?: () => void;
+  /** Remove a step by id (idle only, T-012). */
+  onRemoveStep?: (stepId: string) => void;
+  /** Reorder steps (idle only, T-012). */
+  onReorderStep?: (from: number, to: number) => void;
+  /** Orphan refs for highlighting (idle only, T-012). */
+  orphanRefs?: readonly OrphanRef[];
 }
 
-export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask, configDraft, onEditStep }: ViewSwitcherProps) {
+export function ViewSwitcher({
+  store,
+  tick,
+  selectedTaskId,
+  onSelectTask,
+  configDraft,
+  onEditStep,
+  onAddStep,
+  onRemoveStep,
+  onReorderStep,
+  orphanRefs,
+}: ViewSwitcherProps) {
   const [view, setView] = useState<ViewId>("kanban");
 
   return (
@@ -51,7 +71,16 @@ export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask, config
         className="view-switcher__pane"
         style={{ display: view === "kanban" ? "flex" : "none" }}
       >
-        <KanbanBoard store={store} selectedTaskId={selectedTaskId} onSelectTask={onSelectTask} onEditStep={onEditStep} />
+        <KanbanBoard
+          store={store}
+          selectedTaskId={selectedTaskId}
+          onSelectTask={onSelectTask}
+          onEditStep={onEditStep}
+          onAddStep={onAddStep}
+          onRemoveStep={onRemoveStep}
+          onReorderStep={onReorderStep}
+          orphanRefs={orphanRefs}
+        />
       </div>
       <div
         className="view-switcher__pane"
