@@ -120,7 +120,7 @@
     Files: apps/menubar/src/config/useConfigDraft.ts, apps/menubar/src/config/useConfigDraft.test.ts
     Scope: M
 
-- [ ] T-006: App shell — idle mostra o board + header (dir picker + Iniciar placeholder) — SC1
+- [x] T-006: App shell — idle mostra o board + header (dir picker + Iniciar placeholder) — SC1
     `apps/menubar/src/App.tsx`: no ramo `idle` (`runStatus === "idle"`), **em vez de** `LaunchConfig`,
     montar o board (`ViewSwitcher`) alimentado por `configToStore(draft, tasks)` (T-003) via o
     `useConfigDraft` (T-005). O header ganha um **seletor de diretório** (absorve o `dir picker` do
