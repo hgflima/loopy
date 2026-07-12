@@ -222,7 +222,7 @@
     Files: apps/menubar/src/config/pipeline-edit.ts, apps/menubar/src/config/pipeline-edit.test.ts
     Scope: M
 
-- [ ] T-011: `StepEditor` drawer pelo `⋯` (campos por tipo) + troca de `type` com confirm (SC2/SC10/SC12)
+- [x] T-011: `StepEditor` drawer pelo `⋯` (campos por tipo) + troca de `type` com confirm (SC2/SC10/SC12)
     `apps/menubar/src/kanban/KanbanBoard.tsx`: adicionar um botão **`⋯`** no `.kanban-column-title`
     (só idle; `margin-left:auto`) que abre o `StepEditor` do step daquela coluna (col.id = step.id).
     NOVO `apps/menubar/src/config/StepEditor.tsx` (+ `.css`): **drawer à direita** replicando o
