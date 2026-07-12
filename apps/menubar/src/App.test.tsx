@@ -22,14 +22,17 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 // Mock useConfigDraft — returns a controllable draft state
 const mockLoad = vi.fn();
+const mockSeedFromTemplate = vi.fn();
 let mockDraftState = {
   draft: null as unknown,
   errors: [] as unknown[],
   dirty: false,
   tasks: [] as unknown[],
+  hasConfig: null as boolean | null,
   load: mockLoad,
   patch: vi.fn(),
   save: vi.fn(),
+  seedFromTemplate: mockSeedFromTemplate,
 };
 
 vi.mock("./config/useConfigDraft", () => ({
@@ -124,7 +127,19 @@ function setMockDraftLoaded(tasks: Array<{ id: string; title: string; deps: stri
     draft: { pipeline: [{ id: "impl", type: "agent" }, { id: "checks", type: "checks" }] },
     errors: [],
     tasks,
-    load: mockLoad,
+    hasConfig: true,
+  };
+}
+
+/** Set the mock draft to simulate empty dir (no loopy.yml). */
+function setMockDraftEmpty() {
+  mockDraftState = {
+    ...mockDraftState,
+    draft: null,
+    errors: [],
+    dirty: false,
+    tasks: [],
+    hasConfig: false,
   };
 }
 
@@ -135,9 +150,11 @@ function resetMockDraft() {
     errors: [],
     dirty: false,
     tasks: [],
+    hasConfig: null,
     load: mockLoad,
     patch: vi.fn(),
     save: vi.fn(),
+    seedFromTemplate: mockSeedFromTemplate,
   };
 }
 
@@ -372,5 +389,59 @@ describe("App — graph selection opens CardDetail (T-007)", () => {
     // CardDetail shown for approval task even without explicit selection
     expect(queryByTestId("card-detail")).toBeTruthy();
     expect(cardDetailProps.taskId).toBe("T-002");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-015 — Empty-state + template + todo hint
+// ---------------------------------------------------------------------------
+
+describe("App — empty-state (T-015)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    mockSeedFromTemplate.mockClear();
+  });
+
+  it("shows EmptyState when hasConfig is false (dir without loopy.yml)", () => {
+    setMockDraftEmpty();
+    const { getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(getByTestId("empty-state")).toBeTruthy();
+    expect(getByTestId("btn-create-from-template")).toBeTruthy();
+    expect(queryByTestId("view-switcher")).toBeNull();
+  });
+
+  it("clicking 'Criar a partir do template' calls seedFromTemplate", () => {
+    setMockDraftEmpty();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    fireEvent.click(getByTestId("btn-create-from-template"));
+    expect(mockSeedFromTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows todo hint when config loaded but 0 tasks", () => {
+    setMockDraftLoaded([]);
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(getByTestId("todo-hint")).toBeTruthy();
+  });
+
+  it("does NOT show todo hint when tasks exist", () => {
+    setMockDraftLoaded();
+    const { queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(queryByTestId("todo-hint")).toBeNull();
+  });
+
+  it("does NOT show EmptyState when running (even if hasConfig is false)", () => {
+    setMockDraftEmpty();
+    const { queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "running" })} onStartRun={vi.fn()} />,
+    );
+    expect(queryByTestId("empty-state")).toBeNull();
   });
 });

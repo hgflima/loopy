@@ -11,6 +11,7 @@ import { useStreamHeight } from "./panes/useStreamHeight";
 import { fractionToPercent } from "./panes/resize-helpers";
 import { useConfigDraft } from "./config/useConfigDraft";
 import { configToStore } from "./config/configToStore";
+import { EmptyState } from "./config/EmptyState";
 import { Pill, Button, type Tone } from "./ui";
 // Brand wordmark (pink loop + text). Dark text for light surfaces, white text
 // for dark surfaces — the visible one is chosen by theme in App.css.
@@ -129,6 +130,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     [effectiveTaskId, activeStore.tasks],
   );
 
+  const showEmptyState = isIdle && configDraft.hasConfig === false;
   const showBoard = !isIdle || idleStore != null;
 
   return (
@@ -194,7 +196,9 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
 
       <Banner ui={ui} />
 
-      {showBoard ? (
+      {showEmptyState ? (
+        <EmptyState onCreateFromTemplate={configDraft.seedFromTemplate} />
+      ) : showBoard ? (
         <div className="app-body">
           <div
             className={`app-body__left${streamHeight.dragging ? " app-body__left--dragging" : ""}`}
@@ -208,6 +212,11 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 onSelectTask={handleSelectTask}
                 configDraft={isIdle ? configDraft : undefined}
               />
+              {isIdle && configDraft.tasks.length === 0 && (
+                <p className="t-label u-muted app-todo-hint" data-testid="todo-hint">
+                  Nenhuma task encontrada — verifique o <code>todo.md</code> no diretório-alvo.
+                </p>
+              )}
             </div>
             {!isIdle && (
               <>

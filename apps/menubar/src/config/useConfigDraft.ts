@@ -48,12 +48,21 @@ export interface ConfigDraftAPI {
   readonly dirty: boolean;
   /** Tasks parsed from the todo.md using the draft's backlog config. */
   readonly tasks: readonly Task[];
+  /**
+   * Whether a loopy.yml was found on disk.
+   * - `null` — not loaded yet
+   * - `true` — yml was found (or template was seeded)
+   * - `false` — dir has no yml (show empty-state)
+   */
+  readonly hasConfig: boolean | null;
   /** Load config from a directory (or the embedded sample). */
   load(dir?: string): Promise<void>;
   /** Immutably set a value at a dot-path in the draft. Re-validates. */
   patch(path: string, value: unknown): void;
   /** Persist the draft. Blocked (no-op) when errors exist. Returns true on success. */
   save(): Promise<boolean>;
+  /** Seed the draft from the built-in template without saving to disk. */
+  seedFromTemplate(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +161,7 @@ export function useConfigDraft(): ConfigDraftAPI {
   const [dirty, setDirty] = useState(false);
   const [tasks, setTasks] = useState<readonly Task[]>([]);
   const [todoMd, setTodoMd] = useState("");
+  const [hasConfig, setHasConfig] = useState<boolean | null>(null);
 
   // Track the current dir for save()
   const dirRef = useRef<string | undefined>(undefined);
@@ -174,20 +184,21 @@ export function useConfigDraft(): ConfigDraftAPI {
   const load = useCallback(
     async (dir?: string) => {
       dirRef.current = dir;
-      let yamlSource: string;
-      let todoSource: string;
+      let yamlSource: string | null = null;
+      let todoSource = "";
 
       if (IS_TAURI && dir) {
         try {
-          const result = await invoke<{ yml: string; todo: string }>(
-            "read_project_files",
-            { dir },
-          );
-          yamlSource = result.yml;
-          todoSource = result.todo;
+          // Rust returns Option<String> — null when the file doesn't exist.
+          const result = await invoke<{
+            loopy_yml: string | null;
+            todo_md: string | null;
+          }>("read_project_files", { dir });
+          yamlSource = result.loopy_yml;
+          todoSource = result.todo_md ?? "";
         } catch {
-          // Dir without yml — use empty state, don't crash (T-015)
-          yamlSource = SAMPLE_YAML;
+          // I/O error — treat as empty dir
+          yamlSource = null;
           todoSource = "";
         }
       } else {
@@ -197,6 +208,19 @@ export function useConfigDraft(): ConfigDraftAPI {
       }
 
       setTodoMd(todoSource);
+
+      // No loopy.yml found → empty-state (T-015)
+      if (yamlSource == null) {
+        setHasConfig(false);
+        setDraft(null);
+        rawDraftRef.current = null;
+        setErrors([]);
+        setDirty(false);
+        setTasks([]);
+        return;
+      }
+
+      setHasConfig(true);
 
       let raw: unknown;
       try {
@@ -261,6 +285,19 @@ export function useConfigDraft(): ConfigDraftAPI {
     return true;
   }, [draft, errors]);
 
+  /** Seed the draft from the built-in template without saving to disk. */
+  const seedFromTemplate = useCallback(() => {
+    const raw = parseConfigSource(SAMPLE_YAML);
+    rawDraftRef.current = raw;
+    const validated = validateDraft(raw);
+
+    setDraft(validated.draft);
+    setErrors(validated.errors);
+    setDirty(true);
+    setHasConfig(true);
+    reParseTasks(validated.errors.length === 0 ? validated.draft : null, todoMd);
+  }, [reParseTasks, todoMd]);
+
   // Auto-load on mount when not in Tauri (dev:web convenience)
   useEffect(() => {
     if (!IS_TAURI) {
@@ -268,5 +305,5 @@ export function useConfigDraft(): ConfigDraftAPI {
     }
   }, [load]);
 
-  return { draft, errors, dirty, tasks, load, patch, save };
+  return { draft, errors, dirty, tasks, hasConfig, load, patch, save, seedFromTemplate };
 }
