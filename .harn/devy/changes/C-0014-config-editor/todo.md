@@ -98,7 +98,7 @@
     Files: apps/menubar/src-tauri/src/project_fs.rs, apps/menubar/src-tauri/src/main.rs
     Scope: M
 
-- [ ] T-005: `useConfigDraft` (load fs/sample, draft em memória, valida zod, dirty/errors, save)
+- [x] T-005: `useConfigDraft` (load fs/sample, draft em memória, valida zod, dirty/errors, save)
     NOVO `apps/menubar/src/config/useConfigDraft.ts`: hook que, dado `dir`, carrega o `loopy.yml`
     e o `todo.md` (Tauri: `invoke("read_project_files",{dir})`; `dev:web`/`!isTauri()`: **sample
     embutido** — reusar `examples/loopy.yml` inline ou o `initialConfigTemplate` serializado). O
