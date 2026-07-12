@@ -262,7 +262,7 @@
     Files: apps/menubar/src/kanban/KanbanBoard.tsx, apps/menubar/src/kanban/KanbanBoard.test.tsx, apps/menubar/src/kanban/grouper.test.ts
     Scope: L
 
-- [ ] T-013: Rename cascade (`step.id`/agente/lista-de-checks) + guard de colisão (SC11)
+- [x] T-013: Rename cascade (`step.id`/agente/lista-de-checks) + guard de colisão (SC11)
     NOVO `apps/menubar/src/config/rename.ts` — helpers puros: `renameStepId(config, old, new)`,
     `renameAgent(config, old, new)`, `renameChecksList(config, old, new)` que **reescrevem todos os
     referrers** (R6): step.id → `on_success.goto`/`on_fail.goto` de todos os steps; agente → chave
