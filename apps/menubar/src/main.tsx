@@ -6,6 +6,7 @@ import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import App from "./App";
+import type { LaunchFlags } from "./App";
 import { Glance } from "./popover/Glance";
 import { About } from "./about/About";
 import { parseTransportLine } from "loopy/tui/transport";
@@ -192,7 +193,9 @@ function Root() {
   // LaunchConfig callback (reset state for a fresh run)
   // ----------------------------------------------------------
 
-  const handleStartRun = useCallback(() => {
+  const handleStartRun = useCallback((flags: LaunchFlags) => {
+    // TODO: pass flags to save_launch_config + start_sidecar (wired by the Rust backend)
+    void flags;
     setState(initialBridgeState);
   }, []);
 

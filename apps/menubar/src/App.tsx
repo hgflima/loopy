@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import type { BridgeState } from "./state/store-bridge";
 import type { TaskStatus } from "loopy/tui/store";
@@ -24,9 +24,16 @@ const TICK_MS = 500;
 
 const IS_TAURI = isTauri();
 
+/** Launch flags passed to the sidecar (persisted in launch-config.json, NOT in yml). */
+export interface LaunchFlags {
+  yes: boolean;
+  taskId: string;
+  verbose: boolean;
+}
+
 interface AppProps {
   state: BridgeState;
-  onStartRun: (yesFlag: boolean) => void;
+  onStartRun: (flags: LaunchFlags) => void;
   onApprovalDecision?: (requestId: string, approved: boolean) => void;
 }
 
@@ -59,6 +66,28 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   const configDraft = useConfigDraft();
   const [dir, setDir] = useState("");
 
+  // --- Launch popover flags (T-014) — persisted in launch-config.json -----
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [flagYes, setFlagYes] = useState(false);
+  const [flagTaskId, setFlagTaskId] = useState("");
+  const [flagVerbose, setFlagVerbose] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Close popover on outside click
+  useEffect(() => {
+    if (!popoverOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setPopoverOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [popoverOpen]);
+
+  // --- Dirty guard confirm state (T-014/R10) ------------------------------
+  const [dirtyConfirm, setDirtyConfirm] = useState<string | null>(null);
+
   // Load persisted dir on mount (same source as the old LaunchConfig)
   useEffect(() => {
     if (!IS_TAURI) {
@@ -66,26 +95,56 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
       setDir("/sample");
       return;
     }
-    invoke<{ dir: string }>("load_launch_config")
+    invoke<{ dir: string; yes?: boolean; task_id?: string; verbose?: boolean }>("load_launch_config")
       .then((cfg) => {
         if (cfg.dir) {
           setDir(cfg.dir);
           void configDraft.load(cfg.dir);
         }
+        if (cfg.yes) setFlagYes(cfg.yes);
+        if (cfg.task_id) setFlagTaskId(cfg.task_id);
+        if (cfg.verbose) setFlagVerbose(cfg.verbose);
       })
       .catch(() => { /* defaults are fine */ });
   }, []);
 
-  // Reload draft when dir changes
+  // Reload draft when dir changes (with dirty guard)
   const handleDirChange = useCallback(
     (newDir: string) => {
+      if (configDraft.dirty) {
+        setDirtyConfirm(newDir);
+        return;
+      }
       setDir(newDir);
       if (newDir.trim()) {
         void configDraft.load(newDir.trim());
       }
     },
+    [configDraft.dirty, configDraft.load],
+  );
+
+  // Dirty guard resolution — shared "apply pending dir" logic
+  const applyPendingDir = useCallback(
+    (pendingDir: string) => {
+      setDirtyConfirm(null);
+      setDir(pendingDir);
+      if (pendingDir.trim()) {
+        void configDraft.load(pendingDir.trim());
+      }
+    },
     [configDraft.load],
   );
+
+  const handleDirtyConfirmSave = useCallback(async () => {
+    if (!dirtyConfirm) return;
+    await configDraft.save();
+    applyPendingDir(dirtyConfirm);
+  }, [dirtyConfirm, configDraft.save, applyPendingDir]);
+
+  const handleDirtyConfirmDiscard = useCallback(() => {
+    if (!dirtyConfirm) return;
+    applyPendingDir(dirtyConfirm);
+  }, [dirtyConfirm, applyPendingDir]);
 
   async function pickDir() {
     if (!IS_TAURI) return;
@@ -101,6 +160,21 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     if (!configDraft.draft) return null;
     return configToStore(configDraft.draft, configDraft.tasks);
   }, [configDraft.draft, configDraft.tasks]);
+
+  // --- Launch (auto-save + flags) -----------------------------------------
+  const canStart = !!(dir.trim() && idleStore && configDraft.errors.length === 0);
+
+  const handleLaunch = useCallback(async () => {
+    if (!canStart) return;
+    // Auto-save dirty draft before starting (C2)
+    if (configDraft.dirty) {
+      const saved = await configDraft.save();
+      if (!saved) return; // fail-closed
+    }
+    const flags: LaunchFlags = { yes: flagYes, taskId: flagTaskId.trim(), verbose: flagVerbose };
+    setPopoverOpen(false);
+    onStartRun(flags);
+  }, [canStart, configDraft.dirty, configDraft.save, flagYes, flagTaskId, flagVerbose, onStartRun]);
 
   // The active store depends on run status
   const activeStore = isIdle && idleStore ? idleStore : store;
@@ -163,14 +237,62 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 Escolher…
               </Button>
             )}
-            <Button
-              variant="primary"
-              disabled={!dir.trim() || !idleStore || configDraft.errors.length > 0}
-              data-testid="btn-iniciar"
-              onClick={() => onStartRun(false)}
-            >
-              Iniciar
-            </Button>
+            <div className="app-header__launch" ref={popoverRef}>
+              <Button
+                variant="primary"
+                disabled={!canStart}
+                data-testid="btn-iniciar"
+                onClick={() => void handleLaunch()}
+              >
+                Iniciar
+              </Button>
+              <Button
+                variant="ghost"
+                className="app-header__launch-toggle"
+                data-testid="btn-launch-flags"
+                aria-label="Opções de launch"
+                aria-expanded={popoverOpen}
+                onClick={() => setPopoverOpen((o) => !o)}
+              >
+                ⋯
+              </Button>
+              {popoverOpen && (
+                <div className="launch-popover" data-testid="launch-popover" role="dialog" aria-label="Flags de launch">
+                  <label className="launch-popover__toggle">
+                    <input
+                      type="checkbox"
+                      checked={flagYes}
+                      onChange={(e) => setFlagYes(e.target.checked)}
+                      data-testid="flag-yes"
+                    />
+                    <span className="launch-popover__flag">--yes</span>
+                    <span className="launch-popover__hint">auto-aprovar gates</span>
+                  </label>
+                  <label className="launch-popover__toggle">
+                    <input
+                      type="checkbox"
+                      checked={flagVerbose}
+                      onChange={(e) => setFlagVerbose(e.target.checked)}
+                      data-testid="flag-verbose"
+                    />
+                    <span className="launch-popover__flag">--verbose</span>
+                    <span className="launch-popover__hint">saída detalhada</span>
+                  </label>
+                  <label className="launch-popover__field">
+                    <span className="launch-popover__flag">--task</span>
+                    <input
+                      type="text"
+                      className="launch-popover__input"
+                      value={flagTaskId}
+                      onChange={(e) => setFlagTaskId(e.target.value)}
+                      placeholder="T-001"
+                      spellCheck={false}
+                      data-testid="flag-task-id"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -195,6 +317,26 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
       </header>
 
       <Banner ui={ui} />
+
+      {/* Dirty guard confirm dialog (R10) */}
+      {dirtyConfirm && (
+        <div className="dirty-confirm-overlay" data-testid="dirty-confirm">
+          <div className="dirty-confirm" role="alertdialog" aria-label="Alterações não salvas">
+            <p className="dirty-confirm__message">Há alterações não salvas no <code>loopy.yml</code>.</p>
+            <div className="dirty-confirm__actions">
+              <Button variant="primary" data-testid="dirty-save" onClick={() => void handleDirtyConfirmSave()}>
+                Salvar
+              </Button>
+              <Button variant="secondary" data-testid="dirty-discard" onClick={handleDirtyConfirmDiscard}>
+                Descartar
+              </Button>
+              <Button variant="ghost" data-testid="dirty-cancel" onClick={() => setDirtyConfirm(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showEmptyState ? (
         <EmptyState onCreateFromTemplate={configDraft.seedFromTemplate} />
