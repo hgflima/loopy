@@ -259,8 +259,10 @@ describe("ConfigPane — Agents section (T-009, SC4)", () => {
     const { getByTestId } = render(<ConfigPane configDraft={draft} />);
 
     const entry = getByTestId("agent-entry-claude");
-    // CommandListEditor renders with label "command"
-    expect(entry.querySelector(".field__label")?.textContent).toBe("command");
+    // Entry contains name (editable key) + command + other fields
+    const labels = Array.from(entry.querySelectorAll(".field__label")).map((el) => el.textContent);
+    expect(labels).toContain("name");
+    expect(labels).toContain("command");
     // The entry should contain model/effort/display_name text inputs
     expect(entry.textContent).toContain("model");
     expect(entry.textContent).toContain("effort");
