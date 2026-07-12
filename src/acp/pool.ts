@@ -45,6 +45,13 @@ export interface AgentProcessPool {
   peek(agentName: string, cwd: string): LoopySession | undefined;
   /** Dispose the Session for `(agent, worktree)`. */
   closeSession(agentName: string, cwd: string): void;
+  /**
+   * Close (`session/close`, best-effort) and forget every Session bound to
+   * `cwd`, across all agents. Used by the orchestrator before teardown steps
+   * so agents release worktree-bound resources (Windows dir-lock). Sessions
+   * of other worktrees and the processes themselves are untouched.
+   */
+  releaseSessionsFor(cwd: string): Promise<void>;
   /** Dispose all Sessions (but keep processes alive). */
   closeAllSessions(): void;
   /** Shutdown every process and dispose every Session. Idempotent. */
@@ -164,6 +171,22 @@ export async function createAgentProcessPool(
       open.get(key)?.dispose();
       open.delete(key);
       opening.delete(key);
+    },
+
+    async releaseSessionsFor(cwd: string): Promise<void> {
+      const suffix = `::${cwd}`;
+      // Settle in-flight opens for this cwd first so none is orphaned open.
+      for (const [key, inFlight] of [...opening.entries()]) {
+        if (!key.endsWith(suffix)) continue;
+        const session = await inFlight.catch(() => undefined);
+        if (session !== undefined) open.set(key, session);
+      }
+      for (const [key, session] of [...open.entries()]) {
+        if (!key.endsWith(suffix)) continue;
+        await session.close();
+        open.delete(key);
+        opening.delete(key);
+      }
     },
 
     closeAllSessions: disposeSessions,
