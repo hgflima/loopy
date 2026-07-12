@@ -160,7 +160,7 @@
     Files: apps/menubar/src/config/fields/ (TextField, NumberField, SelectField, ToggleField, RecordEditor, CommandListEditor + .css + index), apps/menubar/src/config/fields/fields.test.tsx
     Scope: M
 
-- [ ] T-008: Aba **Config** + **uma** seção fim-a-fim (editar→valida→dirty→Save) + roteamento de erro
+- [x] T-008: Aba **Config** + **uma** seção fim-a-fim (editar→valida→dirty→Save) + roteamento de erro
     `apps/menubar/src/panes/ViewSwitcher.tsx`: `ViewId += "config"`, 3º segmento **Config** no
     `SegmentedControl` (SC3). NOVO `apps/menubar/src/config/ConfigPane.tsx` (+ `.css`): **scroll
     único**, cada seção um `fieldset`/card com título + **contador de erros** no header (R5). Nesta
