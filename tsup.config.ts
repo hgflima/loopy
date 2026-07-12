@@ -21,6 +21,8 @@ export default defineConfig([
       "tui/store": "src/tui/store.ts",
       "tui/view": "src/tui/view.ts",
       "tui/transport": "src/tui/transport.ts",
+      "config": "src/config/index.ts",
+      "backlog": "src/backlog/index.ts",
     },
     dts: true,
     clean: false,
