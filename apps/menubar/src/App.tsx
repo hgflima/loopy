@@ -163,7 +163,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
             )}
             <Button
               variant="primary"
-              disabled={!dir.trim() || !idleStore}
+              disabled={!dir.trim() || !idleStore || configDraft.errors.length > 0}
               data-testid="btn-iniciar"
               onClick={() => onStartRun(false)}
             >
@@ -206,6 +206,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 tick={tick}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={handleSelectTask}
+                configDraft={isIdle ? configDraft : undefined}
               />
             </div>
             {!isIdle && (
