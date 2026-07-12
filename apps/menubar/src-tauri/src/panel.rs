@@ -12,12 +12,15 @@
 //! the de-facto Tauri approach, mirroring ahkohd's macOS menubar example.
 
 // `tauri-nspanel` v2 bridges through the now-deprecated `cocoa`/`objc` crates,
-// and its `panel_delegate!` macro expands `objc` internals that reference a
-// legacy `cargo-clippy` cfg. Both are inherent to the plugin's API surface and
-// unfixable from here, so silence them for this bridge module only — the
-// plugin's own menubar example does the same `#![allow(deprecated)]`.
+// so calling their APIs here trips `deprecated`. That warning is on our own call
+// sites, so an inline allow silences it — same as the plugin's menubar example.
+//
+// The sibling `unexpected_cfgs` warning (objc's `panel_delegate!` expands a
+// legacy `feature = "cargo-clippy"` cfg) is NOT silenceable here: a cfg emitted
+// by an external macro is linted against the destination crate's global
+// check-cfg list, not the module's attributes, so an inline allow never reaches
+// it. It's declared as an expected value in `Cargo.toml` (`[lints.rust]`) instead.
 #![allow(deprecated)]
-#![allow(unexpected_cfgs)]
 
 use std::sync::Mutex;
 
