@@ -132,6 +132,7 @@ async function main(): Promise<void> {
       return response;
     })
     .onRequest(AGENT_METHODS.session_set_mode, () => ({}))
+    .onRequest(AGENT_METHODS.session_close, () => ({}))
     .onRequest(AGENT_METHODS.session_set_config_option, () => {
       if (scenario.failSetConfigOption) {
         throw new Error("method not found: session/set_config_option");

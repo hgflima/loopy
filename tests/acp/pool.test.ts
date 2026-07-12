@@ -250,6 +250,33 @@ describe("AgentProcessPool session re-keying (integration)", () => {
     expect(pool.peek("claude", wt)).toBeUndefined();
   });
 
+  it("releaseSessionsFor closes and forgets only that cwd's sessions (all agents)", async () => {
+    const opts = new Map<string, PerAgentOptions>([
+      ["claude", { command: fakeCommand({}) }],
+      ["codex", { command: fakeCommand({}) }],
+    ]);
+
+    pool = await createAgentProcessPool(opts, realSpawner);
+    const wtA = `${PROJECT_ROOT}#wt-a`;
+    const wtB = `${PROJECT_ROOT}#wt-b`;
+
+    await pool.session("claude", wtA);
+    await pool.session("codex", wtA);
+    await pool.session("claude", wtB);
+
+    await pool.releaseSessionsFor(wtA);
+
+    // Both agents' sessions on wtA are gone; wtB and the processes survive.
+    expect(pool.peek("claude", wtA)).toBeUndefined();
+    expect(pool.peek("codex", wtA)).toBeUndefined();
+    expect(pool.peek("claude", wtB)).toBeDefined();
+    expect(pool.size).toBe(2);
+
+    // A later session() on the released cwd reopens (does not reuse a stale one).
+    const reopened = await pool.session("claude", wtA);
+    expect(reopened).toBeDefined();
+  });
+
   it("closeAllSessions disposes all sessions but keeps processes alive", async () => {
     const opts = new Map<string, PerAgentOptions>([
       ["claude", { command: fakeCommand({}) }],

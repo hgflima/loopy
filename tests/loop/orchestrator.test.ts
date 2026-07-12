@@ -1498,6 +1498,129 @@ describe("emit seam (C-0007 T-004)", () => {
 // stripDepsLine (C-0010 T-003) — pure helper
 // ---------------------------------------------------------------------------
 
+describe("releaseSessions — fecha sessões antes do teardown (Windows dir-lock)", () => {
+  /** Registry that records step execution into `events` (shell/checks/approval). */
+  function recordingRegistry(events: string[], script: Record<string, StepResult> = {}) {
+    const make = (type: StepType): { type: StepType; execute(ctx: StepContext): Promise<StepResult> } => ({
+      type,
+      async execute(ctx: StepContext): Promise<StepResult> {
+        events.push(`step:${ctx.step.id}`);
+        return script[ctx.step.id] ?? { ok: true };
+      },
+    });
+    return createStepRegistry([make("shell"), make("checks"), make("approval")]);
+  }
+
+  it("PC flow: release runs after work, before the non-agent always step", async () => {
+    const events: string[] = [];
+    const reg = recordingRegistry(events);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([
+      shell("work"),
+      shell("cleanup", { always: true }),
+    ]);
+    const released: string[] = [];
+    const deps = {
+      ...makeDeps({ registry: reg, markDone: port }),
+      releaseSessions: async (cwd: string) => {
+        released.push(cwd);
+        events.push("release");
+      },
+    };
+
+    const result = await runLoop(config, [makeTask("T-1")], deps);
+
+    expect(result.completed).toEqual(["T-1"]);
+    expect(events).toEqual(["step:work", "release", "step:cleanup"]);
+    expect(released).toHaveLength(1);
+    // cwd is the worktree's absolute path (same construction as sessionProvider).
+    expect(released[0]).toContain(".worktrees");
+  });
+
+  it("teardown block: release runs before the unexecuted always step on failure", async () => {
+    const events: string[] = [];
+    const reg = recordingRegistry(events, {
+      work: { ok: false, reason: "boom" },
+    });
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig(
+      [shell("work"), shell("cleanup", { always: true })],
+      // keep_worktree false → teardown (always) steps run on escalation.
+      { escalation: { action: "pause", keep_worktree: false, notify: "stderr" } },
+    );
+    const deps = {
+      ...makeDeps({ registry: reg, markDone: port }),
+      releaseSessions: async () => {
+        events.push("release");
+      },
+    };
+
+    await runLoop(config, [makeTask("T-1")], deps);
+
+    expect(events).toEqual(["step:work", "release", "step:cleanup"]);
+  });
+
+  it("idempotent: two non-agent always steps trigger a single release", async () => {
+    const events: string[] = [];
+    const reg = recordingRegistry(events);
+    const { port } = recordingMarkDone();
+    const config = makeLoopConfig([
+      shell("work"),
+      shell("teardown-1", { always: true }),
+      shell("teardown-2", { always: true }),
+    ]);
+    const deps = {
+      ...makeDeps({ registry: reg, markDone: port }),
+      releaseSessions: async () => {
+        events.push("release");
+      },
+    };
+
+    await runLoop(config, [makeTask("T-1")], deps);
+
+    expect(events).toEqual([
+      "step:work",
+      "release",
+      "step:teardown-1",
+      "step:teardown-2",
+    ]);
+  });
+
+  it("agent always step does NOT trigger release; release failure never fails the task", async () => {
+    const events: string[] = [];
+    const reg = recordingRegistry(events);
+    const { port } = recordingMarkDone();
+    // Only an agent always step: no interpreter registered → skipped, and the
+    // agent guard means releaseSessions is never called.
+    const agentOnly = makeLoopConfig([shell("work"), agent("report")]);
+    (agentOnly.pipeline[1] as { always?: boolean }).always = true;
+    let releases = 0;
+    const depsAgent = {
+      ...makeDeps({ registry: reg, markDone: port }),
+      releaseSessions: async () => {
+        releases += 1;
+      },
+    };
+    await runLoop(agentOnly, [makeTask("T-1")], depsAgent);
+    expect(releases).toBe(0);
+
+    // A throwing releaseSessions is swallowed (best-effort) — task still completes.
+    const events2: string[] = [];
+    const reg2 = recordingRegistry(events2);
+    const { port: port2 } = recordingMarkDone();
+    const config2 = makeLoopConfig([shell("work"), shell("cleanup", { always: true })]);
+    const deps2 = {
+      ...makeDeps({ registry: reg2, markDone: port2 }),
+      releaseSessions: async () => {
+        throw new Error("release exploded");
+      },
+    };
+    const result2 = await runLoop(config2, [makeTask("T-2")], deps2);
+    expect(result2.completed).toEqual(["T-2"]);
+    expect(events2).toEqual(["step:work", "step:cleanup"]);
+  });
+});
+
 describe("stripDepsLine", () => {
   it("removes the Deps: line and preserves Files: and other lines", () => {
     const body = "Deps: T-001, T-002\nFiles: foo.ts\nSome extra context";

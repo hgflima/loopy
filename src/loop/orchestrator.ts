@@ -770,6 +770,16 @@ export interface OrchestratorDeps {
    * engine. Absent → no events emitted (motor byte-identical, AD-1).
    */
   readonly emit?: (event: StoreEvent) => void;
+  /**
+   * Close (`session/close`, best-effort) every ACP Session bound to a
+   * worktree's absolute path, across all agents (canonically
+   * `pool.releaseSessionsFor` from `acp/pool.ts`). Called by
+   * `runTaskPipeline` before the first non-agent `always` step so agents
+   * release worktree-bound resources — on Windows, a live session's child
+   * processes/watchers hold the worktree dir and `git worktree remove`
+   * fails with EPERM. Absent (non-agent spine / tests) → no release.
+   */
+  readonly releaseSessions?: (worktreeCwd: string) => Promise<void>;
 }
 
 /**
@@ -908,6 +918,28 @@ async function runTaskPipeline(
     return s;
   };
 
+  // Windows dir-lock: a live Session's agent-side resources (child processes,
+  // watchers) have cwd = worktree and block `git worktree remove` (EPERM).
+  // Entering a non-agent `always` step (teardown semantics) closes the Task's
+  // Sessions first so the agent frees the worktree. Idempotent + best-effort
+  // (AD-5): a release failure never fails the step. Agent steps marked
+  // `always` are excluded from the trigger — they still need their Session.
+  let sessionsReleased = false;
+  const releaseTaskSessions = async (): Promise<void> => {
+    if (sessionsReleased || deps.releaseSessions === undefined) return;
+    sessionsReleased = true;
+    try {
+      await deps.releaseSessions(resolve(deps.root, worktreePath));
+      deps.logger.debug(
+        `[orchestrator] sessões da task ${task.id} fechadas antes do teardown`,
+      );
+    } catch (err) {
+      deps.logger.debug(
+        `[orchestrator] releaseSessions falhou (best-effort): ${err}`,
+      );
+    }
+  };
+
   /** Execute a step: emit start/finish, measure duration, record a Sample. */
   const timedExecute = async (
     interpreter: { execute(ctx: StepContext): Promise<StepResult> },
@@ -1015,6 +1047,12 @@ async function runTaskPipeline(
       executedSteps.add(step.id);
       pc += 1;
       continue;
+    }
+
+    // Teardown prerequisite: entering a non-agent `always` step closes the
+    // Task's Sessions (Windows dir-lock — see releaseTaskSessions above).
+    if ((step.always ?? false) && step.type !== "agent") {
+      await releaseTaskSessions();
     }
 
     // Resolve agent binding and get the session for this step's agent.
@@ -1130,6 +1168,11 @@ async function runTaskPipeline(
 
       const interpreter = deps.registry.get(step.type);
       if (interpreter === undefined) continue;
+
+      // Same teardown prerequisite as the PC loop (idempotent).
+      if (step.type !== "agent") {
+        await releaseTaskSessions();
+      }
 
       try {
         const teardownBinding = resolveAgentBinding(step, config.resolvedAgents);

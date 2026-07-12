@@ -113,6 +113,12 @@ export interface SessionDeps {
 export interface LoopySession extends AgentSession {
   /** Stop routing this session's updates (teardown). Idempotent. */
   dispose(): void;
+  /**
+   * Close the session on the agent side (`session/close`) then {@link dispose}.
+   * Best-effort (AD-5): adapters without the `session.close` capability reject
+   * the request — the error is logged and swallowed, local teardown still runs.
+   */
+  close(): Promise<void>;
 }
 
 /** Zero-valued usage accumulator — reused on init and reset. */
@@ -357,6 +363,31 @@ class SessionWrapper implements LoopySession {
 
   dispose(): void {
     this.active.dispose();
+  }
+
+  /**
+   * Close the session on the agent side (`session/close`) then `dispose()`.
+   *
+   * Motivation: agents keep per-session resources (child processes, watchers)
+   * whose cwd is the session's worktree; on Windows those handles block
+   * `git worktree remove` (EPERM) until the agent frees them. Per the ACP spec,
+   * `session/close` cancels ongoing work and frees the session's resources.
+   *
+   * Best-effort (AD-5): adapters that do not advertise `session.close` reject
+   * the request — caught, logged, swallowed. `dispose()` always runs.
+   */
+  async close(): Promise<void> {
+    const params = { sessionId: this.sessionId };
+    this.send("session/close", params);
+    try {
+      await this.deps.ctx.request(AGENT_METHODS.session_close, params);
+      this.logAction("close");
+    } catch (err) {
+      this.deps.logger?.debug(
+        `[acp] session/close falhou/não suportado (${this.sessionId}): ${String(err)}`,
+      );
+    }
+    this.dispose();
   }
 
   /** Sum of per-turn usage since last drain; resets the accumulator. */

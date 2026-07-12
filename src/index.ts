@@ -477,6 +477,9 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
       sessionToTask.set(session.sessionId, { taskId: basename(cwd), agent: agentName });
       return session;
     },
+    // Windows dir-lock: close a task's sessions (all agents) before teardown
+    // steps so the agent releases worktree-bound resources (see orchestrator).
+    releaseSessions: (cwd) => pool.releaseSessionsFor(cwd),
     checkpoint: createCheckpointPort({ statePath, pipelineHash }),
     knownTaskIds,
     parentMutex,
