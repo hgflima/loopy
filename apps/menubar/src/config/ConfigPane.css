@@ -1,0 +1,97 @@
+/**
+ * ConfigPane — single-scroll editor for loopy.yml top-level settings.
+ *
+ * Follows DESIGN.md tokens only (no raw color literals).
+ * Sections are fieldset/cards; error banner at top; toolbar with Save.
+ */
+
+.config-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--sp-md);
+  gap: var(--sp-md);
+}
+
+.config-pane__empty {
+  color: var(--ink-tertiary);
+  font-size: 13px;
+}
+
+/* ---- Cross-field error banner (R7) ------------------------------------- */
+
+.config-pane__banner {
+  padding: var(--sp-sm) var(--sp-md);
+  border: 1px solid var(--state-failed);
+  border-radius: var(--r-sm);
+  background: var(--state-failed-subtle);
+  color: var(--state-failed-ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.config-pane__banner-msg {
+  margin: 0;
+}
+
+.config-pane__banner-msg + .config-pane__banner-msg {
+  margin-top: var(--sp-xs);
+}
+
+/* ---- Toolbar ----------------------------------------------------------- */
+
+.config-pane__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-md);
+}
+
+.config-pane__dirty {
+  font-size: 12px;
+  color: var(--ink-secondary);
+  font-style: italic;
+}
+
+/* ---- Section cards (fieldset) ------------------------------------------ */
+
+.config-pane__section {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-md);
+  margin: 0;
+}
+
+.config-pane__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0 var(--sp-xs);
+}
+
+.config-pane__error-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--state-failed);
+  color: var(--state-failed-on);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* ---- Reduced motion ---------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .config-pane {
+    scroll-behavior: auto;
+  }
+}
