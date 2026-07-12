@@ -204,7 +204,7 @@
 
 ## Fase 3 — Editor de step + estrutura do pipeline (T-010 → T-011 → T-012 ∥ T-013)
 
-- [ ] T-010: `pipeline-edit.ts` puro (add/remove/reorder + `migrateStepType` + revalida refs)
+- [x] T-010: `pipeline-edit.ts` puro (add/remove/reorder + `migrateStepType` + revalida refs)
     NOVO `apps/menubar/src/config/pipeline-edit.ts` — helpers puros sobre `config.pipeline`
     (tipos de `loopy/config`): `addStep(pipeline, type, atIndex?)` (id único gerado, campos-base +
     defaults do tipo: agent→prompt vazio inválido sinalizável; shell→run:[]; checks→run:""; approval
