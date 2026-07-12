@@ -1,0 +1,211 @@
+/**
+ * LaunchConfig — the idle-state "start a Run" surface of the main window.
+ *
+ * Neutral chrome, one accent (the loopy magenta) spent only on the primary
+ * action and focus (tokens.css / DESIGN.md §1–2). Reuses the shared Button
+ * vocabulary; the text fields and flag toggles are the app's first form
+ * primitives, built on tokens so light/dark track the system automatically.
+ * Machine values (paths, task IDs, flags) are set in the mono voice
+ * (The Machine-Voice Rule, DESIGN.md §3).
+ */
+
+/* Center the panel in the available height; `margin:auto` (not
+   justify-content) so a tall form still scrolls from the top instead of
+   clipping. */
+.launch {
+  min-height: 100%;
+  display: flex;
+  padding: var(--sp-xl) var(--sp-lg);
+}
+
+.launch__panel {
+  width: 100%;
+  max-width: 400px;
+  margin: auto;
+}
+
+/* ---- Header — teaches the empty state, quietly ------------------------- */
+
+.launch__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.launch__subtitle {
+  margin: var(--sp-xs) 0 var(--sp-xl);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-secondary);
+  max-width: 34ch;
+}
+
+.launch__subtitle code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--ink);
+}
+
+/* ---- Fields ------------------------------------------------------------ */
+
+.launch__field {
+  margin-bottom: var(--sp-lg);
+}
+
+.launch__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+}
+
+.launch__row {
+  display: flex;
+  gap: var(--sp-sm);
+}
+
+.launch__input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface-elevated);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: text;
+  -webkit-user-select: text;
+  transition:
+    border-color 0.12s ease-out,
+    box-shadow 0.12s ease-out;
+}
+
+.launch__input::placeholder {
+  color: var(--ink-tertiary);
+  /* placeholders are still content: keep the mono voice but never italic */
+  font-style: normal;
+}
+
+.launch__input:hover:not(:focus) {
+  border-color: var(--ink-tertiary);
+}
+
+/* Accent focus ring replaces the global outline for a tighter native feel. */
+.launch__input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+/* ---- Flag toggles ------------------------------------------------------ */
+
+.launch__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: var(--sp-lg) -8px var(--sp-lg);
+}
+
+/* A full-width row is the hit target (generous, ≥40px tall); the negative
+   margin on the group keeps the checkbox optically flush with the fields. */
+.launch__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background-color 0.12s ease-out;
+}
+
+.launch__toggle:hover {
+  background: var(--surface);
+}
+
+.launch__checkbox {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.launch__flag {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+
+.launch__hint {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+/* ---- Injected-flags footnote ------------------------------------------ */
+
+.launch__injected {
+  margin: 0 0 var(--sp-lg);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+}
+
+.launch__injected code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--ink);
+  margin-left: 2px;
+}
+
+/* ---- Inline error (local start failure) -------------------------------- */
+
+.launch__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: var(--sp-lg);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--state-failed-subtle);
+  color: var(--state-failed-ink);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.launch__error svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ---- Primary action ---------------------------------------------------- */
+
+.launch__submit {
+  width: 100%;
+  padding-block: 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* A full-width hero CTA shouldn't vanish when inactive: the shared
+   `.btn:disabled` goes transparent, which reads as an empty bar here. Keep a
+   muted, unmistakably-inactive fill instead — scoped to this instance so the
+   shared Button behaviour is untouched. Specificity (0,3,0) beats `.btn:disabled`. */
+.launch .launch__submit:disabled {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launch__input,
+  .launch__toggle {
+    transition: none;
+  }
+}
