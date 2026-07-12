@@ -300,7 +300,7 @@
     Files: apps/menubar/src/App.tsx, apps/menubar/src/App.test.tsx, apps/menubar/src/panes/LaunchConfig.tsx
     Scope: M
 
-- [ ] T-015: Empty-state (sem `loopy.yml`) + "Criar a partir do template" + dev:web completo (SC8/R11)
+- [x] T-015: Empty-state (sem `loopy.yml`) + "Criar a partir do template" + dev:web completo (SC8/R11)
     `apps/menubar/src/config/`: quando `read_project_files` retorna `loopy_yml: None` (dir sem yml),
     o board mostra um **empty-state** com botão **"Criar loopy.yml a partir do template"** que semeia
     o draft com `initialConfigTemplate` (R1) — **não** auto-grava; só o **Salvar** materializa o
