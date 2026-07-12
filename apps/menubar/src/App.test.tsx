@@ -1,5 +1,5 @@
 /**
- * Tests for App — resize divider presence and behavior (T-011).
+ * Tests for App — T-006 (idle board), T-011 (resize), T-007 (graph selection).
  *
  * Run: `npm test -w apps/menubar -- App`
  */
@@ -9,6 +9,53 @@ import { render, cleanup, fireEvent, act } from "@testing-library/react";
 import type { BridgeState } from "./state/store-bridge";
 import type { TaskState } from "loopy/tui/store";
 import { STORAGE_KEY, DEFAULT_FRACTION } from "./panes/resize-helpers";
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
+// Mock @tauri-apps/api/core (must be before App import)
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
+  invoke: vi.fn().mockRejectedValue(new Error("not in tauri")),
+}));
+
+// Mock useConfigDraft — returns a controllable draft state
+const mockLoad = vi.fn();
+let mockDraftState = {
+  draft: null as unknown,
+  errors: [] as unknown[],
+  dirty: false,
+  tasks: [] as unknown[],
+  load: mockLoad,
+  patch: vi.fn(),
+  save: vi.fn(),
+};
+
+vi.mock("./config/useConfigDraft", () => ({
+  useConfigDraft: () => mockDraftState,
+}));
+
+// Mock configToStore — returns a predictable store
+vi.mock("./config/configToStore", () => ({
+  configToStore: (_config: unknown, tasks: unknown[]) => ({
+    tasks: (tasks as Array<{ id: string; title: string; deps: string[] }>).map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.deps.length > 0 ? "blocked" : "pending",
+      steps: [],
+      stream: "",
+      deps: t.deps,
+    })),
+    edges: [],
+    acpLog: [],
+    activeAgents: new Set(),
+    pipeline: [
+      { id: "impl", type: "agent" },
+      { id: "checks", type: "checks" },
+    ],
+  }),
+}));
 
 // Mock heavy child components to avoid @xyflow/react zustand issues in jsdom.
 let viewSwitcherProps: Record<string, unknown> = {};
@@ -23,11 +70,6 @@ vi.mock("./panes/StreamPanel", () => ({
 }));
 vi.mock("./panes/Banner", () => ({
   Banner: () => null,
-}));
-vi.mock("./panes/LaunchConfig", () => ({
-  LaunchConfig: ({ onStart }: { onStart: (y: boolean) => void }) => (
-    <button data-testid="launch" onClick={() => onStart(false)} />
-  ),
 }));
 let cardDetailProps: Record<string, unknown> = {};
 vi.mock("./kanban/CardDetail", () => ({
@@ -73,11 +115,136 @@ function makeBridgeState(overrides?: {
   };
 }
 
+/** Set the mock draft to simulate a loaded config. */
+function setMockDraftLoaded(tasks: Array<{ id: string; title: string; deps: string[] }> = [
+  { id: "T-001", title: "Sample task", deps: [] },
+]) {
+  mockDraftState = {
+    ...mockDraftState,
+    draft: { pipeline: [{ id: "impl", type: "agent" }, { id: "checks", type: "checks" }] },
+    errors: [],
+    tasks,
+    load: mockLoad,
+  };
+}
+
+/** Reset mock draft to unloaded state. */
+function resetMockDraft() {
+  mockDraftState = {
+    draft: null,
+    errors: [],
+    dirty: false,
+    tasks: [],
+    load: mockLoad,
+    patch: vi.fn(),
+    save: vi.fn(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetMockDraft();
+});
+
+// ---------------------------------------------------------------------------
+// T-006 — idle shows board + header (dir picker + Iniciar)
+// ---------------------------------------------------------------------------
+
+describe("App — idle shows board (T-006)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    viewSwitcherProps = {};
+  });
+
+  it("renders the board (ViewSwitcher) in idle when draft is loaded", () => {
+    setMockDraftLoaded();
+    const { getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    // Board visible
+    expect(getByTestId("view-switcher")).toBeTruthy();
+    // No resize divider in idle (stream panel hidden)
+    expect(queryByTestId("resize-divider")).toBeNull();
+  });
+
+  it("shows dir picker and Iniciar button in idle header", () => {
+    setMockDraftLoaded();
+    const { getByTestId, getByLabelText } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(getByTestId("dir-picker")).toBeTruthy();
+    expect(getByLabelText("Diretório-alvo")).toBeTruthy();
+    expect(getByTestId("btn-iniciar")).toBeTruthy();
+  });
+
+  it("does NOT render dir picker when running", () => {
+    const { queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "running" })} onStartRun={vi.fn()} />,
+    );
+    expect(queryByTestId("dir-picker")).toBeNull();
+  });
+
+  it("does NOT start run automatically — Iniciar is a manual action", () => {
+    setMockDraftLoaded();
+    const onStartRun = vi.fn();
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} />,
+    );
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("clicking Iniciar calls onStartRun", () => {
+    setMockDraftLoaded();
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} />,
+    );
+    fireEvent.click(getByTestId("btn-iniciar"));
+    expect(onStartRun).toHaveBeenCalledWith(false);
+  });
+
+  it("shows empty state when draft is not loaded", () => {
+    resetMockDraft(); // draft = null
+    const { queryByTestId, container } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(queryByTestId("view-switcher")).toBeNull();
+    expect(container.querySelector(".app-idle-empty")).toBeTruthy();
+  });
+
+  it("feeds the board with tasks from configToStore", () => {
+    setMockDraftLoaded([
+      { id: "T-001", title: "First", deps: [] },
+      { id: "T-002", title: "Second", deps: ["T-001"] },
+    ]);
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    // ViewSwitcher receives the idle store
+    const storeArg = viewSwitcherProps.store as { tasks: Array<{ id: string }> };
+    expect(storeArg.tasks).toHaveLength(2);
+    expect(storeArg.tasks[0].id).toBe("T-001");
+    expect(storeArg.tasks[1].id).toBe("T-002");
+  });
+
+  it("changing dir triggers configDraft.load", () => {
+    setMockDraftLoaded();
+    const { getByLabelText } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    const input = getByLabelText("Diretório-alvo");
+    fireEvent.change(input, { target: { value: "/new/project" } });
+    expect(mockLoad).toHaveBeenCalledWith("/new/project");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-011 — resize divider (running state)
+// ---------------------------------------------------------------------------
 
 describe("App — resize divider (T-011)", () => {
   beforeEach(() => {
@@ -93,7 +260,8 @@ describe("App — resize divider (T-011)", () => {
     expect(divider.getAttribute("role")).toBe("separator");
   });
 
-  it("does not render the resize divider on idle (launch config shown)", () => {
+  it("does not render the resize divider on idle", () => {
+    setMockDraftLoaded();
     const { queryByTestId } = render(
       <App
         state={makeBridgeState({ runStatus: "idle" })}
