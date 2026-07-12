@@ -3,9 +3,11 @@
 mod config;
 #[cfg(target_os = "macos")]
 mod panel;
+mod project_fs;
 mod sidecar;
 
 use config::{load_launch_config, save_launch_config};
+use project_fs::{read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
 use tauri::{
     image::Image,
@@ -293,6 +295,8 @@ fn main() {
             update_tray_title,
             load_launch_config,
             save_launch_config,
+            read_project_files,
+            write_loopy_yml,
             log_error,
             quit_app,
         ])
