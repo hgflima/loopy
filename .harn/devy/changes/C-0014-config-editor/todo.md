@@ -180,7 +180,7 @@
     Files: apps/menubar/src/panes/ViewSwitcher.tsx, apps/menubar/src/panes/ViewSwitcher.test.tsx, apps/menubar/src/config/ConfigPane.tsx, apps/menubar/src/config/ConfigPane.css, apps/menubar/src/config/ConfigPane.test.tsx
     Scope: M
 
-- [ ] T-009: Config — **todas** as seções top-level restantes (SC4)
+- [x] T-009: Config — **todas** as seções top-level restantes (SC4)
     `ConfigPane.tsx`: adicionar os `fieldset` restantes reusando as primitivas de T-007, cada campo
     ligado ao schema real: `agents` (`RecordEditor` name→AgentDef: command[list], env[record],
     model/effort/display_name[text]); `acp` (command[list], default_agent[text], request_timeout_
