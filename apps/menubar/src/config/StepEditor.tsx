@@ -40,6 +40,8 @@ export interface StepEditorProps {
   stepIds: readonly string[];
   /** Close the drawer. */
   onClose: () => void;
+  /** Remove this step from the pipeline (idle only, T-012). */
+  onRemoveStep?: (stepId: string) => void;
 }
 
 const STEP_TYPES: readonly StepType[] = ["agent", "shell", "checks", "approval"];
@@ -53,6 +55,7 @@ export function StepEditor({
   configDraft,
   stepIds,
   onClose,
+  onRemoveStep,
 }: StepEditorProps) {
   const { draft, errors, patch } = configDraft;
   const step = draft?.pipeline[stepIndex] as StepConfig | undefined;
@@ -278,6 +281,23 @@ export function StepEditor({
             patchStep={patchStep}
             fieldError={fieldError}
           />
+        )}
+
+        {/* Remove step (T-012) */}
+        {onRemoveStep && (
+          <div className="step-editor__danger">
+            <button
+              type="button"
+              className="step-editor__remove-btn"
+              data-testid="remove-step-btn"
+              onClick={() => {
+                onRemoveStep(step.id);
+                onClose();
+              }}
+            >
+              Remove step
+            </button>
+          </div>
         )}
       </div>
     </aside>

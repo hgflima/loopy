@@ -170,3 +170,132 @@
     box-shadow: var(--shadow-sm), 0 0 0 1.5px var(--accent);
   }
 }
+
+/* ── T-012: drag handle, add column, remove, orphan refs ─────────────── */
+
+.kanban-column-drag {
+  cursor: grab;
+  user-select: none;
+  color: var(--ink-tertiary);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: var(--r-sm);
+}
+
+.kanban-column-drag:hover {
+  color: var(--ink-secondary);
+  background: var(--surface-elevated);
+}
+
+.kanban-column-drag:active {
+  cursor: grabbing;
+}
+
+.kanban-column--drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.kanban-column-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.kanban-column-remove:hover {
+  background: var(--state-failed-bg, #fee);
+  color: var(--state-failed-ink, #c00);
+}
+
+/* "+ add step" ghost column */
+.kanban-column--add {
+  flex: 0 0 auto;
+  min-width: 120px;
+  justify-content: center;
+  align-items: center;
+  border-style: dashed;
+  background: transparent;
+}
+
+.kanban-add-step {
+  padding: var(--sp-sm) var(--sp-md);
+  border: none;
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  font-size: 13px;
+  border-radius: var(--r-md);
+}
+
+.kanban-add-step:hover {
+  color: var(--ink);
+  background: var(--surface-elevated);
+}
+
+/* Orphan ref badge on column header */
+.kanban-orphan-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 16px;
+  font-size: 12px;
+  color: var(--state-failed-ink, #c00);
+}
+
+/* Orphan ref banner across the top of the board */
+.kanban-orphan-banner {
+  flex: 0 0 auto;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+  padding: var(--sp-xs) var(--sp-md);
+  background: var(--state-failed-bg, #fff0f0);
+  border: 1px solid var(--state-failed-ink, #c00);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  color: var(--state-failed-ink, #c00);
+}
+
+.kanban-orphan-banner__ref {
+  white-space: nowrap;
+}
+
+.kanban-orphan-banner__ref code {
+  font-family: inherit;
+  text-decoration: line-through;
+}
+
+/* Step editor remove button */
+.step-editor__danger {
+  margin-top: var(--sp-md);
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--border);
+}
+
+.step-editor__remove-btn {
+  width: 100%;
+  padding: var(--sp-xs) var(--sp-sm);
+  border: 1px solid var(--state-failed-ink, #c00);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--state-failed-ink, #c00);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.step-editor__remove-btn:hover {
+  background: var(--state-failed-bg, #fee);
+}

@@ -12,6 +12,12 @@ import { useStreamHeight } from "./panes/useStreamHeight";
 import { fractionToPercent } from "./panes/resize-helpers";
 import { useConfigDraft } from "./config/useConfigDraft";
 import { configToStore } from "./config/configToStore";
+import {
+  addStep as addStepPure,
+  removeStep as removeStepPure,
+  reorderStep as reorderStepPure,
+  orphanRefs as computeOrphanRefs,
+} from "./config/pipeline-edit";
 import { EmptyState } from "./config/EmptyState";
 import { Pill, Button, type Tone } from "./ui";
 // Brand wordmark (pink loop + text). Dark text for light surfaces, white text
@@ -201,6 +207,42 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   }, []);
   const handleCloseStepEditor = useCallback(() => setEditingStepId(null), []);
 
+  // Pipeline mutation handlers (idle only — T-012)
+  const handleAddStep = useCallback(() => {
+    if (!configDraft.draft) return;
+    const next = addStepPure(configDraft.draft.pipeline, "agent");
+    configDraft.patch("pipeline", next);
+    // Open editor on the new step
+    const newStep = next[next.length - 1];
+    if (newStep) setEditingStepId(newStep.id);
+  }, [configDraft]);
+
+  const handleRemoveStep = useCallback(
+    (stepId: string) => {
+      if (!configDraft.draft) return;
+      const next = removeStepPure(configDraft.draft.pipeline, stepId);
+      configDraft.patch("pipeline", next);
+      // Close editor if the removed step was being edited
+      if (editingStepId === stepId) setEditingStepId(null);
+    },
+    [configDraft, editingStepId],
+  );
+
+  const handleReorderStep = useCallback(
+    (from: number, to: number) => {
+      if (!configDraft.draft) return;
+      const next = reorderStepPure(configDraft.draft.pipeline, from, to);
+      configDraft.patch("pipeline", next);
+    },
+    [configDraft],
+  );
+
+  // Orphan refs (T-012) — recomputed on every draft change
+  const idleOrphanRefs = useMemo(
+    () => (configDraft.draft ? computeOrphanRefs(configDraft.draft.pipeline) : []),
+    [configDraft.draft],
+  );
+
   // Stream height — draggable divider, persisted in localStorage (T-011).
   const streamHeight = useStreamHeight();
 
@@ -227,6 +269,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
         configDraft={configDraft}
         stepIds={configDraft.draft.pipeline.map((s) => s.id)}
         onClose={handleCloseStepEditor}
+        onRemoveStep={handleRemoveStep}
       />
     ) : null;
 
@@ -377,6 +420,10 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 onSelectTask={handleSelectTask}
                 configDraft={isIdle ? configDraft : undefined}
                 onEditStep={isIdle ? handleEditStep : undefined}
+                onAddStep={isIdle ? handleAddStep : undefined}
+                onRemoveStep={isIdle ? handleRemoveStep : undefined}
+                onReorderStep={isIdle ? handleReorderStep : undefined}
+                orphanRefs={isIdle ? idleOrphanRefs : undefined}
               />
               {isIdle && configDraft.tasks.length === 0 && (
                 <p className="t-label u-muted app-todo-hint" data-testid="todo-hint">
