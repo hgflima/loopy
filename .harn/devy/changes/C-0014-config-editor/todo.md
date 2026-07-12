@@ -140,7 +140,7 @@
 
 ## Fase 2 — Aba Config: editar → validar → salvar (T-007 → T-008 → T-009)
 
-- [ ] T-007: Primitivas `fields/` data-driven (Text/Number/Select[enum]/Toggle/Record/CommandList)
+- [x] T-007: Primitivas `fields/` data-driven (Text/Number/Select[enum]/Toggle/Record/CommandList)
     NOVO `apps/menubar/src/config/fields/` com primitivas puras + `.css` (padrão de
     `LaunchConfig.css` `.launch__field/label/input`, tokens, DESIGN.md): `TextField` (label+input+
     error+hint; valores de yml em `--font-mono`/`t-data`, labels sans/`t-label`), `NumberField`
