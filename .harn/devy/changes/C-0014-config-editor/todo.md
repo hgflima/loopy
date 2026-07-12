@@ -245,7 +245,7 @@
     Files: apps/menubar/src/kanban/KanbanBoard.tsx, apps/menubar/src/config/StepEditor.tsx, apps/menubar/src/config/StepEditor.css, apps/menubar/src/config/StepEditor.test.tsx
     Scope: M
 
-- [ ] T-012: Kanban idle — add step / drag-reorder / remove coluna (SC7)
+- [x] T-012: Kanban idle — add step / drag-reorder / remove coluna (SC7)
     `apps/menubar/src/kanban/KanbanBoard.tsx` (só idle): coluna final **"+ add step"** (usa
     `addStep` de T-010 → abre o `StepEditor` no novo step); **handle de arrastar** no header p/
     reordenar colunas (`reorderStep`); ação **remover** no `⋯`/StepEditor (`removeStep`). Após
