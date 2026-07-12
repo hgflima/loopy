@@ -13,6 +13,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
+import { renameAgent, renameChecksList } from "./rename";
 import {
   TextField,
   NumberField,
@@ -89,14 +90,19 @@ interface AgentEntryProps {
   agent: { command: string[]; env?: Record<string, string>; model?: string; effort?: string; display_name?: string };
   onPatch: (subpath: string, value: unknown) => void;
   onRemove: () => void;
+  onRename: (newName: string) => void;
   fieldError: (path: string) => string | undefined;
 }
 
-function AgentEntry({ name, agent, onPatch, onRemove, fieldError }: AgentEntryProps) {
+function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError }: AgentEntryProps) {
   return (
     <div className="config-pane__agent-entry" data-testid={`agent-entry-${name}`}>
       <div className="config-pane__entry-header">
-        <strong>{name}</strong>
+        <TextField
+          label="name"
+          value={name}
+          onChange={(v) => { if (v && v !== name) onRename(v); }}
+        />
         <button type="button" className="field__icon-btn field__icon-btn--danger" onClick={onRemove} aria-label={`Remove agent ${name}`}>×</button>
       </div>
       <CommandListEditor
@@ -147,9 +153,10 @@ interface CheckGroupProps {
   commands: { name: string; run: string }[];
   onPatch: (value: { name: string; run: string }[]) => void;
   onRemove: () => void;
+  onRename: (newName: string) => void;
 }
 
-function CheckGroup({ groupName, commands, onPatch, onRemove }: CheckGroupProps) {
+function CheckGroup({ groupName, commands, onPatch, onRemove, onRename }: CheckGroupProps) {
   const items = commands.length > 0 ? commands : [{ name: "", run: "" }];
 
   function updateEntry(index: number, field: "name" | "run", val: string) {
@@ -169,7 +176,11 @@ function CheckGroup({ groupName, commands, onPatch, onRemove }: CheckGroupProps)
   return (
     <div className="config-pane__check-group" data-testid={`check-group-${groupName}`}>
       <div className="config-pane__entry-header">
-        <strong>{groupName}</strong>
+        <TextField
+          label="name"
+          value={groupName}
+          onChange={(v) => { if (v && v !== groupName) onRename(v); }}
+        />
         <button type="button" className="field__icon-btn field__icon-btn--danger" onClick={onRemove} aria-label={`Remove check group ${groupName}`}>×</button>
       </div>
       {items.map((cmd, i) => (
@@ -352,6 +363,14 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
             agent={agents[name]!}
             onPatch={(subpath, value) => patch(`agents.${name}.${subpath}`, value)}
             onRemove={() => removeAgent(name)}
+            onRename={(newName) => {
+              const result = renameAgent(draft, name, newName);
+              if (result.ok) {
+                patch("agents", result.config.agents);
+                patch("acp", result.config.acp);
+                patch("pipeline", result.config.pipeline);
+              }
+            }}
             fieldError={(sub) => fieldError(`agents.${name}.${sub}`)}
           />
         ))}
@@ -487,6 +506,13 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
             commands={checks[name]!}
             onPatch={(value) => patch(`checks.${name}`, value)}
             onRemove={() => removeCheckGroup(name)}
+            onRename={(newName) => {
+              const result = renameChecksList(draft, name, newName);
+              if (result.ok) {
+                patch("checks", result.config.checks);
+                patch("pipeline", result.config.pipeline);
+              }
+            }}
           />
         ))}
         <div className="config-pane__add-row">

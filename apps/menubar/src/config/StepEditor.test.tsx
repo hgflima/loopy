@@ -41,9 +41,11 @@ function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
     errors: [] as ConfigError[],
     dirty: false,
     tasks: [],
+    hasConfig: true,
     load: vi.fn(),
     patch: vi.fn(),
     save: vi.fn().mockResolvedValue(true),
+    seedFromTemplate: vi.fn(),
     ...overrides,
   };
 }
@@ -228,7 +230,7 @@ describe("StepEditor — editing calls patch (T-011)", () => {
     expect(draft.patch).toHaveBeenCalledWith("pipeline.0.prompt", "New prompt");
   });
 
-  it("editing id calls patch with correct path", () => {
+  it("editing id calls patch with cascaded pipeline (renameStepId)", () => {
     const draft = makeDraft();
     const { getByLabelText } = render(
       <StepEditor
@@ -240,7 +242,11 @@ describe("StepEditor — editing calls patch (T-011)", () => {
     );
 
     fireEvent.change(getByLabelText("id"), { target: { value: "new-id" } });
-    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.id", "new-id");
+    // Cascade renames the step + all goto refs → patches entire pipeline
+    expect(draft.patch).toHaveBeenCalledWith(
+      "pipeline",
+      expect.arrayContaining([expect.objectContaining({ id: "new-id" })]),
+    );
   });
 });
 

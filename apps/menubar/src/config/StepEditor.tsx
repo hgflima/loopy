@@ -17,6 +17,7 @@ import type { StepConfig, StepType, AgentStep, ShellStep, ChecksStep, ApprovalSt
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
 import { migrateStepType } from "./pipeline-edit";
+import { renameStepId } from "./rename";
 import {
   TextField,
   NumberField,
@@ -194,7 +195,16 @@ export function StepEditor({
           <TextField
             label="id"
             value={step.id}
-            onChange={(v) => patchStep("id", v)}
+            onChange={(v) => {
+              if (!draft || v === step.id) return;
+              const result = renameStepId(draft, step.id, v);
+              if (result.ok) {
+                patch("pipeline", result.config.pipeline);
+              } else {
+                // Fall back to plain patch so zod shows the error inline
+                patchStep("id", v);
+              }
+            }}
             error={fieldError("id")}
           />
           <ToggleField
