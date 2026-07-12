@@ -214,14 +214,16 @@ describe("App — idle shows board (T-006)", () => {
     expect(onStartRun).not.toHaveBeenCalled();
   });
 
-  it("clicking Iniciar calls onStartRun", () => {
+  it("clicking Iniciar calls onStartRun with default flags", async () => {
     setMockDraftLoaded();
     const onStartRun = vi.fn();
     const { getByTestId } = render(
       <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} />,
     );
-    fireEvent.click(getByTestId("btn-iniciar"));
-    expect(onStartRun).toHaveBeenCalledWith(false);
+    await act(async () => {
+      fireEvent.click(getByTestId("btn-iniciar"));
+    });
+    expect(onStartRun).toHaveBeenCalledWith({ yes: false, taskId: "", verbose: false });
   });
 
   it("shows empty state when draft is not loaded", () => {
@@ -443,5 +445,150 @@ describe("App — empty-state (T-015)", () => {
       <App state={makeBridgeState({ runStatus: "running" })} onStartRun={vi.fn()} />,
     );
     expect(queryByTestId("empty-state")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-014 — Launch popover, auto-save, dirty guard
+// ---------------------------------------------------------------------------
+
+describe("App — launch popover + auto-save + dirty guard (T-014)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    viewSwitcherProps = {};
+  });
+
+  it("shows the launch flags popover toggle button", () => {
+    setMockDraftLoaded();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(getByTestId("btn-launch-flags")).toBeTruthy();
+  });
+
+  it("clicking toggle opens the launch popover with flag controls", () => {
+    setMockDraftLoaded();
+    const { getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    // Popover not visible initially
+    expect(queryByTestId("launch-popover")).toBeNull();
+    // Open it
+    fireEvent.click(getByTestId("btn-launch-flags"));
+    expect(getByTestId("launch-popover")).toBeTruthy();
+    expect(getByTestId("flag-yes")).toBeTruthy();
+    expect(getByTestId("flag-verbose")).toBeTruthy();
+    expect(getByTestId("flag-task-id")).toBeTruthy();
+  });
+
+  it("flags from popover reach onStartRun", async () => {
+    setMockDraftLoaded();
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} />,
+    );
+    // Open popover and set flags
+    fireEvent.click(getByTestId("btn-launch-flags"));
+    fireEvent.click(getByTestId("flag-yes"));
+    fireEvent.change(getByTestId("flag-task-id"), { target: { value: "T-003" } });
+    // Click Iniciar
+    await act(async () => {
+      fireEvent.click(getByTestId("btn-iniciar"));
+    });
+    expect(onStartRun).toHaveBeenCalledWith({ yes: true, taskId: "T-003", verbose: false });
+  });
+
+  it("auto-saves dirty draft before calling onStartRun", async () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const mockSave = vi.fn().mockResolvedValue(true);
+    mockDraftState.save = mockSave;
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} />,
+    );
+    await act(async () => {
+      fireEvent.click(getByTestId("btn-iniciar"));
+    });
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(onStartRun).toHaveBeenCalled();
+  });
+
+  it("does NOT call onStartRun if save fails (fail-closed)", async () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const mockSave = vi.fn().mockResolvedValue(false);
+    mockDraftState.save = mockSave;
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} />,
+    );
+    await act(async () => {
+      fireEvent.click(getByTestId("btn-iniciar"));
+    });
+    expect(mockSave).toHaveBeenCalled();
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("Iniciar is disabled when errors exist (fail-closed)", () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, errors: [{ path: "acp", message: "bad" }] };
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect((getByTestId("btn-iniciar") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("changing dir with dirty draft shows confirm dialog", () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const { getByLabelText, getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    expect(queryByTestId("dirty-confirm")).toBeNull();
+    fireEvent.change(getByLabelText("Diretório-alvo"), { target: { value: "/other" } });
+    expect(getByTestId("dirty-confirm")).toBeTruthy();
+  });
+
+  it("dirty confirm — Cancel keeps current dir", () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const { getByLabelText, getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    fireEvent.change(getByLabelText("Diretório-alvo"), { target: { value: "/other" } });
+    fireEvent.click(getByTestId("dirty-cancel"));
+    expect(queryByTestId("dirty-confirm")).toBeNull();
+    // Dir unchanged (still /sample from dev:web mount)
+    expect(mockLoad).not.toHaveBeenCalledWith("/other");
+  });
+
+  it("dirty confirm — Discard proceeds to new dir without saving", () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const { getByLabelText, getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    fireEvent.change(getByLabelText("Diretório-alvo"), { target: { value: "/other" } });
+    fireEvent.click(getByTestId("dirty-discard"));
+    expect(queryByTestId("dirty-confirm")).toBeNull();
+    expect(mockLoad).toHaveBeenCalledWith("/other");
+  });
+
+  it("dirty confirm — Save saves then proceeds to new dir", async () => {
+    setMockDraftLoaded();
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const mockSave = vi.fn().mockResolvedValue(true);
+    mockDraftState.save = mockSave;
+    const { getByLabelText, getByTestId, queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    fireEvent.change(getByLabelText("Diretório-alvo"), { target: { value: "/other" } });
+    await act(async () => {
+      fireEvent.click(getByTestId("dirty-save"));
+    });
+    expect(mockSave).toHaveBeenCalled();
+    expect(queryByTestId("dirty-confirm")).toBeNull();
+    expect(mockLoad).toHaveBeenCalledWith("/other");
   });
 });

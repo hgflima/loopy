@@ -31,9 +31,11 @@ function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
     errors: [] as ConfigError[],
     dirty: false,
     tasks: [],
+    hasConfig: true,
     load: vi.fn(),
     patch: vi.fn(),
     save: vi.fn().mockResolvedValue(true),
+    seedFromTemplate: vi.fn(),
     ...overrides,
   };
 }
