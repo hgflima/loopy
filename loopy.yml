@@ -14,9 +14,9 @@ acp:
     on_request: allow
 
 inputs:
-  spec: ".harn/devy/changes/C-0013-deps-graph-reactflow/spec.md"
-  plan: ".harn/devy/changes/C-0013-deps-graph-reactflow/plan.md"
-  todo: ".harn/devy/changes/C-0013-deps-graph-reactflow/todo.md"
+  spec: ".harn/devy/changes/C-0014-config-editor/spec.md"
+  plan: ".harn/devy/changes/C-0014-config-editor/plan.md"
+  todo: ".harn/devy/changes/C-0014-config-editor/todo.md"
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
