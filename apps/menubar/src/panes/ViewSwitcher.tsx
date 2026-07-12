@@ -28,9 +28,11 @@ interface ViewSwitcherProps {
   selectedTaskId?: string | null;
   onSelectTask?: (taskId: string) => void;
   configDraft?: ConfigDraftAPI;
+  /** Open step editor for a given step id (idle only). */
+  onEditStep?: (stepId: string) => void;
 }
 
-export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask, configDraft }: ViewSwitcherProps) {
+export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask, configDraft, onEditStep }: ViewSwitcherProps) {
   const [view, setView] = useState<ViewId>("kanban");
 
   return (
@@ -49,7 +51,7 @@ export function ViewSwitcher({ store, tick, selectedTaskId, onSelectTask, config
         className="view-switcher__pane"
         style={{ display: view === "kanban" ? "flex" : "none" }}
       >
-        <KanbanBoard store={store} selectedTaskId={selectedTaskId} onSelectTask={onSelectTask} />
+        <KanbanBoard store={store} selectedTaskId={selectedTaskId} onSelectTask={onSelectTask} onEditStep={onEditStep} />
       </div>
       <div
         className="view-switcher__pane"
