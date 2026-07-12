@@ -77,7 +77,7 @@
     Files: apps/menubar/src/config/configToStore.ts, apps/menubar/src/config/configToStore.test.ts
     Scope: S
 
-- [ ] T-004: Comandos Rust `read_project_files` / `write_loopy_yml` (+ backup/retenção)
+- [x] T-004: Comandos Rust `read_project_files` / `write_loopy_yml` (+ backup/retenção)
     NOVO `apps/menubar/src-tauri/src/project_fs.rs` espelhando o padrão de `config.rs` (`std::fs`,
     `Result<T, String>` + `map_err(|e| format!(...))`), mas resolvendo o path a partir do `dir` do
     projeto (arg do front), NÃO de `app_config_dir()`. Comandos: `#[tauri::command] pub fn
