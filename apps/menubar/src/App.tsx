@@ -7,6 +7,7 @@ import { StreamPanel } from "./panes/StreamPanel";
 import { Banner } from "./panes/Banner";
 import { headApproval } from "./panes/ApprovalPrompt";
 import { CardDetail } from "./kanban/CardDetail";
+import { StepEditor } from "./config/StepEditor";
 import { useStreamHeight } from "./panes/useStreamHeight";
 import { fractionToPercent } from "./panes/resize-helpers";
 import { useConfigDraft } from "./config/useConfigDraft";
@@ -193,6 +194,13 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   }, []);
   const handleCloseDrawer = useCallback(() => setSelectedTaskId(null), []);
 
+  // Step editor state (idle only — T-011)
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const handleEditStep = useCallback((stepId: string) => {
+    setEditingStepId((prev) => (prev === stepId ? null : stepId));
+  }, []);
+  const handleCloseStepEditor = useCallback(() => setEditingStepId(null), []);
+
   // Stream height — draggable divider, persisted in localStorage (T-011).
   const streamHeight = useStreamHeight();
 
@@ -206,6 +214,21 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
 
   const showEmptyState = isIdle && configDraft.hasConfig === false;
   const showBoard = !isIdle || idleStore != null;
+
+  // Step editor drawer (idle only)
+  const editingStepIndex =
+    isIdle && editingStepId && configDraft.draft
+      ? configDraft.draft.pipeline.findIndex((s) => s.id === editingStepId)
+      : -1;
+  const stepEditorElement =
+    editingStepIndex >= 0 && configDraft.draft ? (
+      <StepEditor
+        stepIndex={editingStepIndex}
+        configDraft={configDraft}
+        stepIds={configDraft.draft.pipeline.map((s) => s.id)}
+        onClose={handleCloseStepEditor}
+      />
+    ) : null;
 
   return (
     <main className="app-shell">
@@ -353,6 +376,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 selectedTaskId={selectedTaskId}
                 onSelectTask={handleSelectTask}
                 configDraft={isIdle ? configDraft : undefined}
+                onEditStep={isIdle ? handleEditStep : undefined}
               />
               {isIdle && configDraft.tasks.length === 0 && (
                 <p className="t-label u-muted app-todo-hint" data-testid="todo-hint">
@@ -377,6 +401,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
               </>
             )}
           </div>
+          {stepEditorElement}
           {effectiveTask && (
             <CardDetail
               taskId={effectiveTask.id}

@@ -22,9 +22,11 @@ interface KanbanBoardProps {
   store: StoreState;
   selectedTaskId?: string | null;
   onSelectTask?: (taskId: string) => void;
+  /** Open the step editor for a column's step (idle only). */
+  onEditStep?: (stepId: string) => void;
 }
 
-export function KanbanBoard({ store, selectedTaskId, onSelectTask }: KanbanBoardProps) {
+export function KanbanBoard({ store, selectedTaskId, onSelectTask, onEditStep }: KanbanBoardProps) {
   const prevColumnsRef = useRef<KanbanColumn[] | undefined>(undefined);
   const [gotoIds, setGotoIds] = useState<ReadonlySet<string>>(new Set());
 
@@ -49,6 +51,16 @@ export function KanbanBoard({ store, selectedTaskId, onSelectTask }: KanbanBoard
             <span className="kanban-column-name">{col.title}</span>
             {col.cards.length > 0 && (
               <span className="kanban-column-count">{col.cards.length}</span>
+            )}
+            {onEditStep && (
+              <button
+                className="kanban-column-edit"
+                type="button"
+                aria-label={`Edit step ${col.id}`}
+                onClick={() => onEditStep(col.id)}
+              >
+                ⋯
+              </button>
             )}
           </header>
           <div className="kanban-column-cards">

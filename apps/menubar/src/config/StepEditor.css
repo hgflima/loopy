@@ -1,0 +1,144 @@
+/* StepEditor — drawer shell for editing a pipeline step (T-011, SC2/SC12).
+ *
+ * Replicates CardDetail pattern: aside with --drawer-w, scrollable body,
+ * header with id+type+close. Zero hardcoded color — design tokens only.
+ */
+
+.step-editor {
+  width: var(--drawer-w);
+  min-width: var(--drawer-w);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+
+.step-editor__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm) var(--sp-md);
+  border-bottom: 1px solid var(--border);
+}
+
+.step-editor__id {
+  flex-shrink: 0;
+  color: var(--ink);
+}
+
+.step-editor__type {
+  flex-shrink: 0;
+  color: var(--ink-secondary);
+}
+
+.step-editor__errors {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--sp-xs);
+  border-radius: var(--r-pill);
+  background: var(--state-failed-subtle);
+  color: var(--state-failed-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.step-editor__spacer {
+  flex: 1;
+}
+
+.step-editor__close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.step-editor__close:hover {
+  background: var(--surface-elevated);
+  color: var(--ink);
+}
+
+.step-editor__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-md);
+}
+
+.step-editor__body > * + * {
+  margin-top: var(--sp-md);
+}
+
+.step-editor__section {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.step-editor__section + .step-editor__section {
+  margin-top: var(--sp-md);
+  padding-top: var(--sp-md);
+  border-top: 1px solid var(--border);
+}
+
+.step-editor__legend {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-tertiary);
+  margin-bottom: var(--sp-sm);
+}
+
+/* Confirm dialog for type migration */
+.step-editor__confirm {
+  padding: var(--sp-md);
+  border-radius: var(--r-md);
+  background: var(--state-failed-subtle);
+  border: 1px solid var(--state-failed);
+}
+
+.step-editor__confirm-msg {
+  margin: 0 0 var(--sp-sm);
+  font-size: 13px;
+  color: var(--state-failed-ink);
+}
+
+.step-editor__confirm-actions {
+  display: flex;
+  gap: var(--sp-sm);
+}
+
+.step-editor__confirm-btn {
+  padding: var(--sp-xs) var(--sp-sm);
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.step-editor__confirm-btn--cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--ink-secondary);
+}
+
+.step-editor__confirm-btn--confirm {
+  background: var(--state-failed);
+  border: 1px solid var(--state-failed);
+  color: var(--surface);
+}

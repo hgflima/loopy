@@ -46,6 +46,28 @@
   letter-spacing: 0;
 }
 
+.kanban-column-edit {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.kanban-column-edit:hover {
+  background: var(--surface-elevated);
+  color: var(--ink);
+}
+
 .kanban-column-cards {
   display: flex;
   flex-direction: column;
