@@ -35,7 +35,7 @@
     Files: apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/graph/DepsFlow.css, apps/menubar/src/graph/DepsFlow.test.tsx
     Scope: S
 
-- [ ] T-002: Anel de estado em TODO card, dirigido pelo tone do `TASK_STATUS_META` (D5/D7/D9)
+- [x] T-002: Anel de estado em TODO card, dirigido pelo tone do `TASK_STATUS_META` (D5/D7/D9)
     `apps/menubar/src/graph/TaskNode.tsx`: derivar o *tone* do status via `TASK_STATUS_META` (já
     importado — é ele que pinta o dot; **fonte única** de status→cor, não criar um segundo mapa) e
     aplicar a classe `deps-node--tone-${meta.tone}` (`neutral | running | done | blocked | failed`).
