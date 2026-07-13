@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
+  PanOnScrollMode,
   Background,
   BackgroundVariant,
   Controls,
@@ -30,6 +31,7 @@ import TaskNode, { type TaskNodeType } from "./TaskNode";
 import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H } from "./scale";
 import { usePrefersReducedMotion } from "../ui";
 import { failedStepId } from "../kanban/failed-step";
+import { useShiftWheelPan } from "./useShiftWheelPan";
 
 /** Stable reference — must live outside the component to avoid re-registration. */
 const nodeTypes = { task: TaskNode } as const;
@@ -52,6 +54,8 @@ export interface DepsFlowProps {
 
 export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectTask }: DepsFlowProps) {
   const reducedMotion = usePrefersReducedMotion();
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useShiftWheelPan(wrapperRef);
   const instanceRef = useRef<ReactFlowInstance<Node<TaskNodeType["data"]>> | null>(null);
   const { fitView } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
@@ -181,29 +185,38 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
     }
   }, [active, nodesInitialized, fitView]);
 
+  // panActivationKeyCode and zoomActivationKeyCode are intentionally omitted —
+  // their RF defaults ("Space" / "Meta" on macOS) provide space+drag panning
+  // and cmd+wheel zoom. Hardcoding would break non-macOS platforms for no
+  // gain (D8).
   return (
-    <ReactFlow
-      nodes={rfNodes}
-      edges={rfEdges}
-      onNodesChange={handleNodesChange}
-      nodeTypes={nodeTypes}
-      proOptions={{ hideAttribution: true }}
-      onNodeClick={handleNodeClick}
-      nodesDraggable={false}
-      nodesConnectable={false}
-      nodesFocusable={false}
-      elementsSelectable={true}
-      panOnDrag={false}
-      zoomOnScroll={false}
-      zoomOnPinch={false}
-      zoomOnDoubleClick={false}
-      preventScrolling={false}
-      onInit={(instance) => {
-        instanceRef.current = instance;
-      }}
-    >
-      <Background variant={BackgroundVariant.Dots} gap={18} color="var(--border)" />
-      <Controls />
-    </ReactFlow>
+    <div className="deps-flow" ref={wrapperRef}>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={handleNodesChange}
+        nodeTypes={nodeTypes}
+        proOptions={{ hideAttribution: true }}
+        onNodeClick={handleNodeClick}
+        nodesDraggable={false}
+        nodesConnectable={false}
+        nodesFocusable={false}
+        elementsSelectable={true}
+        panOnDrag={false}
+        panOnScroll
+        panOnScrollMode={PanOnScrollMode.Free}
+        zoomOnScroll={false}
+        zoomOnPinch
+        zoomOnDoubleClick={false}
+        preventScrolling
+        minZoom={0.25}
+        onInit={(instance) => {
+          instanceRef.current = instance;
+        }}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={18} color="var(--border)" />
+        <Controls />
+      </ReactFlow>
+    </div>
   );
 }
