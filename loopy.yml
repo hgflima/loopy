@@ -1,164 +1,227 @@
 version: "1"
 name: C-0011-agent-context-and-polish
-
 workspace:
-  root: "."
-  parent_branch: "main"
-  worktrees_dir: ".worktrees"
-
+  root: .
+  parent_branch: main
+  worktrees_dir: .worktrees
+agents:
+  codex:
+    command:
+      - npx
+      - -y
+      - "@agentclientprotocol/codex-acp"
+    model: gpt-5.6-terra
+    effort: xhigh
+    display_name: codex
+  claude:
+    command:
+      - npx
+      - -y
+      - "@agentclientprotocol/claude-agent-acp"
+    model: opus[1m]
+    effort: xhigh
+    display_name: claude
 acp:
-  command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  default_agent: claude
   request_timeout_seconds: 1800
   permissions:
     default_mode: acceptEdits
     on_request: allow
-
 inputs:
-  spec: ".harn/devy/changes/C-0014-config-editor/spec.md"
-  plan: ".harn/devy/changes/C-0014-config-editor/plan.md"
-  todo: ".harn/devy/changes/C-0014-config-editor/todo.md"
+  spec: .harn/devy/changes/C-0014-config-editor/spec.md
+  plan: .harn/devy/changes/C-0014-config-editor/plan.md
+  todo: .harn/devy/changes/C-0014-config-editor/todo.md
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
-    task_id_pattern: "T-\\d+"
+    task_id_pattern: T-\d+
+    deps_pattern: "Deps:"
     body: indented
     mark_done_on_success: true
-    deps_pattern: "Deps:"
-
 checks:
   ci:
-    - { name: typecheck, run: "npm run typecheck" }        # motor + app (o script encadeia tsc -p apps/menubar)
-    - { name: lint, run: "npm run lint" }                  # eslint . cobre o app (sem script lint próprio)
-    - { name: test-engine, run: "npm test" }               # vitest da raiz (src/)
-    - { name: test-app, run: "npm test -w apps/menubar" }  # vitest do app menubar
-    - { name: build, run: "npm run build" }                # tsup: valida exports/tsup/barrels (T-001/T-002)
-
+    - name: typecheck
+      run: npm run typecheck
+    - name: lint
+      run: npm run lint
+    - name: test-engine
+      run: npm test
+    - name: test-app
+      run: npm test -w apps/menubar
+    - name: build
+      run: npm run build
 pipeline:
   - id: create-worktree
+    parallel_safe: false
     type: shell
     run:
-      - git worktree add -b "${task.branch}" "${worktree.path}" "${workspace.parent_branch}"
-
+      - git worktree add -b "${task.branch}" "${worktree.path}"
+        "${workspace.parent_branch}"
   - id: install-deps
-    type: shell
     parallel_safe: true
+    type: shell
     run:
       - npm ci --prefix "${worktree.path}"
-
   - id: implement
+    parallel_safe: false
     type: agent
-    clear_context: true
-    mode: acceptEdits
-    prompt: |
-      /devy:build Implemente a task ${task.id} — ${task.title} — conforme ${inputs.spec} e ${inputs.plan}.
+    prompt: >
+      /devy:build Implemente a task ${task.id} — ${task.title} — conforme
+      ${inputs.spec} e ${inputs.plan}.
+
       ${task.body}
-      ${checks.report}
-      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
-    retry_prompt: |
-      A tentativa anterior está no worktree, mas os checks falharam. Leia o código e corrija.
-      ${checks.report}
-    verify: { run: ci, max_attempts: 3 }
 
-  - id: simplify
-    type: agent
-    clear_context: true
+      ${checks.report}
+
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working
+      tree; o pipeline faz o commit.
+    retry_prompt: >
+      A tentativa anterior está no worktree, mas os checks falharam. Leia o
+      código e corrija.
+
+      ${checks.report}
     mode: acceptEdits
-    prompt: |
-      /devy:code-simplify Simplifique o que está no worktree sem alterar comportamento: remova
-      duplicação, clareie nomes, reduza complexidade. Não adicione dependências.
-      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
-      Diff atual:
-      ${worktree.diff}
-    verify: { run: ci, max_attempts: 3 }
-
-  - id: review
-    type: agent
     clear_context: true
-    mode: default
-    prompt: |
-      /devy:review Reveja a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}
-      **CRITICAL:** NUNCA EDITE NADA!
-      Diff sob revisão:
-      ${worktree.diff}
-      Responda na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
-    expect: "REVIEW: PASS"
-    on_fail: { goto: implement }
+    verify:
+      run: ci
+      max_attempts: 3
+  - id: simplify
+    parallel_safe: false
+    type: agent
+    prompt: >
+      /devy:code-simplify Simplifique o que está no worktree sem alterar
+      comportamento: remova
 
+      duplicação, clareie nomes, reduza complexidade. Não adicione dependências.
+
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working
+      tree; o pipeline faz o commit.
+
+      Diff atual:
+
+      ${worktree.diff}
+    mode: acceptEdits
+    clear_context: true
+    verify:
+      run: ci
+      max_attempts: 3
+  - id: review
+    parallel_safe: false
+    type: agent
+    prompt: >
+      /devy:review Reveja a implementação da task ${task.id} contra
+      ${inputs.spec} e ${inputs.plan}
+
+      **CRITICAL:** NUNCA EDITE NADA!
+
+      Diff sob revisão:
+
+      ${worktree.diff}
+
+      Responda na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL:
+      <motivo>".
+    mode: default
+    clear_context: true
+    expect: "REVIEW: PASS"
+    on_fail:
+      goto: implement
   - id: commit
+    parallel_safe: false
     type: shell
     run:
-      - 'git -C "${worktree.path}" add -A -- . :!.claude'
-      - 'git -C "${worktree.path}" commit --allow-empty -m "feat(${task.id}): ${task.title}"'
-
+      - git -C "${worktree.path}" add -A -- . :!.claude
+      - 'git -C "${worktree.path}" commit --allow-empty -m "feat(${task.id}):
+        ${task.title}"'
   - id: reconcile-parent
-    type: shell
+    on_success:
+      goto: merge
     parallel_safe: true
+    type: shell
     run:
       - git -C "${worktree.path}" merge --no-edit "${workspace.parent_branch}"
-    on_success: { goto: merge }
-    on_fail: { goto: resolve-merge }
-
+    on_fail:
+      goto: resolve-merge
   - id: resolve-merge
+    parallel_safe: false
     type: agent
-    clear_context: true
-    mode: acceptEdits
-    prompt: |
-      Ao integrar ${workspace.parent_branch} no worktree desta task houve CONFLITO de merge
+    prompt: >
+      Ao integrar ${workspace.parent_branch} no worktree desta task houve
+      CONFLITO de merge
+
       (merge em progresso, arquivos com markers `<<<<<<<`/`=======`/`>>>>>>>`).
 
-      Resolva SEMANTICAMENTE cada conflito: preserve a intenção dos DOIS lados — a mudança da
-      task ${task.id} (${task.title}) E o que veio do parent — em vez de escolher um lado cegamente.
+
+      Resolva SEMANTICAMENTE cada conflito: preserve a intenção dos DOIS lados —
+      a mudança da
+
+      task ${task.id} (${task.title}) E o que veio do parent — em vez de
+      escolher um lado cegamente.
+
       Não altere comportamento fora das regiões conflitadas.
+
 
       Inspecione o estado com:
         git -C "${worktree.path}" status
         git -C "${worktree.path}" diff
       e edite os arquivos removendo TODOS os markers de conflito.
 
-      **CRITICAL**: NÃO rode git add/commit/merge --continue/--abort. Apenas deixe os arquivos
-      resolvidos no working tree; o pipeline finaliza o merge. Garanta os checks verdes.
-    retry_prompt: |
-      Ainda há conflito não resolvido ou os checks falharam após a resolução. Verifique
-      `git -C "${worktree.path}" status` (não pode haver caminhos "Unmerged") e corrija.
-      ${checks.report}
-    verify: { run: ci, max_attempts: 3 }
-    on_fail: escalate
 
+      **CRITICAL**: NÃO rode git add/commit/merge --continue/--abort. Apenas
+      deixe os arquivos
+
+      resolvidos no working tree; o pipeline finaliza o merge. Garanta os checks
+      verdes.
+    retry_prompt: >
+      Ainda há conflito não resolvido ou os checks falharam após a resolução.
+      Verifique
+
+      `git -C "${worktree.path}" status` (não pode haver caminhos "Unmerged") e
+      corrija.
+
+      ${checks.report}
+    mode: acceptEdits
+    clear_context: true
+    verify:
+      run: ci
+      max_attempts: 3
+    on_fail: escalate
   - id: finalize-merge
+    parallel_safe: false
     type: shell
     run:
       - git -C "${worktree.path}" add -A -- . :!.claude
       - git -C "${worktree.path}" commit --no-edit
-
   - id: merge
+    on_success:
+      goto: cleanup
+    parallel_safe: false
     type: approval
-    prompt: "Aprovar merge da task ${task.id} (${task.title}) em ${workspace.parent_branch}?"
+    prompt: Aprovar merge da task ${task.id} (${task.title}) em
+      ${workspace.parent_branch}?
     run:
-      - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"'
-    on_success: { goto: cleanup }
-    on_fail: { goto: abort-root-merge }
-
+      - 'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m
+        "merge(${task.id}): ${task.title}"'
+    on_fail:
+      goto: abort-root-merge
   - id: abort-root-merge
+    on_success:
+      goto: reconcile-parent
+    parallel_safe: false
     type: shell
     run:
       - git -C "${workspace.root}" merge --abort
-    on_success: { goto: reconcile-parent }
-
   - id: cleanup
-    type: shell
     always: true
+    parallel_safe: false
+    type: shell
     run:
-      # Teardown idempotente (tolera worktree/branch já removidos num resume
-      # pós-crash; propaga erros genuínos). Ver scripts/cleanup-worktree.sh.
-      - bash "${workspace.root}/scripts/cleanup-worktree.sh" "${workspace.root}" "${worktree.path}" "${task.branch}"
-
+      - bash "${workspace.root}/scripts/cleanup-worktree.sh" "${workspace.root}"
+        "${worktree.path}" "${task.branch}"
 stop_conditions:
   max_iterations: 25
   max_step_visits: 25
-  stop_signal_file: ".loopy.stop"
-
+  stop_signal_file: .loopy.stop
 concurrency: 3
-
 policies:
   escalation:
     action: pause
@@ -167,12 +230,10 @@ policies:
   git:
     require_clean_parent: true
     on_merge_conflict: escalate
-
 logging:
-  dir: ".loopy/logs"
+  dir: .loopy/logs
   per_task: true
   capture_acp_traffic: true
-
 metrics:
   report:
-    index: "${change.dir}/../index.md"
+    index: ${change.dir}/../index.md
