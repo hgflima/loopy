@@ -9,6 +9,7 @@ import type { TaskStatus, TaskState } from "loopy/tui/store";
 interface CapturedNode {
   id: string;
   position: { x: number; y: number };
+  measured?: { width: number; height: number };
   data: {
     status: TaskStatus;
     tick: number;
@@ -31,12 +32,20 @@ interface CapturedEdge {
   style?: Record<string, string>;
 }
 
+/** The subset of React Flow's NodeChange we care about: the measured dimensions. */
+interface DimensionsChange {
+  id: string;
+  type: "dimensions";
+  dimensions: { width: number; height: number };
+}
+
 let captured: {
   nodes: CapturedNode[];
   edges: CapturedEdge[];
   nodesFocusable?: boolean;
   elementsSelectable?: boolean;
   onNodeClick?: (event: unknown, node: { id: string }) => void;
+  onNodesChange?: (changes: readonly DimensionsChange[]) => void;
   onPaneClick?: (() => void) | undefined;
   onInit?: (instance: unknown) => void;
 } = {
@@ -56,6 +65,7 @@ vi.mock("@xyflow/react", () => ({
     nodesFocusable?: boolean;
     elementsSelectable?: boolean;
     onNodeClick?: (event: unknown, node: { id: string }) => void;
+    onNodesChange?: (changes: readonly DimensionsChange[]) => void;
     onPaneClick?: () => void;
     onInit?: (instance: unknown) => void;
     children?: React.ReactNode;
@@ -66,6 +76,7 @@ vi.mock("@xyflow/react", () => ({
       nodesFocusable: props.nodesFocusable,
       elementsSelectable: props.elementsSelectable,
       onNodeClick: props.onNodeClick,
+      onNodesChange: props.onNodesChange,
       onPaneClick: props.onPaneClick,
       onInit: props.onInit,
     };
@@ -542,5 +553,47 @@ describe("DepsFlow — selection + click (T-006)", () => {
   it("elementsSelectable is true", () => {
     render(<DepsFlow tasks={[task("T-001")]} edges={[]} tick={0} />);
     expect(captured.elementsSelectable).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Measured dimensions survive store updates (regressão: grafo sumia no Run)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — measured dimensions survive a store update", () => {
+  it("re-attaches the measured size to every node when the tasks change", () => {
+    const edges: [string, string][] = [["T-001", "T-002"]];
+    const { rerender } = render(
+      <DepsFlow tasks={[task("T-001", "running"), task("T-002")]} edges={edges} tick={0} />,
+    );
+
+    // React Flow has not measured anything on the first paint.
+    expect(captured.nodes.every((n) => n.measured === undefined)).toBe(true);
+
+    // It measures the cards and reports the sizes back through onNodesChange —
+    // the ONLY channel by which a controlled flow learns its own dimensions.
+    expect(captured.onNodesChange).toBeDefined();
+    captured.onNodesChange!(
+      captured.nodes.map((n) => ({
+        id: n.id,
+        type: "dimensions" as const,
+        dimensions: { width: CARD_W, height: CARD_H },
+      })),
+    );
+
+    // A Step change rebuilds every TaskState (new refs) and bumps the tick, so
+    // the whole node array is derived anew.
+    rerender(
+      <DepsFlow tasks={[task("T-001", "running"), task("T-002")]} edges={edges} tick={1} />,
+    );
+
+    // The rebuilt nodes must still carry their size. Without it React Flow
+    // resets `measured` *and* `handleBounds`, which hides every card
+    // (visibility: hidden) and drops every edge (getEdgePosition → null) —
+    // the whole graph blinked out on each Step transition.
+    expect(captured.nodes).not.toHaveLength(0);
+    for (const n of captured.nodes) {
+      expect(n.measured).toEqual({ width: CARD_W, height: CARD_H });
+    }
   });
 });

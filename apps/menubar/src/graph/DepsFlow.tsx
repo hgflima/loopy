@@ -18,6 +18,7 @@ import {
   useNodesInitialized,
   type Node,
   type Edge,
+  type NodeChange,
   type ReactFlowInstance,
   type NodeMouseHandler,
 } from "@xyflow/react";
@@ -89,15 +90,44 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
     return m;
   }, [tasks]);
 
+  /**
+   * Dimensões que o React Flow mediu, por nó — **a memória entre rebuilds**.
+   *
+   * O RF só grava `measured` no seu nó *interno*; o objeto que passamos em
+   * `nodes` nunca o recebe de volta. Como este componente deriva os nós da
+   * geometria a cada render (referências novas a cada evento da store e a cada
+   * `tick`), o `adoptUserNodes` do RF descarta o nó interno e reconstrói um com
+   * `measured` e `handleBounds` zerados — o que esconde TODOS os cards
+   * (`visibility: hidden`) e derruba TODAS as arestas (`getEdgePosition` → null)
+   * até o ResizeObserver medir tudo outra vez. Ou seja: o grafo piscava para
+   * vazio a cada troca de Step. Capturar as dimensões aqui pelo canal oficial
+   * (`onNodesChange`) e devolvê-las em cada nó fecha o ciclo — com `measured`
+   * presente, o RF preserva também os `handleBounds` (ver `parseHandles`).
+   */
+  const measuredRef = useRef(new Map<string, { width: number; height: number }>());
+
+  const handleNodesChange = useCallback(
+    (changes: readonly NodeChange<Node<TaskNodeType["data"]>>[]) => {
+      for (const c of changes) {
+        if (c.type === "dimensions" && c.dimensions) {
+          measuredRef.current.set(c.id, c.dimensions);
+        }
+      }
+    },
+    [],
+  );
+
   const rfNodes: Node<TaskNodeType["data"]>[] = useMemo(
     () =>
       geometry.nodes.map((n) => {
         const t = taskById.get(n.id);
         const status = statusById.get(n.id) ?? "pending";
+        const measured = measuredRef.current.get(n.id);
         return {
           id: n.id,
           type: "task" as const,
           position: { x: n.col * CELL_PX_X, y: n.row * CELL_PX_Y },
+          ...(measured && { measured }),
           data: {
             status,
             tick,
@@ -147,6 +177,7 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
+      onNodesChange={handleNodesChange}
       nodeTypes={nodeTypes}
       proOptions={{ hideAttribution: true }}
       onNodeClick={handleNodeClick}
