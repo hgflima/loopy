@@ -223,7 +223,7 @@ describe("App — idle shows board (T-006)", () => {
     await act(async () => {
       fireEvent.click(getByTestId("btn-iniciar"));
     });
-    expect(onStartRun).toHaveBeenCalledWith({ yes: false, taskId: "", verbose: false });
+    expect(onStartRun).toHaveBeenCalledWith("/sample", { yes: false, taskId: "", verbose: false });
   });
 
   it("shows empty state when draft is not loaded", () => {
@@ -495,7 +495,7 @@ describe("App — launch popover + auto-save + dirty guard (T-014)", () => {
     await act(async () => {
       fireEvent.click(getByTestId("btn-iniciar"));
     });
-    expect(onStartRun).toHaveBeenCalledWith({ yes: true, taskId: "T-003", verbose: false });
+    expect(onStartRun).toHaveBeenCalledWith("/sample", { yes: true, taskId: "T-003", verbose: false });
   });
 
   it("auto-saves dirty draft before calling onStartRun", async () => {

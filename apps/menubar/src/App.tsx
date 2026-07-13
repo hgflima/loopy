@@ -40,7 +40,8 @@ export interface LaunchFlags {
 
 interface AppProps {
   state: BridgeState;
-  onStartRun: (flags: LaunchFlags) => void;
+  /** `dir` is the target repo; `flags` are CLI-only (never written to loopy.yml). */
+  onStartRun: (dir: string, flags: LaunchFlags) => void;
   onApprovalDecision?: (requestId: string, approved: boolean) => void;
 }
 
@@ -180,8 +181,8 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     }
     const flags: LaunchFlags = { yes: flagYes, taskId: flagTaskId.trim(), verbose: flagVerbose };
     setPopoverOpen(false);
-    onStartRun(flags);
-  }, [canStart, configDraft.dirty, configDraft.save, flagYes, flagTaskId, flagVerbose, onStartRun]);
+    onStartRun(dir.trim(), flags);
+  }, [canStart, dir, configDraft.dirty, configDraft.save, flagYes, flagTaskId, flagVerbose, onStartRun]);
 
   // The active store depends on run status
   const activeStore = isIdle && idleStore ? idleStore : store;

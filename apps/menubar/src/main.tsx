@@ -19,6 +19,7 @@ import {
 } from "./state/store-bridge";
 import { formatApprovalPayload } from "./panes/ApprovalPrompt";
 import { shouldNotify } from "./state/notify";
+import { startSidecar } from "./state/launch";
 
 // ---------------------------------------------------------------------------
 // Mock NDJSON feed for dev:web (exercises the full applyLine pipeline)
@@ -190,13 +191,20 @@ function Root() {
   const prevApprovalCount = useRef(0);
 
   // ----------------------------------------------------------
-  // LaunchConfig callback (reset state for a fresh run)
+  // Launch callback — reset state, then spawn the sidecar
   // ----------------------------------------------------------
 
-  const handleStartRun = useCallback((flags: LaunchFlags) => {
-    // TODO: pass flags to save_launch_config + start_sidecar (wired by the Rust backend)
-    void flags;
+  const handleStartRun = useCallback((dir: string, flags: LaunchFlags) => {
     setState(initialBridgeState);
+    if (!IS_TAURI) return;
+    startSidecar(invoke, dir, flags).catch((e: unknown) => {
+      // The spawn never happened, so no `sidecar://exit` will ever arrive to
+      // drive the Banner. Feed the same start-fail path by hand (exit -1, the
+      // convention already used for an unknown exit code) so a failed launch
+      // can't look identical to a successful one.
+      const message = e instanceof Error ? e.message : String(e);
+      setState((prev) => applySidecarExit(applySidecarStderr(prev, message), -1));
+    });
   }, []);
 
   // ----------------------------------------------------------
@@ -247,7 +255,10 @@ function Root() {
           clearInterval(id);
           return;
         }
-        setState((prev) => applyLine(prev, MOCK_FEED[i++]!));
+        // `i` advances OUTSIDE the updater: StrictMode double-invokes updaters,
+        // so `MOCK_FEED[i++]` inside would consume (and drop) two lines per tick.
+        const line = MOCK_FEED[i++]!;
+        setState((prev) => applyLine(prev, line));
       }, FEED_INTERVAL_MS);
       return () => clearInterval(id);
     }
