@@ -179,3 +179,84 @@ describe("ViewSwitcher — Config tab (T-008)", () => {
     expect(queryByTestId("config-pane")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Global save bar — Save is reachable from every tab, because edits also happen
+// on the board (steps via ⋯, columns via add/remove/reorder), not only in Config.
+// ---------------------------------------------------------------------------
+
+describe("ViewSwitcher — global save bar", () => {
+  function makeDraft(
+    over: Partial<import("../config/useConfigDraft").ConfigDraftAPI> = {},
+  ): import("../config/useConfigDraft").ConfigDraftAPI {
+    return {
+      draft: { workspace: { root: "." }, concurrency: 1 },
+      errors: [],
+      dirty: false,
+      tasks: [],
+      hasConfig: true,
+      load: vi.fn(),
+      patch: vi.fn(),
+      save: vi.fn().mockResolvedValue(true),
+      seedFromTemplate: vi.fn(),
+      ...over,
+    } as unknown as import("../config/useConfigDraft").ConfigDraftAPI;
+  }
+
+  it("hides the save bar when the draft is clean", () => {
+    const { queryByTestId } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={makeDraft({ dirty: false })} />,
+    );
+    expect(queryByTestId("save-bar")).toBeNull();
+    expect(queryByTestId("btn-save")).toBeNull();
+  });
+
+  it("hides the save bar when there is no configDraft (during a run)", () => {
+    const { queryByTestId } = render(<ViewSwitcher store={makeStore()} tick={0} />);
+    expect(queryByTestId("save-bar")).toBeNull();
+  });
+
+  it("shows dirty indicator + enabled Salvar when dirty and valid", () => {
+    const draft = makeDraft({ dirty: true });
+    const { getByTestId } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draft} />,
+    );
+
+    expect(getByTestId("dirty-indicator")).toBeTruthy();
+    const btn = getByTestId("btn-save") as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+
+    fireEvent.click(btn);
+    expect(draft.save).toHaveBeenCalled();
+  });
+
+  it("is visible from the Kanban tab — not only from Config (the whole point)", () => {
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={makeDraft({ dirty: true })} />,
+    );
+    // Default view is Kanban — where steps/columns are edited.
+    expect(getByRole("radio", { name: "Kanban" })).toBeTruthy();
+    expect(getByTestId("btn-save")).toBeTruthy();
+  });
+
+  it("Salvar is disabled and an error hint shows when errors exist (fail-closed, C4)", () => {
+    const draft = makeDraft({
+      dirty: true,
+      errors: [
+        { path: "concurrency", message: "too low" },
+        { path: "workspace.root", message: "Required" },
+      ],
+    });
+    const { getByTestId, queryByTestId } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draft} />,
+    );
+
+    expect((getByTestId("btn-save") as HTMLButtonElement).disabled).toBe(true);
+    expect(getByTestId("save-error-hint").textContent).toContain("2 erros");
+    // The plain dirty label is replaced by the actionable hint.
+    expect(queryByTestId("dirty-indicator")).toBeNull();
+
+    fireEvent.click(getByTestId("btn-save"));
+    expect(draft.save).not.toHaveBeenCalled();
+  });
+});

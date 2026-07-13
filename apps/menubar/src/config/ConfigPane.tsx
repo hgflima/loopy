@@ -7,7 +7,11 @@
  * logging, metrics. Pipeline is excluded (Kanban — R2).
  *
  * Error routing (R7): field→inline, section header→counter, cross-field→banner.
- * Save is fail-closed: disabled while any error exists (C4).
+ *
+ * Saving is NOT done here: edits also happen on the board (steps via the ⋯ drawer,
+ * columns via add/remove/reorder), so the Save affordance is the global save bar in
+ * the ViewSwitcher tab bar — visible from every tab. This pane only patches the
+ * shared draft. Save stays fail-closed: blocked while any error exists (C4).
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -22,7 +26,6 @@ import {
   RecordEditor,
   CommandListEditor,
 } from "./fields";
-import { Button } from "../ui";
 import "./ConfigPane.css";
 
 // ---------------------------------------------------------------------------
@@ -214,11 +217,9 @@ function CheckGroup({ groupName, commands, onPatch, onRemove, onRename }: CheckG
 // ---------------------------------------------------------------------------
 
 export function ConfigPane({ configDraft }: ConfigPaneProps) {
-  const { draft, errors, dirty, patch, save } = configDraft;
-
-  const handleSave = useCallback(() => {
-    void save();
-  }, [save]);
+  // Save lives in the ViewSwitcher tab bar (global save bar), not here — edits
+  // also happen on the board (steps/columns), so the affordance must be shared.
+  const { draft, errors, patch } = configDraft;
 
   // --- New agent / check group input state ---
   const [newAgentName, setNewAgentName] = useState("");
@@ -296,19 +297,6 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
           ))}
         </div>
       )}
-
-      {/* Toolbar: dirty indicator + Save */}
-      <div className="config-pane__toolbar">
-        {dirty && <span className="config-pane__dirty" data-testid="dirty-indicator">Alterações não salvas</span>}
-        <Button
-          variant="primary"
-          disabled={errors.length > 0 || !dirty}
-          onClick={handleSave}
-          data-testid="btn-save"
-        >
-          Salvar
-        </Button>
-      </div>
 
       {/* Workspace section */}
       <fieldset className="config-pane__section" data-testid="section-workspace">
@@ -390,13 +378,24 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
       {/* ACP section */}
       <fieldset className="config-pane__section" data-testid="section-acp">
         <SectionHeader title="ACP" errorCount={sectionErrors.acp.length} />
-        <CommandListEditor
-          label="command"
-          value={draft.acp.command ?? []}
-          onChange={(v) => patch("acp.command", v.length > 0 && v.some((s) => s !== "") ? v : undefined)}
-          error={fieldError("acp.command")}
-          placeholder="acp command"
-        />
+        {/*
+          `acp.command` is the legacy single-agent path, mutually exclusive with
+          the `agents:` registry (ADR-0006). When agents are configured it is
+          dead config, so hide the field entirely — unless a stale value is still
+          present (a conflicting config), in which case keep it visible and
+          removable so the user can clear the conflict. Optional-mode lets the
+          row be fully deleted (→ undefined), instead of a phantom empty row.
+        */}
+        {(agentNames.length === 0 || draft.acp.command !== undefined) && (
+          <CommandListEditor
+            label="command"
+            value={draft.acp.command ?? []}
+            onChange={(v) => patch("acp.command", v.length > 0 && v.some((s) => s !== "") ? v : undefined)}
+            error={fieldError("acp.command")}
+            placeholder="acp command"
+            optional={agentNames.length > 0}
+          />
+        )}
         <TextField
           label="default_agent"
           value={draft.acp.default_agent ?? ""}

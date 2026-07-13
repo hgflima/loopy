@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, fireEvent } from "@testing-library/react";
+import { render, cleanup, fireEvent, within } from "@testing-library/react";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { ConfigPane } from "./ConfigPane";
 
@@ -134,39 +134,9 @@ describe("ConfigPane — rendering and editing (T-008)", () => {
   });
 });
 
-describe("ConfigPane — dirty + Save (T-008)", () => {
-  it("shows dirty indicator when dirty is true", () => {
-    const draft = makeDraft({ dirty: true });
-    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
-
-    expect(getByTestId("dirty-indicator")).toBeTruthy();
-  });
-
-  it("hides dirty indicator when dirty is false", () => {
-    const draft = makeDraft({ dirty: false });
-    const { queryByTestId } = render(<ConfigPane configDraft={draft} />);
-
-    expect(queryByTestId("dirty-indicator")).toBeNull();
-  });
-
-  it("Save button calls save() when dirty and no errors", () => {
-    const draft = makeDraft({ dirty: true });
-    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
-
-    const saveBtn = getByTestId("btn-save");
-    expect((saveBtn as HTMLButtonElement).disabled).toBe(false);
-
-    fireEvent.click(saveBtn);
-    expect(draft.save).toHaveBeenCalled();
-  });
-
-  it("Save button disabled when not dirty", () => {
-    const draft = makeDraft({ dirty: false });
-    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
-
-    expect((getByTestId("btn-save") as HTMLButtonElement).disabled).toBe(true);
-  });
-});
+// Dirty indicator + Save button now live in the ViewSwitcher tab bar (the global
+// save bar) — see ViewSwitcher.test.tsx. The pane itself no longer renders them,
+// because edits also happen on the board (steps/columns).
 
 describe("ConfigPane — error routing (T-008, R7)", () => {
   it("inline error on invalid concurrency + section counter", () => {
@@ -195,16 +165,6 @@ describe("ConfigPane — error routing (T-008, R7)", () => {
     const counter = section.querySelector(".config-pane__error-count");
     expect(counter).not.toBeNull();
     expect(counter!.textContent).toBe("2");
-  });
-
-  it("Save disabled when errors exist (fail-closed, C4)", () => {
-    const draft = makeDraft({
-      dirty: true,
-      errors: [{ path: "concurrency", message: "too low" }],
-    });
-    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
-
-    expect((getByTestId("btn-save") as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("cross-field error banner appears for errors outside visible sections", () => {
@@ -354,6 +314,39 @@ describe("ConfigPane — ACP section (T-009, SC4)", () => {
     const section = getByTestId("section-acp");
     const counter = section.querySelector(".config-pane__error-count");
     expect(counter!.textContent).toBe("1");
+  });
+
+  // `acp.command` is the legacy single-agent path, mutually exclusive with the
+  // `agents:` registry. Hide it when agents are configured (dead config), unless
+  // a stale value is present (a conflict the user must be able to clear).
+
+  it("hides the acp.command field when agents are configured", () => {
+    // Default makeDraft has agents:{claude} and acp.command undefined.
+    const draft = makeDraft();
+    const { queryByPlaceholderText } = render(<ConfigPane configDraft={draft} />);
+    expect(queryByPlaceholderText("acp command")).toBeNull();
+  });
+
+  it("shows the acp.command field in legacy mode (no agents)", () => {
+    const draft = makeDraft();
+    // Legacy: no registry, single agent via acp.command.
+    (draft.draft as { agents?: unknown }).agents = undefined;
+    (draft.draft!.acp as { command?: string[] }).command = ["legacy-acp"];
+    const { getByPlaceholderText } = render(<ConfigPane configDraft={draft} />);
+    expect(getByPlaceholderText("acp command")).toBeTruthy();
+  });
+
+  it("keeps a stale acp.command visible+removable even with agents (fixable conflict)", () => {
+    const draft = makeDraft();
+    // Conflicting config: both agents and a single leftover acp.command entry.
+    (draft.draft!.acp as { command?: string[] }).command = ["stale-acp"];
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+    const acp = within(getByTestId("section-acp"));
+    // Field is shown so the user can see and clear the conflict…
+    expect(acp.getByPlaceholderText("acp command")).toBeTruthy();
+    // …and removing the only row reaches an empty list → patch(undefined).
+    fireEvent.click(acp.getByLabelText(/^Remove command/));
+    expect(draft.patch).toHaveBeenCalledWith("acp.command", undefined);
   });
 });
 

@@ -3,6 +3,12 @@
  *
  * All three views are kept mounted (hidden via CSS) so state is preserved
  * on switch (acceptance criterion: "sem perder estado").
+ *
+ * The tab bar also hosts the **global save bar**: every edit — a step via the ⋯
+ * drawer, an added/removed/reordered column, or a field in the Config tab — writes
+ * to the same `configDraft` and marks it dirty. Since editing happens on the board
+ * too (not just in the Config tab), the Save affordance lives here, next to the
+ * tabs, so it is visible from every view. Fail-closed: disabled while errors exist.
  */
 import { useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
@@ -12,7 +18,7 @@ import type { OrphanRef } from "../config/pipeline-edit";
 import { KanbanBoard } from "../kanban/KanbanBoard";
 import { DepsFlow } from "../graph/DepsFlow";
 import { ConfigPane } from "../config/ConfigPane";
-import { SegmentedControl, type Segment } from "../ui";
+import { SegmentedControl, Button, type Segment } from "../ui";
 import "./ViewSwitcher.css";
 
 export type ViewId = "kanban" | "deps" | "config";
@@ -64,6 +70,29 @@ export function ViewSwitcher({
           onChange={setView}
           ariaLabel="Visualização"
         />
+
+        {/* Global save bar — dirty draft is savable from any tab (C4: fail-closed). */}
+        {configDraft?.dirty && (
+          <div className="view-switcher__save" data-testid="save-bar">
+            {configDraft.errors.length > 0 ? (
+              <span className="view-switcher__save-hint" data-testid="save-error-hint">
+                {configDraft.errors.length} erro{configDraft.errors.length > 1 ? "s" : ""} — corrija na aba Config
+              </span>
+            ) : (
+              <span className="view-switcher__dirty" data-testid="dirty-indicator">
+                Alterações não salvas
+              </span>
+            )}
+            <Button
+              variant="primary"
+              disabled={configDraft.errors.length > 0}
+              onClick={() => void configDraft.save()}
+              data-testid="btn-save"
+            >
+              Salvar
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* All three mounted, hidden via display — preserves state on switch */}

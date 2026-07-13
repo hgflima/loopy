@@ -439,6 +439,7 @@ function ApprovalFields({ step, patchStep, fieldError }: FieldSectionProps<Appro
         value={step.run ? [...step.run] : []}
         onChange={(v) => patchStep("run", v.length > 0 ? v : undefined)}
         error={fieldError("run")}
+        optional
       />
     </fieldset>
   );

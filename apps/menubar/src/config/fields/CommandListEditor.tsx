@@ -3,6 +3,15 @@
  *
  * Add/remove/reorder; values render in mono (machine voice — commands).
  * Preserves order on all mutations.
+ *
+ * Two modes:
+ * - Required (default): a command list that must hold ≥1 command
+ *   (`shell.run`, `agent.command`). Always renders at least one row and
+ *   `remove` never drops below one — the last row can be emptied but not deleted.
+ * - `optional`: the list may be empty (`acp.command`, `approval.run`). Renders
+ *   exactly `value.length` rows (zero when empty — just the "+ Add" button) and
+ *   `remove` can reach `[]`, so the caller sees a truly empty list and can map it
+ *   to `undefined`.
  */
 
 import "./fields.css";
@@ -13,6 +22,8 @@ export interface CommandListEditorProps {
   onChange: (value: string[]) => void;
   error?: string;
   placeholder?: string;
+  /** When true, the list may be empty (renders 0 rows and `remove` reaches `[]`). */
+  optional?: boolean;
 }
 
 export function CommandListEditor({
@@ -21,8 +32,9 @@ export function CommandListEditor({
   onChange,
   error,
   placeholder = "command",
+  optional = false,
 }: CommandListEditorProps) {
-  const items = value.length > 0 ? value : [""];
+  const items = optional ? value : value.length > 0 ? value : [""];
 
   function update(index: number, val: string) {
     const next = items.map((item, i) => (i === index ? val : item));
@@ -35,7 +47,7 @@ export function CommandListEditor({
 
   function remove(index: number) {
     const next = items.filter((_, i) => i !== index);
-    onChange(next.length > 0 ? next : [""]);
+    onChange(optional ? next : next.length > 0 ? next : [""]);
   }
 
   function moveUp(index: number) {

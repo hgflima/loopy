@@ -286,6 +286,34 @@ describe("CommandListEditor", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByText("Need commands")).toBeTruthy();
   });
+
+  /* ---- required (default) vs optional mode -------------------------------- */
+
+  it("required mode: empty value renders one phantom row", () => {
+    render(<CommandListEditor label="Run" value={[]} onChange={() => {}} />);
+    expect(document.querySelectorAll(".field__cmd-input").length).toBe(1);
+  });
+
+  it("required mode: removing the last row floors at one empty row", () => {
+    const onChange = vi.fn();
+    render(<CommandListEditor label="Run" value={["only"]} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText(/^Remove command/));
+    expect(onChange).toHaveBeenCalledWith([""]);
+  });
+
+  it("optional mode: empty value renders zero rows (no phantom)", () => {
+    render(<CommandListEditor label="Run" value={[]} onChange={() => {}} optional />);
+    expect(document.querySelectorAll(".field__cmd-input").length).toBe(0);
+    // The "+ Add command" affordance is still present.
+    expect(screen.getByText("+ Add command")).toBeTruthy();
+  });
+
+  it("optional mode: removing the last row reaches an empty list", () => {
+    const onChange = vi.fn();
+    render(<CommandListEditor label="Run" value={["only"]} onChange={onChange} optional />);
+    fireEvent.click(screen.getByLabelText(/^Remove command/));
+    expect(onChange).toHaveBeenCalledWith([]);
+  });
 });
 
 /* ---- CSS tokens-only (zero color literals) ----------------------------- */

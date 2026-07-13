@@ -39,20 +39,8 @@
   margin-top: var(--sp-xs);
 }
 
-/* ---- Toolbar ----------------------------------------------------------- */
-
-.config-pane__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--sp-md);
-}
-
-.config-pane__dirty {
-  font-size: 12px;
-  color: var(--ink-secondary);
-  font-style: italic;
-}
+/* Toolbar (dirty + Save) moved to the ViewSwitcher tab bar — the global save
+   bar, reachable from every tab (edits also happen on the board). */
 
 /* ---- Section cards (fieldset) ------------------------------------------ */
 
