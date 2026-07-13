@@ -200,16 +200,13 @@ describe("DepsFlow — edges from StoreState.edges", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Edges — smoothstep type + running incident animation (D3)
+// Edges — directional flow: cyan enters, amber exits (D1/D2/D3)
 // ---------------------------------------------------------------------------
 
-describe("DepsFlow — edge type and running animation (D3)", () => {
+describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
   it("all edges use type smoothstep", () => {
-    const tasks = [task("T-001"), task("T-002"), task("T-003")];
-    const edges: [string, string][] = [
-      ["T-001", "T-002"],
-      ["T-001", "T-003"],
-    ];
+    const tasks = [task("A"), task("B"), task("C")];
+    const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
 
@@ -218,50 +215,63 @@ describe("DepsFlow — edge type and running animation (D3)", () => {
     }
   });
 
-  it("edges incident to a running node are animated with running class", () => {
-    const tasks = [
-      task("T-001", "done"),
-      task("T-002", "running"),
-      task("T-003", "pending"),
-    ];
-    const edges: [string, string][] = [
-      ["T-001", "T-002"],
-      ["T-002", "T-003"],
-    ];
+  // DAG: A → B → C, B is running
+  // A→B feeds INTO running → cyan + animated (upstream)
+  // B→C fed BY running → amber + static (downstream)
+  it("A→B (feeds running) = cyan+animated; B→C (fed by running) = amber+static", () => {
+    const tasks = [task("A", "done"), task("B", "running"), task("C", "pending")];
+    const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
 
-    const e1 = captured.edges.find(
-      (e) => e.source === "T-001" && e.target === "T-002",
-    )!;
-    expect(e1.animated).toBe(true);
-    expect(e1.className).toContain("deps-edge--running");
-    expect(e1.style?.stroke).toBe("var(--state-running)");
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.animated).toBe(true);
+    expect(ab.className).toContain("deps-edge--running");
+    expect(ab.style?.stroke).toBe("var(--state-running)");
 
-    const e2 = captured.edges.find(
-      (e) => e.source === "T-002" && e.target === "T-003",
-    )!;
-    expect(e2.animated).toBe(true);
-    expect(e2.className).toContain("deps-edge--running");
-    expect(e2.style?.stroke).toBe("var(--state-running)");
+    const bc = captured.edges.find((e) => e.source === "B" && e.target === "C")!;
+    expect(bc.animated).toBeUndefined();
+    expect(bc.className).toContain("deps-edge--next");
+    expect(bc.style?.stroke).toBe("var(--state-blocked)");
   });
 
-  it("edges NOT incident to a running node are quiet (no animated)", () => {
-    const tasks = [
-      task("T-001", "done"),
-      task("T-002", "pending"),
-      task("T-003", "running"),
-    ];
-    const edges: [string, string][] = [["T-001", "T-002"]];
+  it("edge far from any running node = --border, no class, no animated", () => {
+    const tasks = [task("A", "done"), task("B", "pending"), task("C", "running")];
+    // A→B is not adjacent to C (running)
+    const edges: [string, string][] = [["A", "B"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
 
-    const e = captured.edges.find(
-      (e) => e.source === "T-001" && e.target === "T-002",
-    )!;
-    expect(e.animated).toBeUndefined();
-    expect(e.className).toBeUndefined();
-    expect(e.style?.stroke).toBe("var(--border)");
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.animated).toBeUndefined();
+    expect(ab.className).toBeUndefined();
+    expect(ab.style?.stroke).toBe("var(--border)");
+  });
+
+  // D2: tie — both A and B are running, edge A→B resolves to cyan+animated
+  it("tie (both ends running) resolves to cyan + animated (D2)", () => {
+    const tasks = [task("A", "running"), task("B", "running"), task("C", "pending")];
+    const edges: [string, string][] = [["A", "B"], ["B", "C"]];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.animated).toBe(true);
+    expect(ab.className).toContain("deps-edge--running");
+    expect(ab.style?.stroke).toBe("var(--state-running)");
+  });
+
+  it("no running tasks → no edge is colored", () => {
+    const tasks = [task("A", "done"), task("B", "pending"), task("C", "pending")];
+    const edges: [string, string][] = [["A", "B"], ["B", "C"]];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    for (const e of captured.edges) {
+      expect(e.animated).toBeUndefined();
+      expect(e.className).toBeUndefined();
+      expect(e.style?.stroke).toBe("var(--border)");
+    }
   });
 });
 
