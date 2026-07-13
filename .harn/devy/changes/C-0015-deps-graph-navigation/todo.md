@@ -8,7 +8,7 @@
 
 ## Fase 1 — Os três eixos, em paralelo (T-001 ∥ T-002 ∥ T-003)
 
-- [ ] T-001: Arestas contam a direção do fluxo — cyan entra, âmbar sai (D1/D2/D3)
+- [x] T-001: Arestas contam a direção do fluxo — cyan entra, âmbar sai (D1/D2/D3)
     `apps/menubar/src/graph/DepsFlow.tsx`: no `rfEdges`, **remover o booleano `incident`** e trocá-lo
     por dois predicados nomeados lidos da direção da aresta (a store define `edges: [dep,
     dependente]`, logo `e.from` é a dep e `e.to` é o dependente): `feedsRunning = statusById.get(e.to)
