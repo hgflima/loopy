@@ -49,8 +49,8 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
 
   const cls = [
     "deps-node",
+    `deps-node--tone-${meta.tone}`,
     selected && "deps-node--selected",
-    isRunning && "deps-node--running",
     isPulseOff && "deps-node--pulse-off",
   ]
     .filter(Boolean)
