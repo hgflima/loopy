@@ -8,7 +8,7 @@
 
 ## Fase 1 — Os três eixos, em paralelo (T-001 ∥ T-002 ∥ T-003)
 
-- [ ] T-001: Arestas contam a direção do fluxo — cyan entra, âmbar sai (D1/D2/D3)
+- [x] T-001: Arestas contam a direção do fluxo — cyan entra, âmbar sai (D1/D2/D3)
     `apps/menubar/src/graph/DepsFlow.tsx`: no `rfEdges`, **remover o booleano `incident`** e trocá-lo
     por dois predicados nomeados lidos da direção da aresta (a store define `edges: [dep,
     dependente]`, logo `e.from` é a dep e `e.to` é o dependente): `feedsRunning = statusById.get(e.to)
@@ -72,7 +72,7 @@
     Files: apps/menubar/src/graph/TaskNode.tsx, apps/menubar/src/graph/TaskNode.css, apps/menubar/src/graph/TaskNode.test.tsx
     Scope: S
 
-- [ ] T-003: `useShiftWheelPan` — o fallback de plataforma do shift+roda, isolado e testado (D10)
+- [x] T-003: `useShiftWheelPan` — o fallback de plataforma do shift+roda, isolado e testado (D10)
     NOVO `apps/menubar/src/graph/useShiftWheelPan.ts` (~15 linhas): hook que recebe um
     `RefObject<HTMLElement>` (o wrapper) e usa `getViewport`/`setViewport` do `useReactFlow()`. Num
     `useEffect`, registra no elemento um listener **NATIVO**: `el.addEventListener("wheel", onWheel,

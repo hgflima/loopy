@@ -34,6 +34,12 @@ import { failedStepId } from "../kanban/failed-step";
 /** Stable reference — must live outside the component to avoid re-registration. */
 const nodeTypes = { task: TaskNode } as const;
 
+/** Per-flow-direction edge styling: cyan animated (upstream) or amber static (downstream). */
+const FLOW_STYLE: Record<string, { animated?: true; className: string; stroke: string }> = {
+  running: { animated: true, className: "deps-edge--running", stroke: "var(--state-running)" },
+  next:    { className: "deps-edge--next", stroke: "var(--state-blocked)" },
+};
+
 export interface DepsFlowProps {
   readonly tasks: readonly TaskState[];
   readonly edges: readonly [string, string][];
@@ -149,18 +155,20 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
   const rfEdges: Edge[] = useMemo(
     () =>
       geometry.edges.map((e) => {
-        const incident =
-          statusById.get(e.from) === "running" ||
-          statusById.get(e.to) === "running";
+        const feedsRunning = statusById.get(e.to) === "running";
+        const fedByRunning = statusById.get(e.from) === "running";
+        // Cyan (upstream into running) wins the tie when both ends run (D2).
+        const flow = feedsRunning ? "running" : fedByRunning ? "next" : null;
+        const fp = flow && FLOW_STYLE[flow];
+
         return {
           id: `${e.from}->${e.to}`,
           source: e.from,
           target: e.to,
           type: "smoothstep" as const,
-          ...(incident && { animated: true, className: "deps-edge--running" }),
-          style: {
-            stroke: incident ? "var(--state-running)" : "var(--border)",
-          },
+          ...(fp?.animated && { animated: true }),
+          ...(fp && { className: fp.className }),
+          style: { stroke: fp?.stroke ?? "var(--border)" },
         };
       }),
     [geometry.edges, statusById],
