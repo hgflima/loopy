@@ -1,0 +1,160 @@
+/**
+ * Pure, I/O-free parsing and validation for `loopy.yml`.
+ *
+ * `parseConfig` works on an in-memory string (unit-testable, no I/O) and returns
+ * a `LoopyConfig` — the frozen contract from `src/types.ts` — so the schema's
+ * inferred shape is checked against that contract at compile time (T-001 note).
+ *
+ * This module is **browser-safe**: it never imports `node:fs`. The disk-reading
+ * wrapper (`loadConfig`) lives in `./load`, which imports from here. The
+ * browser barrel (`./index.ts`) re-exports this module's pure API.
+ */
+import { parse as parseYaml, YAMLParseError } from "yaml";
+import type { LoopyConfig, ResolvedAgents } from "../types";
+import { loopyConfigSchema } from "./schema";
+import type { LoopyConfigParsed } from "./schema";
+import type { ZodError, ZodIssue } from "zod";
+
+/** Raised when a config file cannot be read, parsed, or validated. */
+export class ConfigError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "ConfigError";
+  }
+}
+
+/** Options accepted by {@link parseConfig}. */
+export interface ParseConfigOptions {
+  /** Source path, used only to make error messages point at the right file. */
+  readonly sourcePath?: string;
+}
+
+/** Render a zod issue path as a dotted trail (`pipeline.1.prompt`). */
+function formatPath(path: ZodIssue["path"]): string {
+  return path.length === 0 ? "(root)" : path.join(".");
+}
+
+/** ` em "<path>"` suffix for messages; empty when the source path is unknown. */
+function inFile(sourcePath?: string): string {
+  return sourcePath ? ` em "${sourcePath}"` : "";
+}
+
+/** Turn a validation failure into a clear, multi-line, path + reason message. */
+function formatValidationError(error: ZodError, sourcePath?: string): string {
+  const lines = error.issues.map(
+    (issue) => `  - ${formatPath(issue.path)}: ${issue.message}`,
+  );
+  return `Config inválido${inFile(sourcePath)}:\n${lines.join("\n")}`;
+}
+
+/**
+ * Pre-scan the raw YAML object for removed keys (ADR-0001) and throw a guided
+ * ConfigError listing all occurrences before zod runs. Pure function — no I/O.
+ *
+ * Detects: `on_expect_fail`, `on_conflict` (top-level step keys) and
+ * `on_fail` nested inside `verify`. Match is by key name in any step,
+ * regardless of `type` (OQ-4). All hits are collected (OQ-3) and reported in a
+ * single multi-line message reusing the `Config inválido em …` header.
+ */
+function scanRemovedKeys(raw: unknown, sourcePath?: string): void {
+  if (
+    typeof raw !== "object" ||
+    raw === null ||
+    !Array.isArray((raw as Record<string, unknown>).pipeline)
+  ) {
+    return; // Let zod handle structural issues
+  }
+
+  const pipeline = (raw as Record<string, unknown>).pipeline as unknown[];
+  const issues: string[] = [];
+
+  for (let i = 0; i < pipeline.length; i++) {
+    const step = pipeline[i];
+    if (typeof step !== "object" || step === null) continue;
+
+    const s = step as Record<string, unknown>;
+    const stepLabel =
+      typeof s.id === "string" && s.id.length > 0
+        ? `step "${s.id}"`
+        : `pipeline[${i}]`;
+
+    for (const key of ["on_expect_fail", "on_conflict"] as const) {
+      if (key in s) {
+        issues.push(
+          `  - ${stepLabel}: '${key}' foi removido (ADR-0001) — use 'on_fail'.`,
+        );
+      }
+    }
+
+    if (
+      typeof s.verify === "object" &&
+      s.verify !== null &&
+      "on_fail" in (s.verify as Record<string, unknown>)
+    ) {
+      issues.push(
+        `  - ${stepLabel}: 'verify.on_fail' foi removido (ADR-0001) — mova para 'on_fail' no nível do step.`,
+      );
+    }
+  }
+
+  if (issues.length > 0) {
+    throw new ConfigError(
+      `Config inválido${inFile(sourcePath)}:\n${issues.join("\n")}`,
+    );
+  }
+}
+
+/**
+ * Build `ResolvedAgents` from either the explicit `agents:` registry or by
+ * synthesizing a `default` agent from the legacy `acp.command`. Pure function.
+ */
+function resolveAgents(parsed: LoopyConfigParsed): ResolvedAgents {
+  if (parsed.agents !== undefined && Object.keys(parsed.agents).length > 0) {
+    const agentNames = Object.keys(parsed.agents);
+    const defaultName = parsed.acp.default_agent ?? agentNames[0]!;
+    return { byName: { ...parsed.agents }, default: defaultName };
+  }
+
+  // Legacy path: synthesize from acp.command
+  return {
+    byName: { default: { command: parsed.acp.command! } },
+    default: "default",
+  };
+}
+
+/**
+ * Validate an in-memory `loopy.yml` document and return a typed `LoopyConfig`
+ * with defaults applied. Throws {@link ConfigError} on malformed YAML or on any
+ * schema violation (unknown keys, wrong step fields, missing values, …).
+ */
+export function parseConfig(
+  source: string,
+  options: ParseConfigOptions = {},
+): LoopyConfig {
+  const { sourcePath } = options;
+
+  let raw: unknown;
+  try {
+    raw = parseYaml(source);
+  } catch (err) {
+    if (err instanceof YAMLParseError) {
+      throw new ConfigError(
+        `YAML inválido${inFile(sourcePath)}: ${err.message}`,
+        {
+          cause: err,
+        },
+      );
+    }
+    throw err;
+  }
+
+  scanRemovedKeys(raw, sourcePath);
+
+  const result = loopyConfigSchema.safeParse(raw);
+  if (!result.success) {
+    throw new ConfigError(formatValidationError(result.error, sourcePath));
+  }
+
+  const resolved = resolveAgents(result.data);
+  return { ...result.data, resolvedAgents: resolved };
+}
