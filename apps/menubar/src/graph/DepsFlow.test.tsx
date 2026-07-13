@@ -39,49 +39,44 @@ interface DimensionsChange {
   dimensions: { width: number; height: number };
 }
 
-let captured: {
+/** Props captured from the ReactFlow mock for assertion. */
+interface CapturedProps {
   nodes: CapturedNode[];
   edges: CapturedEdge[];
   nodesFocusable?: boolean;
   elementsSelectable?: boolean;
+  panOnDrag?: boolean;
+  panOnScroll?: boolean;
+  panOnScrollMode?: string;
+  zoomOnScroll?: boolean;
+  zoomOnPinch?: boolean;
+  zoomOnDoubleClick?: boolean;
+  preventScrolling?: boolean;
+  minZoom?: number;
+  panActivationKeyCode?: unknown;
+  zoomActivationKeyCode?: unknown;
   onNodeClick?: (event: unknown, node: { id: string }) => void;
   onNodesChange?: (changes: readonly DimensionsChange[]) => void;
   onPaneClick?: (() => void) | undefined;
   onInit?: (instance: unknown) => void;
-} = {
-  nodes: [],
-  edges: [],
-};
+}
+
+let captured: CapturedProps = { nodes: [], edges: [] };
 
 let capturedChildren: string[] = [];
 
 const mockFitView = vi.fn();
+const mockGetViewport = vi.fn(() => ({ x: 0, y: 0, zoom: 1 }));
+const mockSetViewport = vi.fn();
 let mockNodesInitialized = false;
 
 vi.mock("@xyflow/react", () => ({
-  ReactFlow: (props: {
-    nodes: CapturedNode[];
-    edges: CapturedEdge[];
-    nodesFocusable?: boolean;
-    elementsSelectable?: boolean;
-    onNodeClick?: (event: unknown, node: { id: string }) => void;
-    onNodesChange?: (changes: readonly DimensionsChange[]) => void;
-    onPaneClick?: () => void;
-    onInit?: (instance: unknown) => void;
-    children?: React.ReactNode;
-  }) => {
-    captured = {
-      nodes: props.nodes,
-      edges: props.edges,
-      nodesFocusable: props.nodesFocusable,
-      elementsSelectable: props.elementsSelectable,
-      onNodeClick: props.onNodeClick,
-      onNodesChange: props.onNodesChange,
-      onPaneClick: props.onPaneClick,
-      onInit: props.onInit,
-    };
-    return props.children ?? null;
+  ReactFlow: (props: CapturedProps & { children?: React.ReactNode }) => {
+    const { children, ...rest } = props;
+    captured = rest;
+    return children ?? null;
   },
+  PanOnScrollMode: { Free: "free", Vertical: "vertical", Horizontal: "horizontal" },
   Background: () => {
     capturedChildren.push("Background");
     return null;
@@ -93,7 +88,7 @@ vi.mock("@xyflow/react", () => ({
   },
   Handle: () => null,
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
-  useReactFlow: () => ({ fitView: mockFitView }),
+  useReactFlow: () => ({ fitView: mockFitView, getViewport: mockGetViewport, setViewport: mockSetViewport }),
   useNodesInitialized: () => mockNodesInitialized,
 }));
 
@@ -137,6 +132,8 @@ beforeEach(() => {
   captured = { nodes: [], edges: [] };
   capturedChildren = [];
   mockFitView.mockClear();
+  mockGetViewport.mockClear();
+  mockSetViewport.mockClear();
   mockNodesInitialized = false;
   mockReducedMotion = false;
 });
@@ -605,5 +602,92 @@ describe("DepsFlow — measured dimensions survive a store update", () => {
     for (const n of captured.nodes) {
       expect(n.measured).toEqual({ width: CARD_W, height: CARD_H });
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-004 — Navigation props (D4/D6/D8)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — navigation props (T-004, D4/D6/D8)", () => {
+  function renderMinimal() {
+    render(<DepsFlow tasks={[task("T-001")]} edges={[]} tick={0} />);
+  }
+
+  it("panOnScroll is true (wheel = pan)", () => {
+    renderMinimal();
+    expect(captured.panOnScroll).toBe(true);
+  });
+
+  it("panOnScrollMode is Free (deltaY→vertical, deltaX→horizontal)", () => {
+    renderMinimal();
+    expect(captured.panOnScrollMode).toBe("free");
+  });
+
+  it("zoomOnScroll is false (wheel never zooms)", () => {
+    renderMinimal();
+    expect(captured.zoomOnScroll).toBe(false);
+  });
+
+  it("zoomOnPinch is true (pinch/trackpad = zoom, D4)", () => {
+    renderMinimal();
+    expect(captured.zoomOnPinch).toBe(true);
+  });
+
+  it("preventScrolling is true (wheel doesn't leak to the app)", () => {
+    renderMinimal();
+    expect(captured.preventScrolling).toBe(true);
+  });
+
+  it("panOnDrag is false (no mouse-drag panning)", () => {
+    renderMinimal();
+    expect(captured.panOnDrag).toBe(false);
+  });
+
+  it("minZoom is 0.25 (fitView can shrink below 0.5x for large DAGs, D6)", () => {
+    renderMinimal();
+    expect(captured.minZoom).toBe(0.25);
+  });
+
+  it("panActivationKeyCode is NOT passed (RF default = Space, D8)", () => {
+    renderMinimal();
+    expect(captured.panActivationKeyCode).toBeUndefined();
+  });
+
+  it("zoomActivationKeyCode is NOT passed (RF default = Meta on macOS, D8)", () => {
+    renderMinimal();
+    expect(captured.zoomActivationKeyCode).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-004 — .deps-flow wrapper + useShiftWheelPan integration
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — .deps-flow wrapper + shift+wheel hook (T-004)", () => {
+  it("renders a .deps-flow wrapper around ReactFlow", () => {
+    const { container } = render(
+      <DepsFlow tasks={[task("T-001")]} edges={[]} tick={0} />,
+    );
+    const wrapper = container.querySelector(".deps-flow");
+    expect(wrapper).toBeTruthy();
+  });
+
+  it("shift+wheel on .deps-flow calls setViewport (hook is mounted)", () => {
+    const { container } = render(
+      <DepsFlow tasks={[task("T-001")]} edges={[]} tick={0} />,
+    );
+    const wrapper = container.querySelector(".deps-flow")!;
+
+    const wheelEvent = new WheelEvent("wheel", {
+      deltaY: 100,
+      deltaX: 0,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    wrapper.dispatchEvent(wheelEvent);
+
+    expect(mockSetViewport).toHaveBeenCalledTimes(1);
   });
 });

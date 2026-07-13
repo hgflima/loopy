@@ -5,6 +5,13 @@
  * neutral chrome in both light and dark (prefers-color-scheme).
  */
 
+/* ---- Wrapper (ancestor of the RF pane — capture phase for shift+wheel) -- */
+
+.deps-flow {
+  width: 100%;
+  height: 100%;
+}
+
 /* ---- Controls toolbar --------------------------------------------------- */
 
 .react-flow__controls {
