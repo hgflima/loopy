@@ -28,9 +28,9 @@ acp:
     default_mode: acceptEdits
     on_request: allow
 inputs:
-  spec: .harn/devy/changes/C-0014-config-editor/spec.md
-  plan: .harn/devy/changes/C-0014-config-editor/plan.md
-  todo: .harn/devy/changes/C-0014-config-editor/todo.md
+  spec: .harn/devy/changes/C-0015-deps-graph-navigation/spec.md
+  plan: .harn/devy/changes/C-0015-deps-graph-navigation/plan.md
+  todo: .harn/devy/changes/C-0015-deps-graph-navigation/todo.md
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
