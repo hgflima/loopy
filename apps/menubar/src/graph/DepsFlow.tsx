@@ -32,14 +32,16 @@ import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H } from "./scale";
 import { usePrefersReducedMotion } from "../ui";
 import { failedStepId } from "../kanban/failed-step";
 import { useShiftWheelPan } from "./useShiftWheelPan";
+import { wavefront, edgeFlow, type EdgeFlow } from "./flow-state";
 
 /** Stable reference — must live outside the component to avoid re-registration. */
 const nodeTypes = { task: TaskNode } as const;
 
-/** Per-flow-direction edge styling: cyan animated (upstream) or amber static (downstream). */
-const FLOW_STYLE: Record<string, { animated?: true; className: string; stroke: string }> = {
+/** Per-flow edge styling: cyan animated (entra na running), amber static (entra na frente de onda), green (percorrido). */
+const FLOW_STYLE: Record<EdgeFlow, { animated?: true; className: string; stroke: string }> = {
   running: { animated: true, className: "deps-edge--running", stroke: "var(--state-running)" },
   next:    { className: "deps-edge--next", stroke: "var(--state-blocked)" },
+  done:    { className: "deps-edge--done", stroke: "var(--state-done)" },
 };
 
 export interface DepsFlowProps {
@@ -48,11 +50,13 @@ export interface DepsFlowProps {
   readonly tick: number;
   /** Whether the Deps pane is the currently visible view. */
   readonly active?: boolean;
+  /** Teto da frente de onda (`concurrency` do yml). Omitido = não corta. */
+  readonly concurrency?: number;
   readonly selectedTaskId?: string | null;
   readonly onSelectTask?: (taskId: string) => void;
 }
 
-export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectTask }: DepsFlowProps) {
+export function DepsFlow({ tasks, edges, tick, active, concurrency, selectedTaskId, onSelectTask }: DepsFlowProps) {
   const reducedMotion = usePrefersReducedMotion();
   const wrapperRef = useRef<HTMLDivElement>(null);
   useShiftWheelPan(wrapperRef);
@@ -78,6 +82,12 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
   }, [tasks]);
 
   const order = useMemo(() => tasks.map((t) => t.id), [tasks]);
+
+  /** Quem roda a seguir — derivado do grafo, não do status cru (ver flow-state). */
+  const front = useMemo(
+    () => wavefront(statusById, edges, concurrency ?? Infinity),
+    [statusById, edges, concurrency],
+  );
 
   const geometry = useMemo(
     () => computeDagreLayout(edges, statusById, order),
@@ -143,6 +153,7 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
             tick,
             title: t?.title,
             isRunning: status === "running",
+            onWavefront: front.has(n.id),
             failedAtStepId: t ? failedStepId(t) : undefined,
             selected: n.id === selectedTaskId,
             reducedMotion,
@@ -153,16 +164,13 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
           selectable: true,
         };
       }),
-    [geometry.nodes, statusById, taskById, tick, onFocusNode, selectedTaskId, reducedMotion, handleSelect],
+    [geometry.nodes, statusById, taskById, tick, front, onFocusNode, selectedTaskId, reducedMotion, handleSelect],
   );
 
   const rfEdges: Edge[] = useMemo(
     () =>
       geometry.edges.map((e) => {
-        const feedsRunning = statusById.get(e.to) === "running";
-        const fedByRunning = statusById.get(e.from) === "running";
-        // Cyan (upstream into running) wins the tie when both ends run (D2).
-        const flow = feedsRunning ? "running" : fedByRunning ? "next" : null;
+        const flow = edgeFlow(e.from, e.to, statusById, front);
         const fp = flow && FLOW_STYLE[flow];
 
         return {
@@ -175,7 +183,7 @@ export function DepsFlow({ tasks, edges, tick, active, selectedTaskId, onSelectT
           style: { stroke: fp?.stroke ?? "var(--border)" },
         };
       }),
-    [geometry.edges, statusById],
+    [geometry.edges, statusById, front],
   );
 
   useEffect(() => {

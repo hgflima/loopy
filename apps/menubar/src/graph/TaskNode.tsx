@@ -5,13 +5,17 @@
  * step falho (@id). Running pulsa a **borda interna** via {@link pulseFrame};
  * o dot não pulsa (D7). Selected + running = anéis concêntricos (D4).
  *
+ * O anel de quem ainda espera sai de {@link nodeStatusMeta}, não do status cru:
+ * âmbar é a **frente de onda** (a próxima), não "tem dependência".
+ *
  * Handles Left (target) / Right (source), hidden (rankdir LR).
  */
 import { memo } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { pulseFrame } from "loopy/tui/view";
 import type { TaskStatus } from "loopy/tui/store";
-import { StatusDot, TASK_STATUS_META } from "../ui";
+import { StatusDot } from "../ui";
+import { nodeStatusMeta } from "./flow-state";
 import "./TaskNode.css";
 
 export interface TaskNodeData {
@@ -21,6 +25,8 @@ export interface TaskNodeData {
   readonly title?: string;
   readonly selected?: boolean;
   readonly isRunning?: boolean;
+  /** Task na frente de onda — roda a seguir (âmbar). Ver {@link nodeStatusMeta}. */
+  readonly onWavefront?: boolean;
   readonly failedAtStepId?: string;
   readonly reducedMotion?: boolean;
   readonly onSelect?: (id: string) => void;
@@ -37,13 +43,14 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
     tick,
     selected = false,
     isRunning = false,
+    onWavefront = false,
     failedAtStepId,
     reducedMotion = false,
     onSelect,
     onFocusNode,
   } = data;
 
-  const meta = TASK_STATUS_META[status];
+  const meta = nodeStatusMeta(status, onWavefront);
 
   const isPulseOff = isRunning && !reducedMotion && pulseFrame(tick) === "off";
 

@@ -16,6 +16,7 @@ interface CapturedNode {
     title?: string;
     selected?: boolean;
     isRunning?: boolean;
+    onWavefront?: boolean;
     failedAtStepId?: string;
     reducedMotion?: boolean;
     onSelect?: (id: string) => void;
@@ -214,8 +215,8 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
 
   // DAG: A → B → C, B is running
   // A→B feeds INTO running → cyan + animated (upstream)
-  // B→C fed BY running → amber + static (downstream)
-  it("A→B (feeds running) = cyan+animated; B→C (fed by running) = amber+static", () => {
+  // B→C entra na frente de onda (C só espera por B) → amber + static
+  it("A→B (feeds running) = cyan+animated; B→C (entra na frente) = amber+static", () => {
     const tasks = [task("A", "done"), task("B", "running"), task("C", "pending")];
     const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
@@ -232,10 +233,30 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
     expect(bc.style?.stroke).toBe("var(--state-blocked)");
   });
 
-  it("edge far from any running node = --border, no class, no animated", () => {
-    const tasks = [task("A", "done"), task("B", "pending"), task("C", "running")];
-    // A→B is not adjacent to C (running)
-    const edges: [string, string][] = [["A", "B"]];
+  // A regressão da tela: a aresta que SAI da running mas cujo destino ainda
+  // espera outra dep não é "a próxima" — e portanto fica quieta.
+  it("aresta que sai da running para quem ainda espera outra dep = --border", () => {
+    const tasks = [task("A", "running"), task("B", "pending"), task("C", "blocked")];
+    // C depende de A (running) e de B (nem começou) → C não é a próxima.
+    const edges: [string, string][] = [["A", "C"], ["B", "C"]];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const ac = captured.edges.find((e) => e.source === "A" && e.target === "C")!;
+    expect(ac.animated).toBeUndefined();
+    expect(ac.className).toBeUndefined();
+    expect(ac.style?.stroke).toBe("var(--border)");
+  });
+
+  it("edge cujo destino não é a frente nem roda = --border, no class, no animated", () => {
+    const tasks = [
+      task("A", "done"),
+      task("Z", "pending"),
+      task("B", "blocked"),
+      task("C", "running"),
+    ];
+    // B espera A (done) e Z (nem começou) → fora da frente; C roda longe daqui.
+    const edges: [string, string][] = [["A", "B"], ["Z", "B"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
 
@@ -258,7 +279,10 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
     expect(ab.style?.stroke).toBe("var(--state-running)");
   });
 
-  it("no running tasks → no edge is colored", () => {
+  // Sem nada rodando não há ciano — mas o caminho até quem roda a seguir segue
+  // aceso, do mesmo jeito que o card dela (a frente de onda não depende de haver
+  // uma running).
+  it("sem nenhuma running: nada de ciano; o caminho até a próxima segue âmbar", () => {
     const tasks = [task("A", "done"), task("B", "pending"), task("C", "pending")];
     const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
@@ -266,9 +290,118 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
 
     for (const e of captured.edges) {
       expect(e.animated).toBeUndefined();
-      expect(e.className).toBeUndefined();
-      expect(e.style?.stroke).toBe("var(--border)");
+      expect(e.className ?? "").not.toContain("deps-edge--running");
     }
+
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.className).toContain("deps-edge--next");
+    expect(ab.style?.stroke).toBe("var(--state-blocked)");
+
+    const bc = captured.edges.find((e) => e.source === "B" && e.target === "C")!;
+    expect(bc.className).toBeUndefined();
+    expect(bc.style?.stroke).toBe("var(--border)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edges — o caminho já percorrido é verde
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — edges entre tasks concluídas (verde)", () => {
+  it("done→done = verde, estática", () => {
+    const tasks = [task("A", "done"), task("B", "done"), task("C", "running")];
+    const edges: [string, string][] = [["A", "B"], ["B", "C"]];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.animated).toBeUndefined();
+    expect(ab.className).toContain("deps-edge--done");
+    expect(ab.style?.stroke).toBe("var(--state-done)");
+  });
+
+  it("done→running continua cyan (o antes vence o já-percorrido)", () => {
+    const tasks = [task("A", "done"), task("B", "running")];
+
+    render(<DepsFlow tasks={tasks} edges={[["A", "B"]]} tick={0} />);
+
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.className).toContain("deps-edge--running");
+    expect(ab.style?.stroke).toBe("var(--state-running)");
+  });
+
+  it("done→task que ainda não rodou (e não é a próxima) fica cinza (trecho não andado)", () => {
+    // B ainda espera Z além de A → não é a frente de onda; a aresta A→B não é
+    // verde (o trecho não foi andado) nem âmbar (não leva à próxima).
+    const tasks = [task("A", "done"), task("Z", "pending"), task("B", "blocked")];
+
+    render(
+      <DepsFlow tasks={tasks} edges={[["A", "B"], ["Z", "B"]]} tick={0} />,
+    );
+
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.className).toBeUndefined();
+    expect(ab.style?.stroke).toBe("var(--border)");
+  });
+
+  it("done→próxima acende âmbar (o caminho que destrava quem roda a seguir)", () => {
+    const tasks = [task("A", "done"), task("B", "blocked")];
+
+    render(<DepsFlow tasks={tasks} edges={[["A", "B"]]} tick={0} />);
+
+    const ab = captured.edges.find((e) => e.source === "A" && e.target === "B")!;
+    expect(ab.animated).toBeUndefined();
+    expect(ab.className).toContain("deps-edge--next");
+    expect(ab.style?.stroke).toBe("var(--state-blocked)");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Nós — só a frente de onda acende (o caso do print: T-019 não pode acender)
+// ---------------------------------------------------------------------------
+
+describe("DepsFlow — frente de onda nos nós", () => {
+  it("acende quem espera pelo que roda agora, não quem está dois saltos à frente", () => {
+    const tasks = [
+      task("T-016", "running"),
+      task("T-017", "blocked"),
+      task("T-018", "blocked"),
+      task("T-019", "blocked"),
+    ];
+    const edges: [string, string][] = [
+      ["T-016", "T-017"],
+      ["T-016", "T-018"],
+      ["T-017", "T-019"],
+      ["T-018", "T-019"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
+
+    const wavefrontOf = (id: string) =>
+      captured.nodes.find((n) => n.id === id)!.data.onWavefront;
+
+    expect(wavefrontOf("T-017")).toBe(true);
+    expect(wavefrontOf("T-018")).toBe(true);
+    expect(wavefrontOf("T-019")).toBe(false);
+    expect(wavefrontOf("T-016")).toBe(false); // já roda
+  });
+
+  it("concurrency corta a frente num backlog sem deps (não acende tudo)", () => {
+    const tasks = [task("T-001"), task("T-002"), task("T-003")];
+
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} concurrency={1} />);
+
+    expect(captured.nodes.find((n) => n.id === "T-001")!.data.onWavefront).toBe(true);
+    expect(captured.nodes.find((n) => n.id === "T-002")!.data.onWavefront).toBe(false);
+    expect(captured.nodes.find((n) => n.id === "T-003")!.data.onWavefront).toBe(false);
+  });
+
+  it("sem concurrency conhecido, não corta (fallback seguro)", () => {
+    const tasks = [task("T-001"), task("T-002")];
+
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} />);
+
+    for (const n of captured.nodes) expect(n.data.onWavefront).toBe(true);
   });
 });
 

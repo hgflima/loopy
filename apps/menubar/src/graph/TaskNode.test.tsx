@@ -27,6 +27,7 @@ function renderNode(
     tick: number;
     selected: boolean;
     isRunning: boolean;
+    onWavefront: boolean;
     failedAtStepId: string;
     reducedMotion: boolean;
     onSelect: (id: string) => void;
@@ -38,6 +39,7 @@ function renderNode(
     tick: 0,
     selected: false,
     isRunning: false,
+    onWavefront: false,
     reducedMotion: false,
     onSelect: vi.fn(),
     ...overrides,
@@ -139,21 +141,45 @@ describe("TaskNode — selection (aria-pressed)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Tone ring: status → tone class via TASK_STATUS_META (SC3)
+// Tone ring: status (+ frente de onda) → tone class, via nodeStatusMeta
 // ---------------------------------------------------------------------------
 
-describe("TaskNode — tone ring from TASK_STATUS_META", () => {
+describe("TaskNode — tone ring from nodeStatusMeta", () => {
   it.each<[TaskStatus, string]>([
     ["pending", "deps-node--tone-neutral"],
     ["skipped", "deps-node--tone-neutral"],
-    ["blocked", "deps-node--tone-blocked"],
+    ["blocked", "deps-node--tone-neutral"],
     ["paused", "deps-node--tone-blocked"],
     ["running", "deps-node--tone-running"],
     ["done", "deps-node--tone-done"],
     ["escalated", "deps-node--tone-failed"],
-  ])("status=%s → class %s", (status, expectedClass) => {
+  ])("status=%s fora da frente de onda → class %s", (status, expectedClass) => {
     const { getByTestId } = renderNode("T-001", { status });
     expect(getByTestId("task-node-T-001").classList.contains(expectedClass)).toBe(true);
+  });
+
+  // Quem espera acende de âmbar por estar na frente de onda — não por "ter dep".
+  it.each<TaskStatus>(["blocked", "pending"])(
+    "status=%s na frente de onda → âmbar, com o dot rotulado Next",
+    (status) => {
+      const { getByTestId, container } = renderNode("T-001", { status, onWavefront: true });
+
+      expect(getByTestId("task-node-T-001").classList.contains("deps-node--tone-blocked")).toBe(true);
+      const dot = container.querySelector(".status-dot")!;
+      expect(dot.classList.contains("status-dot--blocked")).toBe(true);
+      expect(dot.getAttribute("aria-label")).toBe("Next");
+    },
+  );
+
+  it("running/done ignoram a frente de onda (a cor é do status)", () => {
+    const { getByTestId: getRunning } = renderNode("T-001", {
+      status: "running",
+      onWavefront: true,
+    });
+    expect(getRunning("task-node-T-001").classList.contains("deps-node--tone-running")).toBe(true);
+
+    const { getByTestId: getDone } = renderNode("T-002", { status: "done", onWavefront: true });
+    expect(getDone("task-node-T-002").classList.contains("deps-node--tone-done")).toBe(true);
   });
 
   it("selected + any tone ⇒ both classes (concentric rings)", () => {

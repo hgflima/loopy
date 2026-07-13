@@ -42,7 +42,7 @@
   background-color: transparent;
 }
 
-/* ---- Flow edges (running upstream / next downstream) -------------------- */
+/* ---- Flow edges (running upstream / next downstream / done traversed) ---- */
 
 .deps-edge--running .react-flow__edge-path {
   stroke: var(--state-running);
@@ -50,6 +50,10 @@
 
 .deps-edge--next .react-flow__edge-path {
   stroke: var(--state-blocked);
+}
+
+.deps-edge--done .react-flow__edge-path {
+  stroke: var(--state-done);
 }
 
 @media (prefers-reduced-motion: reduce) {
