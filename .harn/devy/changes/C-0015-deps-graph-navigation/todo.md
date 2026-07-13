@@ -72,7 +72,7 @@
     Files: apps/menubar/src/graph/TaskNode.tsx, apps/menubar/src/graph/TaskNode.css, apps/menubar/src/graph/TaskNode.test.tsx
     Scope: S
 
-- [ ] T-003: `useShiftWheelPan` — o fallback de plataforma do shift+roda, isolado e testado (D10)
+- [x] T-003: `useShiftWheelPan` — o fallback de plataforma do shift+roda, isolado e testado (D10)
     NOVO `apps/menubar/src/graph/useShiftWheelPan.ts` (~15 linhas): hook que recebe um
     `RefObject<HTMLElement>` (o wrapper) e usa `getViewport`/`setViewport` do `useReactFlow()`. Num
     `useEffect`, registra no elemento um listener **NATIVO**: `el.addEventListener("wheel", onWheel,
