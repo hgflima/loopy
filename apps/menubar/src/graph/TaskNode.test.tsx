@@ -139,18 +139,65 @@ describe("TaskNode — selection (aria-pressed)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Running: pulse on border, dot stays static
+// Tone ring: status → tone class via TASK_STATUS_META (SC3)
 // ---------------------------------------------------------------------------
 
-describe("TaskNode — running pulse on border (D7)", () => {
-  it("running applies deps-node--running class", () => {
+describe("TaskNode — tone ring from TASK_STATUS_META", () => {
+  it.each<[TaskStatus, string]>([
+    ["pending", "deps-node--tone-neutral"],
+    ["skipped", "deps-node--tone-neutral"],
+    ["blocked", "deps-node--tone-blocked"],
+    ["paused", "deps-node--tone-blocked"],
+    ["running", "deps-node--tone-running"],
+    ["done", "deps-node--tone-done"],
+    ["escalated", "deps-node--tone-failed"],
+  ])("status=%s → class %s", (status, expectedClass) => {
+    const { getByTestId } = renderNode("T-001", { status });
+    expect(getByTestId("task-node-T-001").classList.contains(expectedClass)).toBe(true);
+  });
+
+  it("selected + any tone ⇒ both classes (concentric rings)", () => {
+    const { getByTestId } = renderNode("T-001", {
+      status: "done",
+      selected: true,
+    });
+    const node = getByTestId("task-node-T-001");
+    expect(node.classList.contains("deps-node--selected")).toBe(true);
+    expect(node.classList.contains("deps-node--tone-done")).toBe(true);
+  });
+
+  it("pulse-off only applies to running (not other statuses)", () => {
+    const { getByTestId: getRunning } = renderNode("T-001", {
+      status: "running",
+      isRunning: true,
+      tick: 1, // off phase
+    });
+    expect(getRunning("task-node-T-001").classList.contains("deps-node--pulse-off")).toBe(true);
+
+    const { getByTestId: getDone } = renderNode("T-002", {
+      status: "done",
+      isRunning: false,
+      tick: 1,
+    });
+    expect(getDone("task-node-T-002").classList.contains("deps-node--pulse-off")).toBe(false);
+  });
+
+  it("reducedMotion=true does NOT apply pulse-off", () => {
     const { getByTestId } = renderNode("T-001", {
       status: "running",
       isRunning: true,
+      tick: 1,
+      reducedMotion: true,
     });
-    expect(getByTestId("task-node-T-001").classList.contains("deps-node--running")).toBe(true);
+    expect(getByTestId("task-node-T-001").classList.contains("deps-node--pulse-off")).toBe(false);
   });
+});
 
+// ---------------------------------------------------------------------------
+// Running: pulse on border, dot stays static (D7)
+// ---------------------------------------------------------------------------
+
+describe("TaskNode — running pulse on border (D7)", () => {
   it("tick=0 (on) — border shadow from CSS class (no inline override)", () => {
     expect(pulseFrame(0)).toBe("on");
     const { getByTestId } = renderNode("T-001", {
@@ -159,7 +206,6 @@ describe("TaskNode — running pulse on border (D7)", () => {
       tick: 0,
     });
     const node = getByTestId("task-node-T-001");
-    // On phase: CSS class provides the shadow, no inline override
     expect(node.style.boxShadow).toBe("");
   });
 
@@ -172,7 +218,6 @@ describe("TaskNode — running pulse on border (D7)", () => {
     });
     const node = getByTestId("task-node-T-001");
     expect(node.classList.contains("deps-node--pulse-off")).toBe(true);
-    // No inline boxShadow — CSS class handles the "off" phase
     expect(node.style.boxShadow).toBe("");
   });
 
@@ -193,16 +238,7 @@ describe("TaskNode — running pulse on border (D7)", () => {
       reducedMotion: true,
     });
     const node = getByTestId("task-node-T-001");
-    // With reduced motion, no inline boxShadow override
     expect(node.style.boxShadow).toBe("");
-  });
-
-  it("non-running status has no running class", () => {
-    const { getByTestId } = renderNode("T-001", {
-      status: "done",
-      isRunning: false,
-    });
-    expect(getByTestId("task-node-T-001").classList.contains("deps-node--running")).toBe(false);
   });
 });
 

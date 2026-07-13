@@ -1,10 +1,12 @@
 /* TaskNode — card de design-system no grafo de deps (paridade .kanban-card).
-   --_lift: base elevation shadow (light = shadow-sm, dark = none via transparent). */
+   --_lift: base elevation shadow (light = shadow-sm, dark = none via transparent).
+   --_ring: state ring colour, driven by deps-node--tone-* classes. */
 
 .deps-node {
   --deps-card-w: 220px;
   --deps-card-h: 88px;
   --_lift: var(--shadow-sm);
+  --_ring: var(--border);
 
   width: var(--deps-card-w);
   min-height: var(--deps-card-h);
@@ -14,48 +16,37 @@
   padding: var(--sp-sm) var(--sp-md);
   border-radius: var(--r-md);
   background: var(--surface-elevated);
-  box-shadow: var(--_lift);
+  box-shadow: var(--_lift), inset 0 0 0 2px var(--_ring);
   cursor: pointer;
   outline: none;
 }
 
-/* Focus-visible / selected: anel externo accent */
+/* Tone overrides (neutral falls through to default --border) */
+.deps-node--tone-running { --_ring: var(--state-running); }
+.deps-node--tone-done    { --_ring: var(--state-done); }
+.deps-node--tone-blocked { --_ring: var(--state-blocked); }
+.deps-node--tone-failed  { --_ring: var(--state-failed); }
+
+/* Focus-visible / selected: outer accent ring + inner state ring (concentric D4) */
 .deps-node:focus-visible,
 .deps-node--selected {
-  box-shadow: var(--_lift), 0 0 0 2px var(--accent);
+  box-shadow: var(--_lift), 0 0 0 2px var(--accent), inset 0 0 0 2px var(--_ring);
 }
 
 .deps-node--selected {
   background: var(--accent-subtle);
 }
 
-/* Running: realce interno state-running (pulsado via class deps-node--pulse-off) */
-.deps-node--running {
-  box-shadow: var(--_lift), inset 0 0 0 2px var(--state-running);
+/* Pulse "off" phase: running alternates cyan↔border (never transparent — D7) */
+.deps-node--tone-running.deps-node--pulse-off {
+  --_ring: var(--border);
 }
 
-/* Selected/focus + running: dois anéis concêntricos (D4) */
-.deps-node--selected.deps-node--running,
-.deps-node:focus-visible.deps-node--running {
-  box-shadow: var(--_lift), 0 0 0 2px var(--accent), inset 0 0 0 2px var(--state-running);
-}
-
-/* Pulse "off" phase: running inset fades to transparent */
-.deps-node--running.deps-node--pulse-off {
-  box-shadow: var(--_lift), inset 0 0 0 2px transparent;
-}
-.deps-node--selected.deps-node--running.deps-node--pulse-off {
-  box-shadow: var(--_lift), 0 0 0 2px var(--accent), inset 0 0 0 2px transparent;
-}
-
-/* Dark: shadows read poorly — hairline border + kill base shadow via --_lift. */
+/* Dark: shadows read poorly — hairline border driven by --_ring + kill base shadow. */
 @media (prefers-color-scheme: dark) {
   .deps-node {
     --_lift: 0 0 0 0 transparent;
-    border: 1px solid var(--border);
-  }
-  .deps-node--running {
-    border-color: var(--state-running);
+    border: 1px solid var(--_ring);
   }
 }
 
@@ -82,9 +73,9 @@
   color: var(--state-failed-ink);
 }
 
-/* Reduced motion: congela o realce interno (sem pulso). */
+/* Reduced motion: freeze running ring as lit (no pulse). */
 @media (prefers-reduced-motion: reduce) {
-  .deps-node--running {
-    box-shadow: var(--_lift), inset 0 0 0 2px var(--state-running);
+  .deps-node--tone-running.deps-node--pulse-off {
+    --_ring: var(--state-running);
   }
 }
