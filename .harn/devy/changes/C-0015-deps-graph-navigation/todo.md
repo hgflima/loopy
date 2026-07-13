@@ -105,7 +105,7 @@
 
 ## Fase 2 — Integração: o canvas responde à roda (T-004)
 
-- [ ] T-004: Props de navegação do `<ReactFlow>` + wrapper `.deps-flow` que monta o hook (D4/D6/D8)
+- [x] T-004: Props de navegação do `<ReactFlow>` + wrapper `.deps-flow` que monta o hook (D4/D6/D8)
     `apps/menubar/src/graph/DepsFlow.tsx`: (a) o componente passa a retornar o `<ReactFlow>` **dentro
     de** um `<div className="deps-flow" ref={wrapperRef}>` e chama `useShiftWheelPan(wrapperRef)`
     (T-003) — o wrapper precisa ser **ancestral** do pane do RF (a fase de captura é o que nos dá
