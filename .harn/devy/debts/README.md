@@ -65,3 +65,4 @@ histórico.
 |----|--------|------|------|--------|
 | [D-0001](D-0001-parsedeps-drops-trailing-dep.md) | `parseDeps` descarta a última dep quando a linha `Deps:` tem texto após os ids | `src/backlog/todo.ts` | média | aberto |
 | [D-0002](D-0002-heavy-verify-false-negative-under-concurrency.md) | Verify de suíte completa sob `concurrency > 1` dá falso-negativo (Tasks verdes pausam) | `loopy.yml` (`ci`) · `vitest.config.ts` | alta | reconhecido (fix #1 aplicado) |
+| [D-0003](D-0003-no-unified-agent-capability-adapter.md) | Sem interface única p/ o de/para das particularidades de cada coding agent (mode/model/effort); o dialeto de cada adapter vaza pro yml | `src/acp/session.ts` · `src/steps/agent.ts` · `src/config/schema.ts` | média | aberto |
