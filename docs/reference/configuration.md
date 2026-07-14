@@ -17,11 +17,13 @@ interpreta; nenhum default aqui altera *o que* o loop faz (AD-1).
 | `name` | `string` | Nome do config (identifica a Run em logs/relatórios). |
 | `workspace` | objeto | Raiz, parent branch e diretório de worktrees. Ver [`workspace`](#workspace). |
 | `acp` | objeto | Como iniciar e falar com o Agente ACP. Ver [`acp`](#acp). |
+| `agents` | objeto | **Opcional.** Registry de agentes nomeados. Mutuamente exclusivo com `acp.command`. Ver [`agents`](#agents). |
 | `inputs` | objeto | Paths dos inputs e formato do backlog. Ver [`inputs`](#inputs). |
 | `checks` | objeto | Listas de checks nomeadas e reutilizáveis. Ver [`checks`](#checks). |
 | `pipeline` | lista | Steps ordenados aplicados a cada task. Ver [`pipeline`](#pipeline). |
 | `stop_conditions` | objeto | Tetos e sinal de parada. Ver [`stop_conditions`](#stop_conditions). |
-| `concurrency` | `number` | Tamanho do pool de tasks paralelas. Inteiro ≥ 1. **Default `1`**. |
+| `concurrency` | `number \| "auto"` | Tamanho do pool de tasks paralelas. Inteiro ≥ 1 ou `"auto"`. **Default `1`**. Ver [concurrency](#concurrency). |
+| `max_concurrency` | `number` | Teto do pool quando `concurrency: auto`. Inteiro ≥ 1. **Default `4`**. Só morde o `auto` — valor numérico explícito de `concurrency` não é limitado por este teto. |
 | `policies` | objeto | Escalonamento e política de git. Ver [`policies`](#policies). |
 | `logging` | objeto | Destino e granularidade dos logs. Ver [`logging`](#logging). |
 | `metrics` | objeto | Instrumentação opt-in. **Opcional**. Ver [`metrics`](#metrics). |
@@ -50,6 +52,56 @@ interpreta; nenhum default aqui altera *o que* o loop faz (AD-1).
 |-------|------|---------|-----------|
 | `default_mode` | `string` | — | Modo (autonomia) ACP inicial das sessões (`acceptEdits`, `plan`, …). |
 | `on_request` | `"allow" \| "policy"` | `"allow"` | Como responder pedidos de permissão. `"policy"` é aceito pelo schema mas **tratado como `allow` no runtime** (deny-patterns ainda não implementados). |
+
+## `agents`
+
+Registry de **agentes nomeados** (ADR-0006). Cada chave é o nome do agente; o
+valor define como iniciá-lo. O motor spawna **um Processo ACP por agente
+referenciado** no pipeline (eager, na abertura da Run).
+
+```yaml
+agents:
+  claude:
+    command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+  codex:
+    command: ["npx", "-y", "@agentclientprotocol/codex-acp"]
+    effort: low
+  opencode:
+    command: ["opencode", "acp"]   # subcomando do binário, não pacote npm
+```
+
+> **`agents` e `acp.command` são mutuamente exclusivos.** Use `agents:` quando
+> precisar de mais de um agente (ou quiser nomeá-lo); use `acp.command` no modo
+> legado (agente único, sem Registry). O schema rejeita a presença simultânea.
+
+| Chave (por agente) | Tipo | Descrição |
+|--------------------|------|-----------|
+| `command` | `string[]` | **Obrigatório.** Argv para iniciar o Processo ACP do agente (mín. 1 elemento). Para adaptadores npm use `["npx", "-y", "<pacote>"]`; para subcomandos nativos use o binário diretamente (ex.: `["opencode", "acp"]`). |
+| `env` | `Record<string, string>` | **Opcional.** Variáveis de ambiente passadas ao processo. Suporta `${env.KEY}` (resolvido de `process.env`; ausência é `ConfigError` fail-fast). Omitir = auth por subscription/login do agente. |
+| `model` | `string` | **Opcional.** Modelo default para steps que usem este agente. Valor é o **dialeto literal** do agente (ex.: `"provider/model"` para opencode, `"claude-sonnet-4-5-20250514"` para claude). |
+| `effort` | `string` | **Opcional.** Reasoning effort default (ex.: `"low"`, `"high"`, `"max"`). Valor é o dialeto literal — nem todo agente suporta; se não suportar, é no-op com log. |
+| `display_name` | `string` | **Opcional.** Nome de exibição na TUI/GUI. Se omitido, usa a chave do Registry. |
+
+### Dialeto literal e `loopy probe-agent`
+
+Os valores de `mode`, `model` e `effort` são passados **tal qual** ao agente —
+o motor **não traduz** entre dialetos. Cada agente expõe vocabulário próprio:
+
+| Agente | `mode` (exemplos) | `effort` | Descoberta |
+|--------|--------------------|----------|------------|
+| claude-acp | `acceptEdits`, `plan` | `low` … `max` (≥ v0.59) | `loopy probe-agent claude` |
+| codex-acp | `read-only`, `agent`, `agent-full-access` | `low` … `high` | `loopy probe-agent codex` |
+| opencode | `build`, `plan` | — (não suporta) | `loopy probe-agent opencode` |
+
+Use `loopy probe-agent <nome> [--json]` para descobrir os modos, modelos e
+níveis de effort que um agente aceita. O resultado vem de `configOptions` da
+sessão ACP — é a fonte canônica. Ver [CLI — `probe-agent`](cli.md#probe-agent).
+
+### Resolução do agente em steps
+
+- **`acp.default_agent`**: se definido, steps sem `agent:` explícito usam esse agente.
+- **Registry com 1 agente**: se há apenas um agente e `default_agent` não foi definido, ele é o default implícito.
+- **Registry com >1 agente sem `default_agent`**: todo step de agente **deve** declarar `agent:` — o schema rejeita omissão.
 
 ## `inputs`
 
@@ -113,9 +165,12 @@ Turno de conversa com o Agente. Campos próprios:
 
 | Chave | Tipo | Default | Descrição |
 |-------|------|---------|-----------|
+| `agent` | `string` | — | **Opcional.** Nome do agente no Registry (`agents:`). Omitir usa o `acp.default_agent` (ou o único agente quando o Registry tem um só). |
 | `prompt` | `string` | — | Template do prompt inicial (interpolável). |
 | `retry_prompt` | `string` | — | **Opcional.** Template usado a partir da 2ª tentativa; sem ele, reusa `prompt`. |
-| `mode` | `string` | — | **Opcional.** Sobrescreve o modo ACP da Sessão neste Step. |
+| `mode` | `string` | — | **Opcional.** Sobrescreve o modo ACP da Sessão neste Step. Valor é o **dialeto literal** do agente (ex.: `acceptEdits` para claude, `build` para opencode). |
+| `model` | `string` | — | **Opcional.** Modelo para este Step. Dialeto literal do agente (ex.: `provider/model`). |
+| `effort` | `string` | — | **Opcional.** Reasoning effort para este Step. Dialeto literal (ex.: `low`, `high`). |
 | `clear_context` | `boolean` | `true` | Limpa o contexto da Sessão antes do turno. |
 | `verify` | objeto | — | **Opcional.** Loop interno de checks. Ver abaixo. |
 | `expect` | `string` | — | **Opcional.** Condição textual esperada no Verdict (ex.: `AUDIT: PASS`). |
@@ -183,6 +238,28 @@ Warnings **não-bloqueantes** são emitidos para ciclos de `goto` e para
 | `max_step_visits` | `number` | `10` | Teto de Visitas a um mesmo Step (fail-closed → escalate ao exceder). |
 | `stop_signal_file` | `string` | — | Path do Stop signal; sua presença encerra a Run após a Task corrente. |
 
+## `concurrency`
+
+Controla quantas tasks rodam em paralelo.
+
+| Valor | Comportamento |
+|-------|---------------|
+| `1` (default) | Sequencial — uma task por vez. |
+| `<n>` (inteiro ≥ 1) | Pool fixo de `n` tasks simultâneas. |
+| `"auto"` | O motor calcula `min(maxLayerWidth(DAG), max_concurrency)`. `maxLayerWidth` é a largura da maior camada topológica do DAG de tasks (derivado das dependências `Deps:` do `todo.md`). |
+
+`max_concurrency` (default `4`) limita **apenas** o `auto` — um `concurrency`
+numérico explícito não é afetado. Use `auto` quando o backlog tiver dependências
+declaradas e o paralelismo ideal depender da forma do DAG.
+
+A flag `--concurrency <n|auto>` da CLI sobrescreve o valor do yml. `--task`
+força `concurrency = 1` independente do config.
+
+```yaml
+concurrency: auto
+max_concurrency: 4   # teto do auto; default 4
+```
+
 ## `policies`
 
 ### `policies.escalation`
@@ -232,5 +309,6 @@ valor**:
 
 - [Interpolação (`${…}`)](interpolation.md) — variáveis usáveis em `prompt`,
   `run`, `notify`, `report.index`.
-- [CLI](cli.md) — flags que sobrescrevem `max_iterations` e `concurrency`.
+- [CLI](cli.md) — flags que sobrescrevem `max_iterations` e `concurrency`;
+  subcomando `probe-agent` para descobrir dialetos.
 - `examples/loopy.yml` — o exemplo canônico validado pelos testes de aceite.
