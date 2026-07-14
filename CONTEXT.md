@@ -152,6 +152,18 @@ _Avoid_: reset, limpar histórico
 A autonomia do Agente numa Sessão (`acceptEdits`, `plan`, `default`, …). **Modo plan** é read-only. Nunca abrevie para "plan" sozinho (colide com o documento Plan).
 _Avoid_: permissão (é conceito distinto), nível
 
+**Dialeto** (ADR-0008):
+O vocabulário literal de um adapter ACP para `mode`, `model` e `effort` — ex.: Claude fala `acceptEdits`/`plan`, Codex fala `agent`/`read-only`, OpenCode fala `build`/`plan`. O `loopy.yml` guarda o **dialeto literal** do Agente: é exatamente o que será enviado, sem intermediação. O motor **valida** o dialeto contra as Capabilities anunciadas, mas **nunca traduz** (não existe vocabulário canônico nem mapa de sinônimos — a descoberta substituiu a tradução; ver ADR-0008). Trocar de Agente num Step exige reescolher os valores no dialeto do novo Agente.
+_Avoid_: vocabulário canônico, tradução, mapa de sinônimos (rejeitados — ADR-0008)
+
+**Capability** (ADR-0008):
+O que um Agente **anuncia** que aceita, nos três eixos — modes, models e efforts — descoberto pelo motor via `configOptions` do `session/new` ACP (por categoria: `mode`, `model`, `thought_level`). Materializado em `AgentCapabilities` (`src/acp/capabilities.ts`): listas readonly de strings no Dialeto do Agente + os `configId`s para `set_config_option`. Eixo ausente (ex.: effort no OpenCode) → lista vazia (informação real, não erro). Fonte da verdade para validação (`mode` fail-closed, `model`/`effort` best-effort + warning visível) e para os selects sondados da GUI. Cacheável em `.loopy/capabilities.json` (Artefato, gitignored).
+_Avoid_: perfil, capacidade (genérico), suporte (implica binário)
+
+**Sondagem** (_probe_, ADR-0008):
+A ação de descobrir as Capabilities de um Agente: spawna o adapter, faz `initialize` + `session/new`, lê `configOptions`, grava o cache e encerra. Superfícies: CLI (`loopy probe-agent <nome> [--json]` — o 1.º subcomando do projeto), validação **eager** no início do Run (sessão descartável no `workspace.root` por Agente referenciado — D36), e GUI (botão "sondar/refresh" no `ConfigPane` — D32). O dry-run **não sonda** (zero processo, por contrato — D23) mas **lê o cache** quando existe e reporta (D37).
+_Avoid_: discovery (genérico), handshake (é mais que o initialize)
+
 ## Controle do loop
 
 **Tentativa** (_attempt_):
@@ -212,8 +224,16 @@ O índice corrente no Pipeline durante a execução de uma Task. O motor mantém
 _Avoid_: cursor, ponteiro
 
 **Concorrência** (_concurrency_):
-O teto efetivamente respeitado pelo Scheduler para o paralelismo entre Tasks. Default `1` (sequencial); sem teto superior. `--concurrency N` sobrescreve. Com `concurrency: 1` + sem `Deps:` + `on_merge_conflict: escalate`, o comportamento é **byte-idêntico** ao `for...of` sequencial (regressão zero). (ADR-0004.)
+O teto efetivamente respeitado pelo Scheduler para o paralelismo entre Tasks. Default `1` (sequencial). Aceita um inteiro ou `"auto"` (ADR-0009): `auto` = **Largura do grafo** limitada pelo **Teto do auto** (ver abaixo). `--concurrency <n|auto>` sobrescreve. Com `concurrency: 1` + sem `Deps:` + `on_merge_conflict: escalate`, o comportamento é **byte-idêntico** ao `for...of` sequencial (regressão zero). (ADR-0004, ADR-0009.)
 _Avoid_: threads, workers
+
+**Largura do grafo** (_max layer width_, ADR-0009):
+A camada topológica mais larga do Grafo de tasks — `max(...topoLayers(graph).map(l => l.length))` — é o máximo de Tasks que o DAG **permite** em paralelo. É o valor que `concurrency: auto` usa como base. Nota técnica: é o *limite inferior* do paralelismo real (o pico exato é o maior antichain e exigiria matching bipartido), mas coincide na prática. Calculado por `maxLayerWidth()` (`src/scheduler/graph.ts`), que já existia como `topoLayers` — usada pelo dry-run.
+_Avoid_: largura máxima (sem qualificar), antichain (é o conceito exato, não o que o motor calcula)
+
+**Teto do auto** (_max_concurrency_, ADR-0009):
+Chave `max_concurrency` (default **4**) que limita `concurrency: auto`. **Só morde o `auto`**: `concurrency: 8` + `max_concurrency: 4` roda com **8** — o operador escolheu 8 e o motor obedece (D17 = retrocompat absoluta). Sem teto, um `todo.md` sem `Deps:` (o caso comum) dispararia N worktrees e N sessões ACP de uma vez. Fórmula: `auto = min(Largura do grafo, max_concurrency)`.
+_Avoid_: limite, cap (sem qualificar)
 
 **Iteração** — precisão dupla sob paralelismo (ADR-0004):
 - A **var `${iteration}`** = índice estável da Task na ordem de arquivo do Backlog (o que o dry-run já resolve). Determinística e **idêntica entre dry-run e run vivo** ⇒ preserva AD-4. Não é mais o contador de runtime.

@@ -1,11 +1,11 @@
-# Loop — o orquestrador (loop externo), o mutex e o scheduler
+# Loop — o orquestrador (loop externo), o mutex e o scheduler (ADR-0009)
 
 ## Purpose & Scope
 O loop externo sobre o backlog: um **pool** de tasks dirigido pelo **scheduler** (`../scheduler/`, o *ready set* do DAG) sob o teto de `concurrency` e, para cada task, a interpretação do `pipeline` via registry (AD-2) usando um **Program counter (PC)** com Desvios (`on_fail: { goto }` / `on_success: { goto }`) e guard de Visitas (`max_step_visits`, fail-closed → escalate), aplicando `always`, `stop_conditions` e `policies.escalation`. Hospeda também o **planner do `--dry-run`** (fatia pura, sem I/O), a **fonte única do escopo** (`buildScopeVars`, AD-4) e o **mutex da seção crítica do parent** (`mutex.ts`). **Mecânica só** (AD-1).
 
 ## Entry Points & Contracts
 - `runLoop(config, tasks, deps)` → `RunLoopResult` (`{ completed, escalated, paused, skipped, iterations, stoppedBy, metrics, startedAt, finishedAt }`). Marca `- [x]` **só** após o pipeline inteiro passar; task que falha **nunca** é marcada.
-- `planDryRun(config, tasks, options?)` / `formatDryRunPlan(plan)`: resolve o pipeline por task, puramente funcional. Imprime arestas de desvio, bindings de agente/model/effort **e a seção `--- DAG ---`** (concorrência efetiva, camadas topológicas via `topoLayers`, ordem de merge prevista). Falha fail-fast com `InterpolationError` antes de qualquer saída.
+- `planDryRun(config, tasks, options?)` / `formatDryRunPlan(plan)`: resolve o pipeline por task, puramente funcional. Imprime arestas de desvio, bindings de agente/model/effort **e a seção `--- DAG ---`** (concorrência efetiva **com justificativa** — via `resolveConcurrency` do scheduler, ADR-0009: ex. `3 (auto — camada mais larga: T-001, T-002, T-003; teto: 4)`), camadas topológicas via `topoLayers`, ordem de merge prevista. **Valida capabilities pelo cache** quando `.loopy/capabilities.json` existe (D37); sem cache, reporta "não verificadas". Falha fail-fast com `InterpolationError` antes de qualquer saída.
 - `resolveAgentBinding(step, resolvedAgents)` → `{ agentName, model?, effort? }`: helper **puro** (AD-6), fonte única do escopo Agente — reusado por orquestrador, step `agent` e dry-run.
 - `mutex.ts` — `createMutex()` / `guarded()`. O mutex é **construído aqui** e injetado no registry; o *enforcement* por step mora em `../steps/` (só os não-agente, e só sem `parallel_safe`).
 - Outros exports usados fora: `worktreePathFor`, `deriveChange` (fonte do `${change.*}`), `resolveAgentLabel`, `formatOnFail`, `stripDepsLine`, `AbortPort`, `CANCEL_TIMEOUT_MS`.
@@ -13,7 +13,7 @@ O loop externo sobre o backlog: um **pool** de tasks dirigido pelo **scheduler**
 
 ## Usage Patterns
 - O PC avança conforme o resultado: sucesso sem `on_success` → `PC += 1`; Desvio → `PC = stepIndex[goto]`; falha com `escalate` → terminal. Em qualquer terminal, Steps `always:true` (teardown) rodam em ordem declarada, sem PC/salto. **Mas o teardown é suprimido** quando o terminal falhou E `keep_worktree` está ligado (não roda **nenhum** `always`, não só o de remover worktree).
-- **CLI sobrepõe o yml**: `--concurrency` e `--max-iterations` sobrescrevem os valores do config; `--task` força `concurrency = 1`.
+- **CLI sobrepõe o yml**: `--concurrency <n|auto>` e `--max-iterations` sobrescrevem os valores do config; `--task` força `concurrency = 1`. A resolução de `auto` é feita por `resolveConcurrency` (pura, no scheduler — ADR-0009).
 - **Sessões por-`(Agente, Worktree)` (ADR-0006):** `Map<agentName, AgentSession>` por Task; `buildTaskStepContext` resolve o Agente por Step via `resolveAgentBinding`. `SessionProvider = (agentName, cwd) => Promise<AgentSession>` — o orquestrador é agnóstico a "qual pool/quantos processos" (isso é do `index.ts`).
 
 ## Anti-patterns
@@ -27,7 +27,7 @@ O loop externo sobre o backlog: um **pool** de tasks dirigido pelo **scheduler**
 - Montado por `../index.ts` (`defaultRunLive`), que injeta git/checks/ui/session reais.
 
 ## Patterns & Pitfalls
-- **`../scheduler/` é a fatia pura do DAG** (sem node próprio: 285 linhas, um único consumidor — este módulo). API: `buildGraph` (erros como valores; **dep órfã é validada antes de ciclo**), `readySet`, `skipDescendants`, `topoLayers` (só no dry-run). Três armadilhas:
+- **`../scheduler/` é a fatia pura do DAG** (sem node próprio; **6.º subpath export** `@hgflima/loopy/scheduler`, browser-safe — ADR-0009). API: `buildGraph` (erros como valores; **dep órfã é validada antes de ciclo**), `readySet`, `skipDescendants`, `topoLayers`, `maxLayerWidth` (a Largura do grafo) e `resolveConcurrency` (resolve `auto` com teto — ADR-0009). Três armadilhas:
   1. **Há DOIS mapas de status, e eles discordam de propósito.** No mapa **do scheduler**, *toda* Task começa `"blocked"` e o `readySet` só promove nós `blocked` cujas deps estão todas `done`. Já o status **de exibição** (evento `task_registered` → TUI/GUI) nasce `"ready"` quando a Task não tem deps. Não unifique os dois sem entender: setar `"ready"` no mapa do scheduler faria a Task **nunca** ser promovida (o `readySet` a ignoraria) e o pool travaria.
   2. `readySet` exige que **toda dep esteja `done`**. Dep `skipped`/`escalated`/`paused` **nunca** libera o dependente — quem evita o deadlock é `skipDescendants`, que move os descendentes de `blocked` → `skipped`.
   3. **O scheduler não conhece `concurrency`**: o teto (`inFlight.size >= concurrency`) é aplicado aqui, no orquestrador.

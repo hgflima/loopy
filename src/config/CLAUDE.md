@@ -15,7 +15,8 @@ Valida e carrega o `loopy.yml` num `LoopyConfig` tipado, com defaults aplicados.
 
 ## Usage Patterns
 - Todo objeto usa `.strict()`: **chave desconhecida é rejeitada**. Ao adicionar um campo novo, atualize o schema *e* o tipo em `../types.ts` juntos.
-- Defaults de *forma* ficam aqui (`clear_context` → `true`, `concurrency` → `1`, `on_request` → `"allow"`, `max_step_visits` → `10`), nunca defaults comportamentais.
+- Defaults de *forma* ficam aqui (`clear_context` → `true`, `concurrency` → `1`, `max_concurrency` → `4`, `on_request` → `"allow"`, `max_step_visits` → `10`), nunca defaults comportamentais.
+- **`concurrency: number | "auto"`** (ADR-0009): o schema aceita inteiro ≥ 1 ou a literal `"auto"`. O parse **não resolve** `auto` (não conhece o DAG — as tasks vêm do `todo.md`, carregado depois); a resolução é pura em `../scheduler/graph.ts` (`resolveConcurrency`). **`max_concurrency`**: inteiro ≥ 1 (default **4**), teto que **só morde o `auto`** — `concurrency: 8` + `max_concurrency: 4` roda com 8.
 - **Registry de Agentes (ADR-0006):** `agents:` (top-level opcional) e `acp.command` (legado) não coexistem; todo `step.agent` existe no Registry; `default_agent` (se dado) existe; ≥1 Agente resolvível; **>1 Agente sem `default_agent` ⇒ `agent:` obrigatório em todo Step de agente**. `agent`/`model`/`effort` são estáticos (não interpolados — mirror de `mode`/`type`/`id`).
 
 ## Anti-patterns
@@ -35,8 +36,8 @@ Valida e carrega o `loopy.yml` num `LoopyConfig` tipado, com defaults aplicados.
 - **Armadilhas do `serialize.ts`** (todas com risco de drift silencioso):
   - `CANONICAL_KEYS` espelha à mão a ordem de declaração do `loopyConfigSchema`. Chave top-level nova no schema **precisa** entrar lá, senão cai num fallback defensivo e sai fora de ordem no yml gravado.
   - `parseConfigSource` é uma **segunda porta de entrada que não passa por `scanRemovedKeys` nem pelo `.strict()`** — um bypass legítimo (o editor precisa ler yml quebrado para mostrar erro), mas significa que "config só entra pela fronteira validada" **não é mais literalmente verdade**.
-  - `initialConfigTemplate` **duplica defaults do schema** (`concurrency: 1`, `max_step_visits: 10`, `clear_context: true`, `on_request: "allow"`) e usa o caminho **legado `acp.command`**, não o Registry `agents:` — diverge do `loopy.yml` deste próprio repo. Mudar um default no schema não atualiza o template.
-- **`concurrency` do yml não é a palavra final**: o efetivo é `flags.concurrency ?? config.concurrency`, e `--task` força 1.
+  - `initialConfigTemplate` **duplica defaults do schema** (`concurrency: 1`, `max_concurrency: 4`, `max_step_visits: 10`, `clear_context: true`, `on_request: "allow"`) e usa o caminho **legado `acp.command`**, não o Registry `agents:` — diverge do `loopy.yml` deste próprio repo. Mudar um default no schema não atualiza o template.
+- **`concurrency` do yml não é a palavra final**: o efetivo vem de `resolveConcurrency({ flag, declared, maxConcurrency, graph })` — precedência `flag > declared`; `--task` força 1; `auto` resolve pela Largura do grafo limitada por `max_concurrency` (ADR-0009).
 - `onFailSchema = z.union([z.literal("escalate"), gotoSchema])` (ADR-0002); `on_success: { goto }` mora em `stepBaseShape`. O `superRefine` do pipeline faz **só três coisas**: `id` único, alvo de goto existente, guard do agente (`on_fail` em `agent` exige `verify` ou `expect`). **Warnings não estão no zod** — estão em `warnings.ts`.
 - `resolveAgents` escolhe o default por **ordem de inserção** do YAML quando há `agents:` sem `acp.default_agent` (só alcançável com Registry de 1 agente, mas é dependência silenciosa da ordem das chaves).
 - `permissions.on_request: "policy"` é aceito pelo schema mas trata como `allow` no runtime (deny-patterns não implementados — ver `../acp/`).

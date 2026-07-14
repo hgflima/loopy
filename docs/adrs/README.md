@@ -8,6 +8,9 @@
 | 0004 | ["Concorrência N: DAG de tasks, seção crítica na camada de Steps, skip transitivo, cancelamento e on_merge_conflict"](./0004-concorrencia-n-dag-de-tasks-secao-critica-e-skip-transitivo.md) | accepted | 2026-07-05 |  |
 | 0005 | ["TUI de execução: dashboard Ink, emit seam aditivo, layout dagre e view pura renderer-agnóstica"](./0005-tui-de-execucao-dashboard-ink-emit-seam-e-view-pura.md) | accepted | 2026-07-05 |  |
 | 0006 | ["Multi-agente ACP: Registry nomeado, N Processos por Run, model/effort best-effort por Step"](./0006-multi-agente-acp.md) | accepted | 2026-07-06 |  |
+| 0007 | ["Transport NDJSON duplex para Native UI"](./0007-transport-ndjson-duplex-native-ui.md) | accepted | 2026-07-08 |  |
+| 0008 | ["Capabilities de agente por descoberta: configOptions como fonte, sem vocabulário canônico"](./0008-capabilities-de-agente-por-descoberta.md) | accepted | 2026-07-14 |  |
+| 0009 | ["Concorrência derivada do DAG: concurrency auto e max_concurrency"](./0009-concorrencia-derivada-do-dag.md) | accepted | 2026-07-14 |  |
 
 ## Changelog
 
@@ -17,4 +20,7 @@
 - 2026-07-05 — ADR-0004 created — loopy-bot
 - 2026-07-05 — ADR-0005 created
 - 2026-07-06 — ADR-0006 created
+- 2026-07-08 — ADR-0007 created
+- 2026-07-14 — ADR-0008 created
+- 2026-07-14 — ADR-0009 created
 
