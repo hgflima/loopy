@@ -21,6 +21,7 @@ const CANONICAL_ORDER = [
   "pipeline",
   "stop_conditions",
   "concurrency",
+  "max_concurrency",
   "policies",
   "logging",
   "metrics",

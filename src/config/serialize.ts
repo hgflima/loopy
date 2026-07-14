@@ -29,6 +29,7 @@ const CANONICAL_KEYS = [
   "pipeline",
   "stop_conditions",
   "concurrency",
+  "max_concurrency",
   "policies",
   "logging",
   "metrics",
@@ -140,6 +141,7 @@ export const initialConfigTemplate: LoopyConfigParsed = {
     stop_signal_file: ".loopy.stop",
   },
   concurrency: 1,
+  max_concurrency: 4,
   policies: {
     escalation: {
       action: "pause",

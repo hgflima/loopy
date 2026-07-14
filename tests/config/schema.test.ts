@@ -408,6 +408,58 @@ describe("concurrency", () => {
     });
     expect(() => parseConfig(yaml)).toThrow();
   });
+
+  it("aceita concurrency: 'auto'", () => {
+    const yaml = configYaml((c) => {
+      c.concurrency = "auto";
+    });
+    const config = parseConfig(yaml);
+    expect(config.concurrency).toBe("auto");
+  });
+
+  it("rejeita concurrency: 'banana' com path 'concurrency'", () => {
+    const yaml = configYaml((c) => {
+      c.concurrency = "banana";
+    });
+    expect(() => parseConfig(yaml)).toThrow(/concurrency/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-002 — max_concurrency
+// ---------------------------------------------------------------------------
+
+describe("max_concurrency", () => {
+  it("aplica default max_concurrency=4 quando omitido", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    expect(config.max_concurrency).toBe(4);
+  });
+
+  it("aceita max_concurrency explícito", () => {
+    const yaml = configYaml((c) => {
+      c.max_concurrency = 8;
+    });
+    const config = parseConfig(yaml);
+    expect(config.max_concurrency).toBe(8);
+  });
+
+  it("rejeita max_concurrency=0", () => {
+    const yaml = configYaml((c) => {
+      c.max_concurrency = 0;
+    });
+    expect(() => parseConfig(yaml)).toThrow();
+  });
+
+  it("max_concurrency com concurrency numérico é legal e inerte (D17)", () => {
+    const yaml = configYaml((c) => {
+      c.concurrency = 8;
+      c.max_concurrency = 4;
+    });
+    const config = parseConfig(yaml);
+    expect(config.concurrency).toBe(8);
+    expect(config.max_concurrency).toBe(4);
+  });
 });
 
 // ---------------------------------------------------------------------------

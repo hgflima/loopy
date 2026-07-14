@@ -419,7 +419,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 tick={tick}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={handleSelectTask}
-                concurrency={configDraft.draft?.concurrency}
+                concurrency={typeof configDraft.draft?.concurrency === "number" ? configDraft.draft.concurrency : undefined}
                 configDraft={isIdle ? configDraft : undefined}
                 onEditStep={isIdle ? handleEditStep : undefined}
                 onAddStep={isIdle ? handleAddStep : undefined}
