@@ -35,7 +35,9 @@ interface ViewSwitcherProps {
   selectedTaskId?: string | null;
   onSelectTask?: (taskId: string) => void;
   /** `concurrency` do yml — teto da frente de onda no grafo (vale também no Run). */
-  concurrency?: number;
+  concurrency?: number | "auto";
+  /** `max_concurrency` do yml — teto do `auto`. */
+  maxConcurrency?: number;
   configDraft?: ConfigDraftAPI;
   /** Open step editor for a given step id (idle only). */
   onEditStep?: (stepId: string) => void;
@@ -55,6 +57,7 @@ export function ViewSwitcher({
   selectedTaskId,
   onSelectTask,
   concurrency,
+  maxConcurrency,
   configDraft,
   onEditStep,
   onAddStep,
@@ -126,6 +129,7 @@ export function ViewSwitcher({
               tick={tick}
               active={view === "deps"}
               concurrency={concurrency}
+              maxConcurrency={maxConcurrency}
               selectedTaskId={selectedTaskId}
               onSelectTask={onSelectTask}
             />

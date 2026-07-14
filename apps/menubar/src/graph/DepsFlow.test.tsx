@@ -403,6 +403,48 @@ describe("DepsFlow — frente de onda nos nós", () => {
 
     for (const n of captured.nodes) expect(n.data.onWavefront).toBe(true);
   });
+
+  // --- T-004: concurrency "auto" resolve com a função do motor (D7/D12) ---
+
+  it('"auto" num backlog sem deps com max_concurrency: 4 → frente de 4 (não 20)', () => {
+    const tasks = Array.from({ length: 20 }, (_, i) =>
+      task(`T-${String(i + 1).padStart(3, "0")}`),
+    );
+
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} concurrency="auto" maxConcurrency={4} />);
+
+    const onWave = captured.nodes.filter((n) => n.data.onWavefront);
+    expect(onWave).toHaveLength(4);
+    // São as 4 primeiras do backlog
+    expect(onWave.map((n) => n.id)).toEqual(["T-001", "T-002", "T-003", "T-004"]);
+  });
+
+  it('"auto" num DAG de camadas [3,2,1] com teto 4 → frente de 3', () => {
+    // Layer 0: A,B,C (width 3); Layer 1: D,E; Layer 2: F
+    const tasks = [task("A"), task("B"), task("C"), task("D"), task("E"), task("F")];
+    const edges: [string, string][] = [
+      ["A", "D"], ["B", "D"], ["C", "E"],
+      ["D", "F"], ["E", "F"],
+    ];
+
+    render(<DepsFlow tasks={tasks} edges={edges} tick={0} concurrency="auto" maxConcurrency={4} />);
+
+    const onWave = captured.nodes.filter((n) => n.data.onWavefront);
+    // Only layer-0 tasks (A,B,C) are on the wavefront — limit 3 via auto
+    expect(onWave).toHaveLength(3);
+    expect(onWave.map((n) => n.id).sort()).toEqual(["A", "B", "C"]);
+  });
+
+  it('"auto" sem max_concurrency → usa o default 4', () => {
+    const tasks = Array.from({ length: 10 }, (_, i) =>
+      task(`T-${String(i + 1).padStart(3, "0")}`),
+    );
+
+    render(<DepsFlow tasks={tasks} edges={[]} tick={0} concurrency="auto" />);
+
+    const onWave = captured.nodes.filter((n) => n.data.onWavefront);
+    expect(onWave).toHaveLength(4);
+  });
 });
 
 // ---------------------------------------------------------------------------

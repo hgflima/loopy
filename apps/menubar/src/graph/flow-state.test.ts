@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { TaskStatus } from "loopy/tui/store";
-import { wavefront, nodeStatusMeta, edgeFlow } from "./flow-state";
+import { wavefront, nodeStatusMeta, edgeFlow, resolveWavefrontLimit } from "./flow-state";
 
 /** Build the statusById map the graph feeds these functions. */
 function statuses(entries: Record<string, TaskStatus>): ReadonlyMap<string, TaskStatus> {
@@ -231,5 +231,47 @@ describe("edgeFlow", () => {
     expect(edgeFlow("T-002", "T-005", s, front)).toBeNull();
     // O caminho até a próxima acende, mesmo saindo de uma done.
     expect(edgeFlow("T-001", "T-003", s, front)).toBe("next");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveWavefrontLimit — resolve "auto" com a função do motor (D7/D12)
+// ---------------------------------------------------------------------------
+
+describe("resolveWavefrontLimit", () => {
+  it("number → usado como está (D17)", () => {
+    expect(resolveWavefrontLimit(3, undefined, ["A", "B"], [])).toBe(3);
+  });
+
+  it("undefined → Infinity (fallback seguro: não corta)", () => {
+    expect(resolveWavefrontLimit(undefined, undefined, ["A", "B"], [])).toBe(Infinity);
+  });
+
+  it('"auto" sem deps, max_concurrency: 4 → frente de 4 (não 20)', () => {
+    // 20 tasks sem deps → a camada mais larga tem 20, mas o teto é 4.
+    const nodes = Array.from({ length: 20 }, (_, i) => `T-${String(i + 1).padStart(3, "0")}`);
+    expect(resolveWavefrontLimit("auto", 4, nodes, [])).toBe(4);
+  });
+
+  it('"auto" num DAG de camadas [3,2,1] com teto 4 → 3', () => {
+    // Layer 0: A,B,C (width 3); Layer 1: D,E; Layer 2: F
+    const nodes = ["A", "B", "C", "D", "E", "F"];
+    const edges: (readonly [string, string])[] = [
+      ["A", "D"], ["B", "D"], ["C", "E"],
+      ["D", "F"], ["E", "F"],
+    ];
+    expect(resolveWavefrontLimit("auto", 4, nodes, edges)).toBe(3);
+  });
+
+  it('"auto" sem max_concurrency → usa o default 4', () => {
+    // 10 tasks sem deps → camada mais larga = 10, cap default = 4
+    const nodes = Array.from({ length: 10 }, (_, i) => `T-${i}`);
+    expect(resolveWavefrontLimit("auto", undefined, nodes, [])).toBe(4);
+  });
+
+  it('"auto" com max_concurrency maior que a camada mais larga → usa a largura', () => {
+    // 3 tasks sem deps, cap = 100 → camada mais larga = 3
+    const nodes = ["A", "B", "C"];
+    expect(resolveWavefrontLimit("auto", 100, nodes, [])).toBe(3);
   });
 });

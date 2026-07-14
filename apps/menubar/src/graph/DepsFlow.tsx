@@ -32,7 +32,7 @@ import { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H } from "./scale";
 import { usePrefersReducedMotion } from "../ui";
 import { failedStepId } from "../kanban/failed-step";
 import { useShiftWheelPan } from "./useShiftWheelPan";
-import { wavefront, edgeFlow, type EdgeFlow } from "./flow-state";
+import { wavefront, edgeFlow, resolveWavefrontLimit, type EdgeFlow } from "./flow-state";
 
 /** Stable reference — must live outside the component to avoid re-registration. */
 const nodeTypes = { task: TaskNode } as const;
@@ -51,12 +51,14 @@ export interface DepsFlowProps {
   /** Whether the Deps pane is the currently visible view. */
   readonly active?: boolean;
   /** Teto da frente de onda (`concurrency` do yml). Omitido = não corta. */
-  readonly concurrency?: number;
+  readonly concurrency?: number | "auto";
+  /** Teto do `auto` (`max_concurrency` do yml). */
+  readonly maxConcurrency?: number;
   readonly selectedTaskId?: string | null;
   readonly onSelectTask?: (taskId: string) => void;
 }
 
-export function DepsFlow({ tasks, edges, tick, active, concurrency, selectedTaskId, onSelectTask }: DepsFlowProps) {
+export function DepsFlow({ tasks, edges, tick, active, concurrency, maxConcurrency, selectedTaskId, onSelectTask }: DepsFlowProps) {
   const reducedMotion = usePrefersReducedMotion();
   const wrapperRef = useRef<HTMLDivElement>(null);
   useShiftWheelPan(wrapperRef);
@@ -84,9 +86,13 @@ export function DepsFlow({ tasks, edges, tick, active, concurrency, selectedTask
   const order = useMemo(() => tasks.map((t) => t.id), [tasks]);
 
   /** Quem roda a seguir — derivado do grafo, não do status cru (ver flow-state). */
+  const limit = useMemo(
+    () => resolveWavefrontLimit(concurrency, maxConcurrency, order, edges),
+    [concurrency, maxConcurrency, order, edges],
+  );
   const front = useMemo(
-    () => wavefront(statusById, edges, concurrency ?? Infinity),
-    [statusById, edges, concurrency],
+    () => wavefront(statusById, edges, limit),
+    [statusById, edges, limit],
   );
 
   const geometry = useMemo(
