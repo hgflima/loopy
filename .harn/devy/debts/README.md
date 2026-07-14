@@ -65,3 +65,8 @@ histórico.
 |----|--------|------|------|--------|
 | [D-0001](D-0001-parsedeps-drops-trailing-dep.md) | `parseDeps` descarta a última dep quando a linha `Deps:` tem texto após os ids | `src/backlog/todo.ts` | média | aberto |
 | [D-0002](D-0002-heavy-verify-false-negative-under-concurrency.md) | Verify de suíte completa sob `concurrency > 1` dá falso-negativo (Tasks verdes pausam) | `loopy.yml` (`ci`) · `vitest.config.ts` | alta | reconhecido (fix #1 aplicado) |
+| [D-0003](D-0003-check-events-never-emitted-in-live-run.md) | `check_started`/`check_finished` nunca são emitidos num Run real (o port de produção descarta os callbacks) | `src/index.ts` · `src/checks/runner.ts` | média | aberto |
+| [D-0004](D-0004-approval-requested-frame-has-empty-taskid.md) | Control frame `approval_requested` sai com `taskId`/`stepId` vazios (hardcoded) | `src/tui/start.ts` | média | aberto |
+| [D-0005](D-0005-cancelsignal-seam-never-wired.md) | `cancelSignal` é seam morto: o hard-stop nunca chega ao step `shell` | `src/steps/index.ts` · `src/steps/shell.ts` | média | aberto |
+| [D-0006](D-0006-approval-onfail-goto-renders-object-object.md) | `on_fail: { goto }` em step `approval` renderiza `[object Object]` na `reason` | `src/steps/approval.ts` | baixa | aberto |
+| [D-0007](D-0007-run-cost-undercounts-since-task-cost-became-a-sum.md) | Custo do Run subconta: Task virou soma (ADR-0006), Run/Change seguem *last-non-null* | `src/metrics/folds.ts` · `src/types.ts` | média | aberto |

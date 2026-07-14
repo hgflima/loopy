@@ -35,4 +35,4 @@ Módulo **puro** que coleta, agrega e reporta tempo, tokens e custo por Step, ac
 - **`readCost()` já inclui o carry de reopens**: `clear()` reabre a Sessão, e o `costCarry` mantém o snapshot monotônico (ver `../acp/`).
 - `usage_update.cost` do SDK é `@experimental`/UNSTABLE — lido via cast frouxo; pode sumir. O best-effort protege disso.
 - Entre Runs, `change-report.aggregateTasks` resolve o custo de uma Task como `ts.cost ?? prev.cost` — **o Run mais recente vence**, não soma.
-- > TODO(intent): o custo de **Run** ser `last-non-null` enquanto o de **Task** virou soma parece undercount (o "Total Run · custo" mostra o custo da última Task iterada, não a soma). `types.ts` ainda documenta `TaskMetrics.cost` como "last non-null", contradizendo o código. Bug ou invariante nova?
+- **Débito aberto** (`.harn/devy/debts/`): **D-0007** — o custo de **Run**/**Change** ser `last-non-null` enquanto o de **Task** virou soma **subconta**: o "Total Run · custo" mostra o custo da última Task iterada, não a soma. `types.ts` e o docstring de `folds.ts` ainda afirmam a regra antiga. O custo **por Task** é confiável; o total agregado não.
