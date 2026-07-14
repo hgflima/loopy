@@ -280,7 +280,7 @@
 
 ## Fase 4 — Fail-fast e a GUI que sabe (T-009 ∥ T-010 ∥ T-012)
 
-- [ ] T-009: validação **eager** no início do Run + dry-run que valida pelo cache (D36/D37/D23)
+- [x] T-009: validação **eager** no início do Run + dry-run que valida pelo cache (D36/D37/D23)
     **Sem isto, a validação do T-006 chega tarde demais para ser útil** (estouraria na 3ª task, meia
     hora depois). `src/index.ts`, `defaultRunLive` (`:335-512`): logo após o
     `createAgentProcessPool` (`:405-447`) — que já é eager e fail-fast (`pool.ts:81`) — para **cada
@@ -343,7 +343,7 @@
     Files: apps/menubar/src/config/useAgentCapabilities.ts, apps/menubar/src/config/StepEditor.tsx, apps/menubar/src/config/StepEditor.test.tsx, apps/menubar/src-tauri/src/lib.rs
     Scope: L
 
-- [ ] T-012: `examples/loopy.yml` com um agente opencode + `docs/reference/configuration.md` (D24)
+- [x] T-012: `examples/loopy.yml` com um agente opencode + `docs/reference/configuration.md` (D24)
     `examples/loopy.yml` (o exemplo canônico é a **doc de fato** do `agents:`): adicionar um Agente
     `opencode` com `command: ["opencode", "acp"]` — **subcomando do binário**, não pacote npm como os
     outros dois (é exatamente a pegadinha que motiva os presets do T-011) — e um step que o use com
