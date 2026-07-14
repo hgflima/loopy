@@ -68,6 +68,7 @@ function makeStore(taskIds: string[] = ["T-001"]): StoreState {
     acpLog: [],
     activeAgents: new Set<string>(),
     pipeline: [],
+    warnings: [],
   };
 }
 

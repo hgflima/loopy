@@ -71,3 +71,30 @@ describe("store-bridge — usage_sample after chunks (C-0011 #5, RC-B1)", () => 
     expect(formatUsage(seg.usedTokens, seg.size, seg.model)).toBe("(34k / 3%)");
   });
 });
+
+// ---------------------------------------------------------------------------
+// store-bridge — warning event propagation (T-007)
+// ---------------------------------------------------------------------------
+
+describe("store-bridge — warning event propagation (T-007)", () => {
+  it("propagates warning into store.warnings via reduce", () => {
+    const s = feed([
+      ev({ type: "warning", message: "effort not supported", agentName: "Claude" }),
+    ]);
+    expect(s.store.warnings).toHaveLength(1);
+    expect(s.store.warnings[0]).toMatchObject({
+      agentName: "Claude",
+      message: "effort not supported",
+    });
+  });
+
+  it("warning with taskId/stepId marks step.warned via reduce", () => {
+    const s = feed([
+      ev({ type: "task_registered", taskId: "T-001", title: "t" }),
+      ev({ type: "step_started", taskId: "T-001", stepId: "impl", stepType: "agent" }),
+      ev({ type: "warning", taskId: "T-001", stepId: "impl", message: "no effort" }),
+    ]);
+    const step = s.store.tasks.find((t) => t.id === "T-001")?.steps.find((st) => st.id === "impl");
+    expect(step?.warned).toBe(true);
+  });
+});

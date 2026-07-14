@@ -27,6 +27,8 @@ export interface KanbanCard {
   readonly status: TaskStatus;
   /** For escalated tasks — the pipeline step where the failure occurred. */
   readonly failedAtStepId?: string;
+  /** True when at least one step received a warning event. */
+  readonly warned?: boolean;
 }
 
 export interface KanbanColumn {
@@ -48,11 +50,13 @@ const TERMINAL: ReadonlySet<TaskStatus> = new Set([
 
 function toCard(task: TaskState): KanbanCard {
   const fid = failedStepId(task);
+  const hasWarning = task.steps.some((s) => s.warned);
   return {
     taskId: task.id,
     title: task.title,
     status: task.status,
     ...(fid && { failedAtStepId: fid }),
+    ...(hasWarning && { warned: true }),
   };
 }
 

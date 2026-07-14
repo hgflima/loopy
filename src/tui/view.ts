@@ -11,7 +11,7 @@
  * vocabulary — a check that "passed" reads `✓` in both.
  */
 import { graphlib, layout as dagreLayout } from "@dagrejs/dagre";
-import type { CheckState, CheckStatus, StepStatus, TaskStatus } from "./store";
+import type { CheckState, CheckStatus, StepStatus, StoreState, TaskStatus } from "./store";
 
 // ---------------------------------------------------------------------------
 // Symbol + color vocabulary — one entry per status union member
@@ -95,6 +95,17 @@ export function prefixAgentLines(
   if (!multiAgent || agent === undefined) return lines;
   const prefix = `[${agent}] `;
   return lines.map((line) => prefix + line);
+}
+
+/**
+ * Warning lines for the dashboard footer — `⚠ <agent>: <message>` or
+ * `⚠ <message>` when no agent is associated.
+ * Returns an empty array when there are no warnings (zero lines, zero frame).
+ */
+export function renderWarnings(state: StoreState): string[] {
+  return state.warnings.map((w) =>
+    w.agentName ? `⚠ ${w.agentName}: ${w.message}` : `⚠ ${w.message}`,
+  );
 }
 
 /**
