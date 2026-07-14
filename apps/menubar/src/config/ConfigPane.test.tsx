@@ -135,6 +135,124 @@ describe("ConfigPane — rendering and editing (T-008)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// T-003 — concurrency: auto toggle + max_concurrency
+// ---------------------------------------------------------------------------
+
+describe("ConfigPane — concurrency auto toggle (T-003)", () => {
+  /** Shorthand: override concurrency + max_concurrency without the verbose spread. */
+  function concDraft(
+    concurrency: number | "auto",
+    maxConc = 4,
+    extra?: Partial<ConfigDraftAPI>,
+  ): ConfigDraftAPI {
+    return makeDraft({
+      draft: {
+        ...makeDraft().draft!,
+        concurrency: concurrency as unknown as number,
+        max_concurrency: maxConc,
+      } as ConfigDraftAPI["draft"],
+      ...extra,
+    });
+  }
+
+  it("shows toggle ON and hides concurrency NumberField when concurrency is 'auto'", () => {
+    const draft = concDraft("auto");
+    const { getByLabelText, queryByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    const toggle = getByLabelText(/^auto/) as HTMLInputElement;
+    expect(toggle.type).toBe("checkbox");
+    expect(toggle.checked).toBe(true);
+    expect(queryByLabelText("concurrency")).toBeNull();
+
+    const maxField = getByLabelText("max_concurrency") as HTMLInputElement;
+    expect(maxField).toBeTruthy();
+    expect(maxField.value).toBe("4");
+  });
+
+  it("shows toggle OFF and concurrency NumberField when concurrency is a number", () => {
+    const draft = concDraft(3);
+    const { getByLabelText, queryByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    const toggle = getByLabelText(/^auto/) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    expect((getByLabelText("concurrency") as HTMLInputElement).value).toBe("3");
+    expect(queryByLabelText("max_concurrency")).toBeNull();
+  });
+
+  it("toggling auto ON patches concurrency to 'auto' string", () => {
+    const draft = concDraft(3);
+    const { getByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    fireEvent.click(getByLabelText(/^auto/));
+    expect(draft.patch).toHaveBeenCalledWith("concurrency", "auto");
+  });
+
+  it("toggling auto OFF patches concurrency to 1 (default number)", () => {
+    const draft = concDraft("auto");
+    const { getByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    fireEvent.click(getByLabelText(/^auto/));
+    expect(draft.patch).toHaveBeenCalledWith("concurrency", 1);
+  });
+
+  it("preserves max_concurrency when toggling auto ON and OFF", () => {
+    const draft = concDraft(3, 6);
+    const { getByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    fireEvent.click(getByLabelText(/^auto/));
+    expect(draft.patch).toHaveBeenCalledWith("concurrency", "auto");
+    expect(draft.patch).not.toHaveBeenCalledWith("max_concurrency", expect.anything());
+  });
+
+  it("editing concurrency with toggle OFF still passes number (regression)", () => {
+    const draft = concDraft(3);
+    const { getByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    fireEvent.change(getByLabelText("concurrency"), { target: { value: "4" } });
+    expect(draft.patch).toHaveBeenCalledWith("concurrency", 4);
+  });
+
+  it("editing max_concurrency calls patch with number", () => {
+    const draft = concDraft("auto");
+    const { getByLabelText } = render(<ConfigPane configDraft={draft} />);
+
+    fireEvent.change(getByLabelText("max_concurrency"), { target: { value: "8" } });
+    expect(draft.patch).toHaveBeenCalledWith("max_concurrency", 8);
+  });
+
+  it("max_concurrency error shows in concurrency section counter", () => {
+    const draft = concDraft("auto", 0, {
+      errors: [{ path: "max_concurrency", message: "Number must be greater than or equal to 1" }],
+    });
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const counter = getByTestId("section-concurrency").querySelector(".config-pane__error-count");
+    expect(counter).not.toBeNull();
+    expect(counter!.textContent).toBe("1");
+  });
+
+  it("max_concurrency error shows inline when field is visible", () => {
+    const draft = concDraft("auto", 0, {
+      errors: [{ path: "max_concurrency", message: "Number must be greater than or equal to 1" }],
+    });
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const errorEl = getByTestId("section-concurrency").querySelector(".field__error");
+    expect(errorEl).not.toBeNull();
+    expect(errorEl!.textContent).toContain("greater than or equal to 1");
+  });
+
+  it("max_concurrency error does NOT go to cross-field banner", () => {
+    const draft = makeDraft({
+      errors: [{ path: "max_concurrency", message: "too low" }],
+    });
+    const { queryByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    expect(queryByTestId("config-banner")).toBeNull();
+  });
+});
+
 // Dirty indicator + Save button now live in the ViewSwitcher tab bar (the global
 // save bar) — see ViewSwitcher.test.tsx. The pane itself no longer renders them,
 // because edits also happen on the board (steps/columns).
