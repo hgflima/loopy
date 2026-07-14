@@ -1525,3 +1525,61 @@ describe("stripDepsLine", () => {
     expect(stripDepsLine("  \nDeps: T-001\n  Files: x.ts  \n  ")).toBe("Files: x.ts");
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-002: concurrency auto + max_concurrency in the live loop
+// ---------------------------------------------------------------------------
+
+describe("runLoop — concurrency auto (T-002)", () => {
+  it("auto com 3 tasks independentes resolve pool 3", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port: markDone, marked } = recordingMarkDone();
+    const step = shell("s1");
+    const config = makeLoopConfig([step], { concurrency: "auto" });
+    // 3 independent tasks = widest layer is 3, max_concurrency default 4 → auto=3
+    const tasks = [
+      makeTask("T-001"),
+      makeTask("T-002"),
+      makeTask("T-003"),
+    ];
+    const deps = makeDeps({ registry, markDone });
+
+    const result = await runLoop(config, tasks, deps);
+
+    expect(result.completed).toEqual(["T-001", "T-002", "T-003"]);
+    // All 3 should run (auto = 3 allows all 3 in parallel)
+    expect(marked).toEqual(expect.arrayContaining(["T-001", "T-002", "T-003"]));
+  });
+
+  it("concurrency: 8 + max_concurrency: 4 roda com 8 (D17 — teto só morde auto)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port: markDone } = recordingMarkDone();
+    const step = shell("s1");
+    // Explicit concurrency: 8, max_concurrency: 4 → should use 8, not 4 (D17)
+    const config = { ...makeLoopConfig([step], { concurrency: 8 }), max_concurrency: 4 };
+    const tasks = Array.from({ length: 10 }, (_, i) => makeTask(`T-${String(i + 1).padStart(3, "0")}`));
+    const deps = makeDeps({ registry, markDone });
+
+    const result = await runLoop(config, tasks, deps);
+
+    // All 10 should complete — concurrency 8 allows up to 8 in parallel
+    expect(result.completed.length).toBe(10);
+  });
+
+  it("concurrency: 3 segue byte-idêntico (regressão)", async () => {
+    const rec: Recorder = { order: [] };
+    const registry = scriptedRegistry(rec);
+    const { port: markDone, marked } = recordingMarkDone();
+    const step = shell("s1");
+    const config = makeLoopConfig([step], { concurrency: 3 });
+    const tasks = [makeTask("T-001"), makeTask("T-002"), makeTask("T-003")];
+    const deps = makeDeps({ registry, markDone });
+
+    const result = await runLoop(config, tasks, deps);
+
+    expect(result.completed).toEqual(["T-001", "T-002", "T-003"]);
+    expect(marked).toEqual(expect.arrayContaining(["T-001", "T-002", "T-003"]));
+  });
+});

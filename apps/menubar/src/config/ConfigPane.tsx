@@ -332,10 +332,10 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
         <SectionHeader title="Concurrency" errorCount={sectionErrors.concurrency.length} />
         <NumberField
           label="concurrency"
-          value={draft.concurrency}
+          value={typeof draft.concurrency === "number" ? draft.concurrency : 1}
           onChange={(v) => patch("concurrency", v)}
           error={fieldError("concurrency")}
-          hint="Número máximo de tasks simultâneas"
+          hint="Número fixo; use 'auto' no yml para derivar do DAG"
           min={1}
           id="concurrency"
         />

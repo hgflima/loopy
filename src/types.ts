@@ -319,7 +319,9 @@ export interface LoopyConfig {
   /** Ordered pipeline of typed step primitives. */
   readonly pipeline: readonly StepConfig[];
   readonly stop_conditions: StopConditions;
-  readonly concurrency: number;
+  readonly concurrency: number | "auto";
+  /** Cap for `concurrency: "auto"` — the auto value is `min(maxLayerWidth, max_concurrency)`. */
+  readonly max_concurrency: number;
   readonly policies: Policies;
   readonly logging: LoggingConfig;
   readonly metrics?: MetricsConfig;
@@ -505,7 +507,7 @@ export interface RunFlags {
   /** `--clean [T-XXX]`: teardown worktree+branch+checkpoint and exit. */
   readonly clean?: string | boolean;
   /** Override `concurrency` from the yml (pool size for parallel tasks). */
-  readonly concurrency?: number;
+  readonly concurrency?: number | "auto";
 }
 
 // ---------------------------------------------------------------------------

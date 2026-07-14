@@ -441,7 +441,7 @@ describe("--task warns non-done deps (T-011)", () => {
   });
 
   it("--task forces concurrency=1 in the flags passed to runLive", async () => {
-    let capturedConcurrency: number | undefined;
+    let capturedConcurrency: number | "auto" | undefined;
     const cap = capture();
     await run([dagFixture(DAG_TODO), "--task", "T-003", "--concurrency", "4"], cap.io, {
       isGitRepo: () => true,
@@ -502,5 +502,87 @@ describe("dry-run — agent binding resolution (T-004)", () => {
     expect(settingValue("review", "agent")).toBe("claude");
     expect(settingValue("review", "model")).toBe("sonnet-4");
     expect(settingValue("review", "effort")).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-002: concurrency: "auto" + max_concurrency in dry-run and CLI
+// ---------------------------------------------------------------------------
+
+/** DAG with 3 independent tasks (1 layer of 3) — auto should resolve to 3. */
+const WIDE_DAG_TODO = [
+  "# Wide DAG fixture",
+  "",
+  "- [ ] T-001: Independent A",
+  "",
+  "- [ ] T-002: Independent B",
+  "",
+  "- [ ] T-003: Independent C",
+  "",
+];
+
+/** dagFixture whose loopy.yml has `concurrency` overwritten to `value`. */
+function dagFixtureWithConcurrency(todoLines: string[], value: string) {
+  const dir = dagFixture(todoLines);
+  writeFileSync(
+    join(dir, "loopy.yml"),
+    readFileSync(join(PROJECT, "loopy.yml"), "utf8")
+      .replace(/^concurrency:\s*\d+/m, `concurrency: ${value}`),
+    "utf8",
+  );
+  return dir;
+}
+
+describe("dry-run — concurrency auto (T-002)", () => {
+  it("auto imprime valor e justificativa", async () => {
+    const dir = dagFixtureWithConcurrency(WIDE_DAG_TODO, "auto");
+    const cap = capture();
+    const code = await run([dir, "--dry-run"], cap.io);
+
+    expect(code).toBe(0);
+    const out = cap.stdout();
+    // auto resolves to 3 (widest layer = 3, cap = 4) → clamped to 3
+    expect(out).toContain("concorrência efetiva: 3 (auto");
+    expect(out).toContain("camada mais larga:");
+    expect(out).toContain("teto: 4");
+  });
+
+  it("--concurrency auto sobrepõe concurrency: 8 do yml", async () => {
+    const dir = dagFixtureWithConcurrency(WIDE_DAG_TODO, "8");
+    const cap = capture();
+    const code = await run([dir, "--dry-run", "--concurrency", "auto"], cap.io);
+
+    expect(code).toBe(0);
+    const out = cap.stdout();
+    // auto resolves to 3 (widest layer = 3, cap = 4)
+    expect(out).toContain("concorrência efetiva: 3 (auto");
+  });
+
+  it("--concurrency 4 segue funcionando (regressão)", async () => {
+    const cap = capture();
+    await run([dagFixture(DAG_TODO), "--dry-run", "--concurrency", "4"], cap.io);
+    expect(cap.stdout()).toContain("concorrência efetiva: 4");
+  });
+
+  it("--task X força 1 mesmo com auto no yml", async () => {
+    const dir = dagFixtureWithConcurrency(WIDE_DAG_TODO, "auto");
+    let capturedConcurrency: number | "auto" | undefined;
+    const cap = capture();
+    await run([dir, "--task", "T-001"], cap.io, {
+      isGitRepo: () => true,
+      runLive: async (args) => {
+        capturedConcurrency = args.flags.concurrency;
+        return EMPTY_RESULT;
+      },
+    });
+    expect(capturedConcurrency).toBe(1);
+  });
+
+  it("concurrency: 3 byte-idêntico ao formato anterior (regressão)", async () => {
+    const cap = capture();
+    await run([dagFixture(DAG_TODO), "--dry-run", "--concurrency", "3"], cap.io);
+    // Must print just the number, no "(auto" annotation
+    expect(cap.stdout()).toContain("concorrência efetiva: 3");
+    expect(cap.stdout()).not.toContain("(auto");
   });
 });

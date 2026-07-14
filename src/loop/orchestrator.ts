@@ -28,7 +28,8 @@
 import { existsSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { markDoneInFile, type BacklogOptions } from "../backlog/todo";
-import { buildGraph, readySet, skipDescendants, topoLayers } from "../scheduler/index";
+import { buildGraph, readySet, resolveConcurrency, skipDescendants, topoLayers } from "../scheduler/index";
+import type { ConcurrencyResolution } from "../scheduler/index";
 import type { SchedulerTaskStatus, TaskGraph } from "../scheduler/types";
 import {
   createResolver,
@@ -271,8 +272,8 @@ export interface DryRunPlan {
   readonly tasks: readonly ResolvedTaskPlan[];
   /** Topological layers of the DAG (each layer can run in parallel). */
   readonly layers: readonly (readonly string[])[];
-  /** Effective concurrency for this run. */
-  readonly concurrency: number;
+  /** Effective concurrency for this run (resolved — the dry-run needs the justification). */
+  readonly concurrency: ConcurrencyResolution;
   /** Predicted merge order (flattened topo layers, backlog order within). */
   readonly mergeOrder: readonly string[];
 }
@@ -367,8 +368,8 @@ function resolveStep(
 export interface PlanDryRunOptions {
   /** All known task ids (pending + done) for stripping already-satisfied deps. */
   readonly knownTaskIds?: readonly string[];
-  /** Effective concurrency (`flags.concurrency ?? config.concurrency`). */
-  readonly concurrency?: number;
+  /** Override concurrency (`flags.concurrency ?? config.concurrency`). */
+  readonly concurrency?: number | "auto";
 }
 
 /**
@@ -387,8 +388,6 @@ export function planDryRun(
   tasks: readonly Task[],
   options?: PlanDryRunOptions,
 ): DryRunPlan {
-  const concurrency = options?.concurrency ?? config.concurrency;
-
   // --- DAG construction (shared logic with runLoop, AD-4) ---
   const graphResult = buildGraph(stripDoneDeps(tasks, options?.knownTaskIds));
   if (!graphResult.ok) {
@@ -396,6 +395,14 @@ export function planDryRun(
   }
   const layers = topoLayers(graphResult.value);
   const mergeOrder = layers.flat();
+
+  // Resolve concurrency via the scheduler (single source of truth).
+  const concurrency = resolveConcurrency({
+    flag: options?.concurrency,
+    declared: config.concurrency,
+    maxConcurrency: config.max_concurrency,
+    graph: graphResult.value,
+  });
 
   // --- Per-task resolved pipeline ---
   const plans = tasks.map((task, index): ResolvedTaskPlan => {
@@ -467,9 +474,14 @@ function renderTaskPlan(plan: ResolvedTaskPlan): string {
 
 /** Render the DAG summary section (T-011). */
 function renderDag(plan: DryRunPlan): string {
+  const { auto, value, widestLayer, cap } = plan.concurrency;
+  // Numeric = byte-identical to previous format; auto = value + justification (D9).
+  const concLabel = auto
+    ? `${value} (auto — camada mais larga: ${widestLayer.join(", ")}; teto: ${cap})`
+    : `${value}`;
   const lines = [
     "--- DAG ---",
-    `  concorrência efetiva: ${plan.concurrency}`,
+    `  concorrência efetiva: ${concLabel}`,
     "  camadas topológicas:",
   ];
   for (let i = 0; i < plan.layers.length; i++) {
@@ -1340,9 +1352,6 @@ export async function runLoop(
   const paused: string[] = [];
   const skipped: string[] = [];
   const tasksMetrics: Record<string, TaskMetrics> = {};
-  // `--concurrency N` overrides yml; `--max-iterations N` overrides yml ceiling.
-  const concurrency =
-    deps.flags.concurrency ?? config.concurrency;
   const maxIterations =
     deps.flags.maxIterations ?? config.stop_conditions.max_iterations;
   const stopSignalPath = join(
@@ -1379,6 +1388,15 @@ export async function runLoop(
     throw new Error(`[orchestrator] ${graphResult.error}`);
   }
   const graph: TaskGraph = graphResult.value;
+
+  // `--concurrency N|auto` overrides yml; resolve through the scheduler so
+  // `auto` is a number before the pool uses it (D8 — resolved once at Run start).
+  const concurrency = resolveConcurrency({
+    flag: deps.flags.concurrency,
+    declared: config.concurrency,
+    maxConcurrency: config.max_concurrency,
+    graph,
+  }).value;
 
   // --- Emit DAG topology + pipeline declaration + task registrations (C-0007 T-004, C-0009 T-003) ---
   safeEmit(deps, { type: "edges_set", edges: graph.edges as [string, string][] });

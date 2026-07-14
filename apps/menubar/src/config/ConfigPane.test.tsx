@@ -28,6 +28,7 @@ function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
     draft: {
       workspace: { root: ".", parent_branch: "main", worktrees_dir: ".worktrees" },
       concurrency: 2,
+      max_concurrency: 4,
       agents: {
         claude: {
           command: ["claude", "--agent"],

@@ -90,6 +90,7 @@ export function defaultConfig(checks: ChecksConfig = {}): LoopyConfig {
     pipeline: [],
     stop_conditions: { max_iterations: 25, max_step_visits: 10, stop_signal_file: ".loopy.stop" },
     concurrency: 1,
+    max_concurrency: 4,
     policies: {
       escalation: { action: "pause", keep_worktree: true, notify: "stderr" },
       git: { require_clean_parent: true, on_merge_conflict: "escalate" as const },

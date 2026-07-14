@@ -160,6 +160,12 @@ function parsePositiveInt(value: string): number {
   return parsed;
 }
 
+/** Parse `--concurrency` accepting `"auto"` or a positive integer (commander hook). */
+function parseConcurrency(value: string): number | "auto" {
+  if (value === "auto") return "auto";
+  return parsePositiveInt(value);
+}
+
 /** Build the commander program, routing all output through `io`. */
 export function buildProgram(io: RunIO): Command {
   return new Command()
@@ -190,8 +196,8 @@ export function buildProgram(io: RunIO): Command {
     )
     .option(
       "--concurrency <n>",
-      "sobrescreve o pool de tasks paralelas (default: config)",
-      parsePositiveInt,
+      "sobrescreve o pool de tasks paralelas (default: config; 'auto' = largura do DAG)",
+      parseConcurrency,
     )
     .option("--no-tui", "forca logs de linha (sem Ink)")
     .option(
@@ -228,7 +234,9 @@ function toFlags(opts: Record<string, unknown>): RunFlags {
           ? true
           : undefined,
     concurrency:
-      typeof opts.concurrency === "number" ? opts.concurrency : undefined,
+      typeof opts.concurrency === "number" || opts.concurrency === "auto"
+        ? opts.concurrency
+        : undefined,
   };
 }
 
@@ -787,10 +795,9 @@ async function execute(
   }
 
   if (flags.dryRun) {
-    const effectiveConcurrency = flags.concurrency ?? config.concurrency;
     return printDryRun(config, pending, { configPath, todoPath }, io, {
       knownTaskIds,
-      concurrency: effectiveConcurrency,
+      concurrency: flags.concurrency,
     });
   }
 
