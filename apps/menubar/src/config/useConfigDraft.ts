@@ -151,6 +151,28 @@ function validateDraft(raw: unknown): {
 const SAMPLE_YAML = serializeConfig(initialConfigTemplate);
 const SAMPLE_TODO = `- [ ] T-001: Sample task\n  Sample task body\n`;
 
+/**
+ * Read the backlog **where the config says it lives** (`inputs.todo`), not at a
+ * hardcoded `<dir>/todo.md` — the engine resolves it the same way
+ * (`resolvePath(dir, config.inputs.todo)`), and a config pointing at, say,
+ * `.harn/devy/changes/C-0015/todo.md` is the common case, not the exception.
+ *
+ * Needs a valid draft to know the path, so an invalid yml yields no tasks.
+ */
+async function readBacklogSource(
+  dir: string | undefined,
+  todoPath: string | undefined,
+): Promise<string> {
+  if (!IS_TAURI) return SAMPLE_TODO; // dev:web fallback
+  if (!dir || !todoPath) return "";
+  try {
+    // Rust returns Option<String> — null when the file doesn't exist.
+    return (await invoke<string | null>("read_backlog", { dir, path: todoPath })) ?? "";
+  } catch {
+    return ""; // missing/unreadable backlog — empty board, not a crash
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -185,29 +207,22 @@ export function useConfigDraft(): ConfigDraftAPI {
     async (dir?: string) => {
       dirRef.current = dir;
       let yamlSource: string | null = null;
-      let todoSource = "";
 
       if (IS_TAURI && dir) {
         try {
           // Rust returns Option<String> — null when the file doesn't exist.
-          const result = await invoke<{
-            loopy_yml: string | null;
-            todo_md: string | null;
-          }>("read_project_files", { dir });
+          const result = await invoke<{ loopy_yml: string | null }>(
+            "read_project_files",
+            { dir },
+          );
           yamlSource = result.loopy_yml;
-          todoSource = result.todo_md ?? "";
         } catch {
-          // I/O error — treat as empty dir
-          yamlSource = null;
-          todoSource = "";
+          yamlSource = null; // I/O error — treat as empty dir
         }
       } else {
         // dev:web fallback — use embedded sample
         yamlSource = SAMPLE_YAML;
-        todoSource = SAMPLE_TODO;
       }
-
-      setTodoMd(todoSource);
 
       // No loopy.yml found → empty-state (T-015)
       if (yamlSource == null) {
@@ -216,6 +231,7 @@ export function useConfigDraft(): ConfigDraftAPI {
         rawDraftRef.current = null;
         setErrors([]);
         setDirty(false);
+        setTodoMd("");
         setTasks([]);
         return;
       }
@@ -236,7 +252,12 @@ export function useConfigDraft(): ConfigDraftAPI {
       setDraft(validated.draft);
       setErrors(validated.errors);
       setDirty(false);
-      reParseTasks(validated.errors.length === 0 ? validated.draft : null, todoSource);
+
+      // The backlog path is declared by the config, so it is only knowable now.
+      const parsedDraft = validated.errors.length === 0 ? validated.draft : null;
+      const todoSource = await readBacklogSource(dir, parsedDraft?.inputs.todo);
+      setTodoMd(todoSource);
+      reParseTasks(parsedDraft, todoSource);
     },
     [reParseTasks],
   );
@@ -255,10 +276,19 @@ export function useConfigDraft(): ConfigDraftAPI {
       setErrors(validated.errors);
       setDirty(true);
 
+      const parsedDraft = validated.errors.length === 0 ? validated.draft : null;
+
       // Re-parse tasks if backlog config changed (R9)
       if (path.startsWith("inputs.backlog")) {
-        const parsedDraft = validated.errors.length === 0 ? validated.draft : null;
         reParseTasks(parsedDraft, todoMd);
+      }
+
+      // Pointing at another backlog file means re-reading it from disk.
+      if (path === "inputs.todo") {
+        void readBacklogSource(dirRef.current, parsedDraft?.inputs.todo).then((source) => {
+          setTodoMd(source);
+          reParseTasks(parsedDraft, source);
+        });
       }
     },
     [reParseTasks, todoMd],

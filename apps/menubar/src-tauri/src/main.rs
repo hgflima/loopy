@@ -7,7 +7,7 @@ mod project_fs;
 mod sidecar;
 
 use config::{load_launch_config, save_launch_config};
-use project_fs::{read_project_files, write_loopy_yml};
+use project_fs::{read_backlog, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
 use tauri::{
     image::Image,
@@ -296,6 +296,7 @@ fn main() {
             load_launch_config,
             save_launch_config,
             read_project_files,
+            read_backlog,
             write_loopy_yml,
             log_error,
             quit_app,

@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Files read from the project directory that the frontend needs.
@@ -8,19 +8,32 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub struct ProjectFiles {
     /// Contents of `loopy.yml` (None when the file doesn't exist).
     pub loopy_yml: Option<String>,
-    /// Contents of `todo.md` (None when the file doesn't exist).
-    pub todo_md: Option<String>,
 }
 
-/// Read `loopy.yml` and `todo.md` from the given project directory.
-/// Missing files yield `None` — only genuine I/O errors are propagated.
+/// Read `loopy.yml` from the given project directory.
+/// A missing file yields `None` — only genuine I/O errors are propagated.
+///
+/// The backlog is **not** read here: its path is declared by the config
+/// (`inputs.todo`), so only the frontend — which owns the schema — knows where
+/// it lives. It fetches it with [`read_backlog`] once the yml is parsed.
 #[tauri::command]
 pub fn read_project_files(dir: String) -> Result<ProjectFiles, String> {
     let base = Path::new(&dir);
     Ok(ProjectFiles {
         loopy_yml: read_optional(base.join("loopy.yml"))?,
-        todo_md: read_optional(base.join("todo.md"))?,
     })
+}
+
+/// Read the backlog file at `path`, relative to the project dir — the same file
+/// the engine reads (`inputs.todo` in `loopy.yml`), which is frequently *not*
+/// `<dir>/todo.md`.
+///
+/// `path` is confined to the project dir: absolute paths and any `..` component
+/// are rejected. A missing file yields `None`.
+#[tauri::command]
+pub fn read_backlog(dir: String, path: String) -> Result<Option<String>, String> {
+    let target = resolve_within(Path::new(&dir), &path)?;
+    read_optional(target)
 }
 
 /// Write `loopy.yml` in the project directory. If the file already exists,
@@ -60,6 +73,27 @@ pub fn write_loopy_yml(dir: String, contents: String) -> Result<(), String> {
 const RETENTION_LIMIT: usize = 10;
 const BACKUP_PREFIX: &str = "loopy.";
 const BACKUP_SUFFIX: &str = ".yml";
+
+/// Join `rel` onto `base`, refusing to leave the project dir.
+///
+/// The check is **lexical** (no filesystem access): a path is rejected when it
+/// is absolute or carries any `..` component. That keeps a hand-edited
+/// `inputs.todo` from turning the webview into an arbitrary file reader.
+fn resolve_within(base: &Path, rel: &str) -> Result<PathBuf, String> {
+    let candidate = Path::new(rel);
+    for component in candidate.components() {
+        match component {
+            Component::ParentDir => {
+                return Err(format!("Path escapes the project dir: {rel}"))
+            }
+            Component::RootDir | Component::Prefix(_) => {
+                return Err(format!("Path must be relative to the project dir: {rel}"))
+            }
+            _ => {}
+        }
+    }
+    Ok(base.join(candidate))
+}
 
 /// Read a file, returning `None` when it doesn't exist.
 fn read_optional(path: std::path::PathBuf) -> Result<Option<String>, String> {
@@ -123,6 +157,46 @@ fn enforce_retention(backup_dir: &Path, limit: usize) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_within_accepts_nested_relative_path() {
+        let base = Path::new("/proj");
+        assert_eq!(
+            resolve_within(base, ".harn/devy/changes/C-0015/todo.md").unwrap(),
+            base.join(".harn/devy/changes/C-0015/todo.md")
+        );
+        assert_eq!(
+            resolve_within(base, "todo.md").unwrap(),
+            base.join("todo.md")
+        );
+    }
+
+    #[test]
+    fn resolve_within_rejects_escapes() {
+        let base = Path::new("/proj");
+        assert!(resolve_within(base, "../etc/passwd").is_err());
+        assert!(resolve_within(base, "docs/../../etc/passwd").is_err());
+        assert!(resolve_within(base, "/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn read_backlog_reads_the_declared_path() {
+        let tmp = std::env::temp_dir().join("loopy_test_read_backlog");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(tmp.join("changes/C-1")).unwrap();
+        fs::write(tmp.join("changes/C-1/todo.md"), "- [ ] T-001: x\n").unwrap();
+
+        let dir = tmp.to_string_lossy().to_string();
+        assert_eq!(
+            read_backlog(dir.clone(), "changes/C-1/todo.md".into()).unwrap(),
+            Some("- [ ] T-001: x\n".to_string())
+        );
+        // Missing file → None, not an error (drives the empty state).
+        assert_eq!(read_backlog(dir.clone(), "todo.md".into()).unwrap(), None);
+        assert!(read_backlog(dir, "../escape.md".into()).is_err());
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn backup_filename_from_epoch() {
