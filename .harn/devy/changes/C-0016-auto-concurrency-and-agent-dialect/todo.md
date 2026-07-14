@@ -343,7 +343,7 @@
     Files: apps/menubar/src/config/useAgentCapabilities.ts, apps/menubar/src/config/StepEditor.tsx, apps/menubar/src/config/StepEditor.test.tsx, apps/menubar/src-tauri/src/lib.rs
     Scope: L
 
-- [ ] T-012: `examples/loopy.yml` com um agente opencode + `docs/reference/configuration.md` (D24)
+- [x] T-012: `examples/loopy.yml` com um agente opencode + `docs/reference/configuration.md` (D24)
     `examples/loopy.yml` (o exemplo canônico é a **doc de fato** do `agents:`): adicionar um Agente
     `opencode` com `command: ["opencode", "acp"]` — **subcomando do binário**, não pacote npm como os
     outros dois (é exatamente a pegadinha que motiva os presets do T-011) — e um step que o use com
