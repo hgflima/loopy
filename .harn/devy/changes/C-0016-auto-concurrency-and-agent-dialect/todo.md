@@ -248,7 +248,7 @@
     Files: apps/menubar/src/graph/flow-state.ts, apps/menubar/src/graph/DepsFlow.tsx, apps/menubar/src/App.tsx, apps/menubar/src/panes/ViewSwitcher.tsx, apps/menubar/src/graph/flow-state.test.ts, apps/menubar/src/graph/DepsFlow.test.tsx
     Scope: M
 
-- [ ] T-008: `loopy probe-agent <nome> [--json]` + cache `.loopy/capabilities.json` (D30/D32)
+- [x] T-008: `loopy probe-agent <nome> [--json]` + cache `.loopy/capabilities.json` (D30/D32)
     **O 1º subcomando do projeto** — hoje `src/index.ts:164-208` é um comando root só, com `[dir]`
     posicional (`:828`). Registrar um `.command("probe-agent <nome>")` muda a semântica posicional:
     **teste de regressão obrigatório** de `loopy .`, `loopy --dry-run <dir>` e `loopy -t T-001 <dir>`.
