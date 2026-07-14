@@ -14,7 +14,7 @@ use tauri::{AppHandle, Emitter, Manager};
 /// `externalBin: ["bin/loopy"]` in `tauri.conf.json` means the binary is placed
 /// next to the main executable (inside `bin/`) by `tauri build`/`tauri dev`.
 /// The target triple is embedded at compile-time by `tauri_build::build()`.
-fn resolve_sidecar_path() -> Result<PathBuf, String> {
+pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
     let triple = env!("TAURI_ENV_TARGET_TRIPLE");
     let exe = std::env::current_exe()
         .map_err(|e| format!("Failed to resolve executable path: {e}"))?;
@@ -99,7 +99,7 @@ fn is_executable_file(path: &Path) -> bool {
 /// shell (`$SHELL -ilc 'echo $PATH'`). Interactive (`-i`) is required so files
 /// like `.zshrc`, where nvm usually lives, are sourced. Best-effort: returns
 /// `None` on any failure and the caller falls back to the inherited `PATH`.
-fn login_shell_path() -> Option<String> {
+pub(crate) fn login_shell_path() -> Option<String> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     let output = Command::new(&shell)
         .args(["-ilc", "echo $PATH"])
