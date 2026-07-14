@@ -51,18 +51,37 @@ e, para cada task pendente do backlog, executa o `pipeline` declarado.
 ### `probe-agent`
 
 ```
-loopy probe-agent <nome> [--json] [-c <path>]
+loopy probe-agent <nome> [--json] [--model <id>] [-c <path>]
+loopy probe-agent --command <argv...> [--env K=V] [--model <id>]
 ```
 
-Sonda as capabilities de um agente registrado no `loopy.yml` — abre uma sessão
-ACP descartável, lê `configOptions` e imprime os valores aceitos de `mode`,
-`model` e `effort`. O resultado é cacheado em `.loopy/capabilities.json`.
+Sonda as capabilities de um agente — abre uma sessão ACP descartável, lê
+`configOptions` e imprime os valores aceitos de `mode`, `model` e `effort`. O
+resultado é cacheado em `.loopy/capabilities.json`.
+
+O agente pode ser dito de **duas formas**: pelo `<nome>` no Registry do
+`loopy.yml` **salvo**, ou pelo argv literal (`--command`), que dispensa o
+registry — é o que a GUI usa para sondar um agente que ainda é só um rascunho
+(recém-criado, ou com o preset acabado de trocar).
 
 | Argumento / Flag | Descrição |
 |------------------|-----------|
-| `<nome>` | Nome do agente no Registry `agents:` do `loopy.yml`. |
+| `<nome>` | Nome do agente no Registry `agents:` do `loopy.yml`. Dispensável com `--command`. |
 | `--json` | Emite o resultado em JSON (para consumo programático / GUI). |
+| `--model <id>` | Sonda **com este model aplicado**. Default: o `model` do agente no Registry. |
+| `--command <argv...>` | Argv literal do adapter — sonda **sem** passar pelo Registry nem pelo yml salvo. **Deve vir por último** (ver abaixo). |
+| `--env K=V` | Env do adapter (repetível). Só faz sentido com `--command`. |
 | `-c, --config <path>` | Caminho alternativo do `loopy.yml`. |
+
+**`--command` consome o resto da linha.** O argv de um adapter é opaco para o
+motor e carrega flags que não são nossas (`npx -y …` é o argv de todo preset npm
+do Catálogo), então tudo o que vem depois de `--command` é tratado como argv,
+literalmente — flags inclusive. Corolário: as flags do próprio `probe-agent`
+(`--json`, `--model`, `--env`, `-c`) precisam vir **antes** dele.
+
+```
+loopy probe-agent --json --model gpt-5-codex --command npx -y @agentclientprotocol/codex-acp
+```
 
 **Exemplo:**
 
@@ -76,6 +95,26 @@ efforts: low, medium, high, max
 Use este comando para descobrir o dialeto literal de `mode`/`model`/`effort`
 antes de escrevê-los no `loopy.yml`. Ver
 [agents — dialeto literal](configuration.md#dialeto-literal-e-loopy-probe-agent).
+
+#### Por que a sondagem aplica um `model`
+
+Nem toda Capability é estática. O **OpenCode** deriva o `effort` do **model
+corrente**: os níveis são as *variants* daquele model, então ele só anuncia
+`thought_level` quando o model tem variants — e a lista **muda com o model**
+(`zai-coding-plan/glm-5.2` → `high, max`; `openai/gpt-5` → `minimal, low,
+medium, high`; um model sem variants → nenhum). Claude e Codex anunciam
+`thought_level` fixo já no `session/new`.
+
+Por isso a sondagem aplica o model antes de ler as capabilities, e o **cache é
+keyed por argv + model** (`opencode acp::zai-coding-plan/glm-5.2`). Sondar
+"pelado" um agente OpenCode lê o model default do adapter e responde
+"sem effort" — para um agente que tem effort.
+
+```
+$ loopy probe-agent opencode --model zai-coding-plan/glm-5.2
+modes: build, plan
+efforts: high, max
+```
 
 ## Ver também
 

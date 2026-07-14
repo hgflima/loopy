@@ -6,21 +6,17 @@ workspace:
   worktrees_dir: .worktrees
 agents:
   codex:
-    command:
-      - npx
-      - -y
-      - "@agentclientprotocol/codex-acp"
+    preset: codex
     model: gpt-5.6-terra
     effort: xhigh
     display_name: codex
   claude:
-    command:
-      - npx
-      - -y
-      - "@agentclientprotocol/claude-agent-acp"
+    preset: claude
     model: opus[1m]
     effort: xhigh
     display_name: claude
+  opencode:
+    preset: opencode
 acp:
   default_agent: claude
   request_timeout_seconds: 1800
@@ -80,11 +76,14 @@ pipeline:
       código e corrija.
 
       ${checks.report}
-    mode: acceptEdits
+    mode: read-only
     clear_context: true
     verify:
       run: ci
       max_attempts: 3
+    agent: opencode
+    model: gpt-5.6-terra
+    effort: xhigh
   - id: simplify
     parallel_safe: false
     type: agent
@@ -222,6 +221,7 @@ stop_conditions:
   max_step_visits: 25
   stop_signal_file: .loopy.stop
 concurrency: 3
+max_concurrency: 4
 policies:
   escalation:
     action: pause

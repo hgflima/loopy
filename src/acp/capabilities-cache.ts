@@ -27,9 +27,22 @@ export type CapabilitiesCache = Record<string, CacheEntry>;
 /** Canonical path for the cache file relative to the workspace root. */
 const CACHE_REL = ".loopy/capabilities.json";
 
-/** Serialize a command argv into the cache key. */
-function cacheKey(command: readonly string[]): string {
-  return command.join(" ");
+/**
+ * Serialize a probe into the cache key: the argv, plus the model it was probed
+ * **with** when one was applied.
+ *
+ * The model belongs in the key because capabilities are not always static:
+ * OpenCode derives `thought_level` from the current model's variants, so
+ * `opencode acp` probed bare and probed with `zai-coding-plan/glm-5.2` are two
+ * different answers. Adapters that announce effort statically (Claude, Codex)
+ * simply produce the same capabilities under both keys.
+ *
+ * A probe with no model keeps the legacy bare-argv key, so old cache files and
+ * agents with no `model` in the registry keep hitting.
+ */
+export function cacheKey(command: readonly string[], model?: string): string {
+  const argv = command.join(" ");
+  return model ? `${argv}::${model}` : argv;
 }
 
 /**
@@ -54,15 +67,19 @@ export function readCache(root: string): CapabilitiesCache {
 /**
  * Write (upsert) a capabilities entry into the cache, preserving other entries.
  * Creates the `.loopy/` directory if it does not exist.
+ *
+ * @param model The model applied before reading the capabilities, if any — part
+ *   of the key (see {@link cacheKey}).
  */
 export function writeCache(
   root: string,
   command: readonly string[],
   caps: AgentCapabilities,
+  model?: string,
 ): void {
   const path = resolve(root, CACHE_REL);
   const existing = readCache(root);
-  const key = cacheKey(command);
+  const key = cacheKey(command, model);
   const entry: CacheEntry = {
     probedAt: new Date().toISOString(),
     capabilities: caps,

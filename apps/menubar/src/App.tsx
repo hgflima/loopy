@@ -423,6 +423,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
                 concurrency={configDraft.draft?.concurrency}
                 maxConcurrency={configDraft.draft?.max_concurrency}
                 configDraft={isIdle ? configDraft : undefined}
+                dir={dir || undefined}
                 onEditStep={isIdle ? handleEditStep : undefined}
                 onAddStep={isIdle ? handleAddStep : undefined}
                 onRemoveStep={isIdle ? handleRemoveStep : undefined}

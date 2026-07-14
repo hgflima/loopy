@@ -39,6 +39,12 @@ interface ViewSwitcherProps {
   /** `max_concurrency` do yml — teto do `auto`. */
   maxConcurrency?: number;
   configDraft?: ConfigDraftAPI;
+  /**
+   * Diretório do projeto. **Load-bearing, não cosmético**: é o que habilita a
+   * Sondagem de capabilities no `ConfigPane` (o `useAgentCapabilities` devolve
+   * `idle` sem ele, e os selects de model/effort degradam para texto livre).
+   */
+  dir?: string;
   /** Open step editor for a given step id (idle only). */
   onEditStep?: (stepId: string) => void;
   /** Add a new step (idle only, T-012). */
@@ -59,6 +65,7 @@ export function ViewSwitcher({
   concurrency,
   maxConcurrency,
   configDraft,
+  dir,
   onEditStep,
   onAddStep,
   onRemoveStep,
@@ -140,7 +147,7 @@ export function ViewSwitcher({
         className="view-switcher__pane"
         style={{ display: view === "config" ? "flex" : "none" }}
       >
-        {configDraft && <ConfigPane configDraft={configDraft} />}
+        {configDraft && <ConfigPane configDraft={configDraft} dir={dir} />}
       </div>
     </div>
   );

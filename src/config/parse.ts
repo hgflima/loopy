@@ -10,7 +10,8 @@
  * browser barrel (`./index.ts`) re-exports this module's pure API.
  */
 import { parse as parseYaml, YAMLParseError } from "yaml";
-import type { LoopyConfig, ResolvedAgents } from "../types";
+import type { AgentDef, LoopyConfig, ResolvedAgents } from "../types";
+import { findAgentPreset } from "../acp/catalog.js";
 import { loopyConfigSchema } from "./schema";
 import type { LoopyConfigParsed } from "./schema";
 import type { ZodError, ZodIssue } from "zod";
@@ -107,12 +108,25 @@ function scanRemovedKeys(raw: unknown, sourcePath?: string): void {
 /**
  * Build `ResolvedAgents` from either the explicit `agents:` registry or by
  * synthesizing a `default` agent from the legacy `acp.command`. Pure function.
+ *
+ * **É aqui que `preset` morre.** Um Agente declarado por `preset` empresta o
+ * argv do Catálogo e sai daqui como `command` — de modo que todo consumidor a
+ * jusante (pool, dry-run, `probe-agent`, o cache keyed por argv) vê uma forma
+ * só. O `!` no `command` é seguro: o schema já garantiu que um dos dois existe.
  */
 function resolveAgents(parsed: LoopyConfigParsed): ResolvedAgents {
   if (parsed.agents !== undefined && Object.keys(parsed.agents).length > 0) {
     const agentNames = Object.keys(parsed.agents);
     const defaultName = parsed.acp.default_agent ?? agentNames[0]!;
-    return { byName: { ...parsed.agents }, default: defaultName };
+    const byName: Record<string, AgentDef> = {};
+    for (const [name, agent] of Object.entries(parsed.agents)) {
+      const { preset, ...rest } = agent;
+      byName[name] = {
+        ...rest,
+        command: preset ? findAgentPreset(preset)!.command : agent.command!,
+      };
+    }
+    return { byName, default: defaultName };
   }
 
   // Legacy path: synthesize from acp.command

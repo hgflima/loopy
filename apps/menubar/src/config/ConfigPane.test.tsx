@@ -20,14 +20,16 @@ import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 // Mock useAgentCapabilities BEFORE importing ConfigPane (vitest hoists vi.mock).
 // Default: idle (no probe) — existing tests keep working unchanged.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockUseAgentCapabilities = vi.fn((): any => ({
+const mockUseAgentCapabilities = vi.fn<(...args: any[]) => any>(() => ({
   status: "idle",
   caps: undefined,
   reason: undefined,
   probe: vi.fn(),
 }));
 vi.mock("./useAgentCapabilities", () => ({
-  useAgentCapabilities: () => mockUseAgentCapabilities(),
+  // Repassa os argumentos: o 4º (model) e o 5º (env) são contrato da sondagem.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  useAgentCapabilities: (...args: any[]) => mockUseAgentCapabilities(...args),
 }));
 
 import { ConfigPane } from "./ConfigPane";
@@ -851,69 +853,183 @@ describe("ConfigPane — error routing across all sections (T-009, R7)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T-011 — Agent presets (D27): "Add agent" offers Claude/Codex/OpenCode/Em branco
+// Catálogo de Agentes: o preset empresta o argv, o yml não guarda `command`
 // ---------------------------------------------------------------------------
 
-describe("ConfigPane — agent presets (T-011, D27)", () => {
-  it("shows a preset menu with Claude, Codex, OpenCode, and Em branco options", () => {
+describe("ConfigPane — agentes por preset do Catálogo", () => {
+  it("oferece um botão por adapter conhecido do Catálogo", () => {
     const draft = makeDraft();
     const { getByTestId } = render(<ConfigPane configDraft={draft} />);
 
     const section = getByTestId("section-agents");
-    expect(within(section).getByText("Claude")).toBeTruthy();
-    expect(within(section).getByText("Codex")).toBeTruthy();
-    expect(within(section).getByText("OpenCode")).toBeTruthy();
-    expect(within(section).getByText("Em branco")).toBeTruthy();
+    for (const label of ["Claude", "Codex", "OpenCode"]) {
+      expect(within(section).getByRole("button", { name: label })).toBeTruthy();
+    }
   });
 
   it.each([
-    { label: "Claude", name: "my-claude", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
-    { label: "Codex", name: "my-codex", command: ["npx", "-y", "@agentclientprotocol/codex-acp"] },
-    { label: "OpenCode", name: "my-opencode", command: ["opencode", "acp"] },
-    { label: "Em branco", name: "custom", command: [""] },
-  ])("$label preset fills command correctly", ({ label, name, command }) => {
+    { label: "Claude", name: "my-claude", preset: "claude" },
+    { label: "Codex", name: "my-codex", preset: "codex" },
+    { label: "OpenCode", name: "my-opencode", preset: "opencode" },
+  ])(
+    // O ponto da mudança inteira: o argv NÃO vai para o yml. Se este teste
+    // voltar a esperar `command`, o operador voltou a ter que digitar `npx -y …`.
+    "$label cria o agente por preset, sem argv no yml",
+    ({ label, name, preset }) => {
+      const draft = noAgentsDraft();
+      const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+      const section = getByTestId("section-agents");
+      fireEvent.change(within(section).getByLabelText("New agent name"), { target: { value: name } });
+      fireEvent.click(within(section).getByRole("button", { name: label }));
+      expect(draft.patch).toHaveBeenCalledWith("agents", { [name]: { preset } });
+    },
+  );
+
+  it("sem nome digitado, o agente herda o id do preset", () => {
     const draft = noAgentsDraft();
     const { getByTestId } = render(<ConfigPane configDraft={draft} />);
 
     const section = getByTestId("section-agents");
-    fireEvent.change(within(section).getByLabelText("New agent name"), { target: { value: name } });
-    fireEvent.click(within(section).getByText(label));
-    expect(draft.patch).toHaveBeenCalledWith("agents", { [name]: { command } });
+    fireEvent.click(within(section).getByRole("button", { name: "Claude" }));
+    expect(draft.patch).toHaveBeenCalledWith("agents", { claude: { preset: "claude" } });
   });
 
-  it("preset auto-generates a name when no name is typed", () => {
-    const draft = noAgentsDraft();
-    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
-
-    const section = getByTestId("section-agents");
-    // Click the Claude preset without typing a name
-    fireEvent.click(within(section).getByText("Claude"));
-    expect(draft.patch).toHaveBeenCalledWith("agents", {
-      claude: { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
-    });
-  });
-
-  it("preset avoids name collision by appending suffix", () => {
-    // "claude" already exists in the default draft
+  it("nome colidindo ganha sufixo", () => {
+    // "claude" já existe no draft default
     const draft = makeDraft();
     const { getByTestId } = render(<ConfigPane configDraft={draft} />);
 
     const section = getByTestId("section-agents");
-    fireEvent.click(within(section).getByText("Claude"));
-    // Should use "claude-2" since "claude" is taken
+    fireEvent.click(within(section).getByRole("button", { name: "Claude" }));
     expect(draft.patch).toHaveBeenCalledWith("agents", expect.objectContaining({
-      claude: expect.anything(), // existing
-      "claude-2": { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+      claude: expect.anything(), // o que já existia
+      "claude-2": { preset: "claude" },
     }));
   });
 
-  it("preserves the existing + Add agent button for backward compat", () => {
-    const draft = makeDraft();
+  it("'+ Add agent' segue criando um agente custom (argv na mão)", () => {
+    const draft = noAgentsDraft();
     const { getByTestId } = render(<ConfigPane configDraft={draft} />);
 
     const section = getByTestId("section-agents");
-    // The old "Add agent" flow (type name + click) still works
-    expect(within(section).getByText("+ Add agent")).toBeTruthy();
+    fireEvent.change(within(section).getByLabelText("New agent name"), { target: { value: "meu-adapter" } });
+    fireEvent.click(within(section).getByText("+ Add agent"));
+    expect(draft.patch).toHaveBeenCalledWith("agents", { "meu-adapter": { command: [""] } });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Alternar preset ↔ custom: os dois campos são XOR, então trocar remove o outro
+// ---------------------------------------------------------------------------
+
+describe("ConfigPane — select de preset do agente", () => {
+  /** Draft com um único agente declarado por preset. */
+  function presetAgentDraft() {
+    const draft = makeDraft();
+    draft.draft!.agents = { claude: { preset: "claude" } };
+    return draft;
+  }
+
+  it("virar custom semeia o command com o argv que estava valendo", () => {
+    const draft = presetAgentDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    fireEvent.change(within(entry).getByLabelText("preset"), {
+      target: { value: "__custom__" },
+    });
+
+    // Sem `preset`, e com o argv do Catálogo já materializado para editar.
+    expect(draft.patch).toHaveBeenCalledWith("agents", {
+      claude: { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.59.0"] },
+    });
+  });
+
+  it("escolher um preset apaga o command literal", () => {
+    const draft = makeDraft(); // claude tem `command` no draft default
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    fireEvent.change(within(entry).getByLabelText("preset"), {
+      target: { value: "codex" },
+    });
+
+    const [, agents] = (draft.patch as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(agents.claude.preset).toBe("codex");
+    expect(agents.claude).not.toHaveProperty("command");
+  });
+
+  // `model`/`effort` são Dialeto por-Agente: `gpt-5.6-terra` não existe no
+  // OpenCode. Trocar o adapter e manter o valor antigo grava um yml que o motor
+  // vai ignorar com warning — e mostra na tela um model que aquele agente não tem.
+  it("trocar o preset descarta model/effort do adapter antigo", () => {
+    const draft = makeDraft();
+    draft.draft!.agents = {
+      codex: { preset: "codex", model: "gpt-5.6-terra", effort: "xhigh" },
+    };
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-codex");
+    fireEvent.change(within(entry).getByLabelText("preset"), {
+      target: { value: "opencode" },
+    });
+
+    const [, agents] = (draft.patch as ReturnType<typeof vi.fn>).mock.calls.at(-1)!;
+    expect(agents.codex.preset).toBe("opencode");
+    expect(agents.codex).not.toHaveProperty("model");
+    expect(agents.codex).not.toHaveProperty("effort");
+  });
+
+  it("sonda o novo argv (não o do yml salvo) ao trocar o preset", () => {
+    const draft = makeDraft();
+    draft.draft!.agents = { codex: { preset: "codex" } };
+    const { getByTestId, rerender } = render(
+      <ConfigPane configDraft={draft} dir="/project" />,
+    );
+
+    fireEvent.change(within(getByTestId("agent-entry-codex")).getByLabelText("preset"), {
+      target: { value: "opencode" },
+    });
+
+    // O draft (fake) não se auto-atualiza: simula o re-render com o agente novo.
+    draft.draft!.agents = { codex: { preset: "opencode" } };
+    rerender(<ConfigPane configDraft={draft} dir="/project" />);
+
+    // O argv sondado é o do OpenCode — o probe vai por argv, não pelo nome
+    // ("codex"), que no yml salvo ainda aponta para o adapter antigo (D-0011).
+    const [, command] = mockUseAgentCapabilities.mock.calls.at(-1)!;
+    expect(command).toEqual(["opencode", "acp"]);
+  });
+
+  it("semeia model e effort com os defaults sondados do agente novo", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: {
+        modes: ["read-only", "agent"],
+        models: ["gpt-5.5", "gpt-5.4"],
+        efforts: ["low", "high", "xhigh"],
+        defaultModel: "gpt-5.5",
+        defaultEffort: "xhigh",
+      },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const draft = makeDraft();
+    draft.draft!.agents = { a: { preset: "claude" } };
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    fireEvent.change(within(getByTestId("agent-entry-a")).getByLabelText("preset"), {
+      target: { value: "codex" },
+    });
+
+    // Um campo omitido não é "sem valor": o agente roda com o default dele. Ao
+    // trocar o adapter, é esse default que a tela passa a mostrar.
+    const patched = (draft.patch as ReturnType<typeof vi.fn>).mock.calls.map(
+      ([path, value]) => [path, value],
+    );
+    expect(patched).toContainEqual(["agents.a.model", "gpt-5.5"]);
   });
 });
 
@@ -1068,5 +1184,82 @@ describe("ConfigPane — probed model/effort selects (T-011, D30/D31)", () => {
     const entry = getByTestId("agent-entry-claude");
     const effortField = within(entry).getByLabelText("effort") as HTMLSelectElement;
     expect(effortField.disabled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sem placeholder e sem valor do adapter anterior nos selects sondados
+// ---------------------------------------------------------------------------
+
+/** Os `value`s oferecidos por um select do agent entry. */
+function optionsOf(entry: HTMLElement, label: string): string[] {
+  const select = within(entry).getByLabelText(label) as HTMLSelectElement;
+  return Array.from(select.options).map((o) => o.value);
+}
+
+describe("ConfigPane — o que os selects sondados oferecem", () => {
+  // Um agente no registry roda com *algum* model — o seed grava o default
+  // sondado. "Vazio" não é uma escolha, é a ausência de resposta; oferecê-lo
+  // como opção convida a gravar um yml que não diz nada.
+  it("não oferece um vazio quando o campo tem valor", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: {
+        modes: ["acceptEdits"],
+        models: ["opus", "sonnet"],
+        efforts: ["high", "low"],
+        defaultModel: "opus",
+        defaultEffort: "high",
+      },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft(); // claude: model "opus", effort "high"
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    expect(optionsOf(entry, "model")).toEqual(["opus", "sonnet"]);
+    expect(optionsOf(entry, "effort")).toEqual(["high", "low"]);
+  });
+
+  // O vazio sobrevive em exatamente um caso: o campo está mesmo vazio. Sem a
+  // option, o <select> exibiria a primeira da lista — mentindo sobre o yml.
+  it("oferece o vazio quando o campo está vazio", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: { modes: ["acceptEdits"], models: ["opus", "sonnet"], efforts: ["high"] },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    draft.draft!.agents = { claude: { preset: "claude" } }; // sem model/effort
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    expect(optionsOf(entry, "model")).toEqual(["", "opus", "sonnet"]);
+    expect(optionsOf(entry, "effort")).toEqual(["", "high"]);
+  });
+
+  // A sondagem do preset novo ainda não respondeu: semear agora usaria as
+  // capabilities do adapter ANTERIOR (o hook já não as entrega — este teste
+  // trava o lado do ConfigPane).
+  it("não semeia model/effort enquanto a sondagem não responde", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "probing",
+      caps: undefined,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    draft.draft!.agents = { a: { preset: "claude", model: "opus" } };
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    fireEvent.change(within(getByTestId("agent-entry-a")).getByLabelText("preset"), {
+      target: { value: "codex" },
+    });
+
+    const patched = (draft.patch as ReturnType<typeof vi.fn>).mock.calls.map(([p]) => p);
+    expect(patched).not.toContain("agents.a.model");
+    expect(patched).not.toContain("agents.a.effort");
   });
 });

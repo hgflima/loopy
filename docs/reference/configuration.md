@@ -62,21 +62,47 @@ referenciado** no pipeline (eager, na abertura da Run).
 ```yaml
 agents:
   claude:
-    command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+    preset: claude      # o argv vem do Catálogo de Agentes
   codex:
-    command: ["npx", "-y", "@agentclientprotocol/codex-acp"]
+    preset: codex
     effort: low
   opencode:
-    command: ["opencode", "acp"]   # subcomando do binário, não pacote npm
+    preset: opencode
 ```
 
 > **`agents` e `acp.command` são mutuamente exclusivos.** Use `agents:` quando
 > precisar de mais de um agente (ou quiser nomeá-lo); use `acp.command` no modo
 > legado (agente único, sem Registry). O schema rejeita a presença simultânea.
 
+### `preset` — o Catálogo de Agentes
+
+O argv de um adapter ACP não é preferência do operador: é conhecimento do
+projeto (o Claude precisa de pin de versão, o OpenCode não é pacote npm, e errar
+qualquer um dos dois dá um processo que não sobe). `preset` empresta esse argv do
+**Catálogo de Agentes** (`src/acp/catalog.ts`), e o `loopy.yml` não guarda
+`npx -y …` nenhum.
+
+| `preset` | Argv emprestado | Nota |
+|----------|-----------------|------|
+| `claude` | `npx -y @agentclientprotocol/claude-agent-acp@0.59.0` | Pin em 0.59: versões anteriores não anunciam `effort`. |
+| `codex` | `npx -y @agentclientprotocol/codex-acp` | Auth por subscription (`codex login`) — dispensa `env`. |
+| `opencode` | `opencode acp` | Subcomando do binário — não é pacote npm. |
+
+O Catálogo **não é allowlist**: um adapter fora dele roda igual, declarando o
+argv na mão com `command`. `preset` e `command` são **mutuamente exclusivos** e
+**um dos dois é obrigatório** — sem argv não há processo a subir. O `preset` é
+resolvido para argv no parse e não sobrevive a ele: da resolução em diante o
+motor só conhece `command` (é por isso que ele nunca ramifica por nome de
+agente — AD-1). Ver ADR-0010.
+
+O Catálogo carrega **só o argv**. `mode`, `model` e `effort` continuam vindo da
+**Sondagem** do adapter vivo (`loopy probe-agent`), porque mudam por versão —
+ADR-0008.
+
 | Chave (por agente) | Tipo | Descrição |
 |--------------------|------|-----------|
-| `command` | `string[]` | **Obrigatório.** Argv para iniciar o Processo ACP do agente (mín. 1 elemento). Para adaptadores npm use `["npx", "-y", "<pacote>"]`; para subcomandos nativos use o binário diretamente (ex.: `["opencode", "acp"]`). |
+| `preset` | `string` | Id de um adapter do Catálogo (`claude`, `codex`, `opencode`). Exclusivo com `command`; **um dos dois é obrigatório**. |
+| `command` | `string[]` | Argv para iniciar o Processo ACP (mín. 1 elemento) — a saída para adapters fora do Catálogo. Exclusivo com `preset`. |
 | `env` | `Record<string, string>` | **Opcional.** Variáveis de ambiente passadas ao processo. Suporta `${env.KEY}` (resolvido de `process.env`; ausência é `ConfigError` fail-fast). Omitir = auth por subscription/login do agente. |
 | `model` | `string` | **Opcional.** Modelo default para steps que usem este agente. Valor é o **dialeto literal** do agente (ex.: `"provider/model"` para opencode, `"claude-sonnet-4-5-20250514"` para claude). |
 | `effort` | `string` | **Opcional.** Reasoning effort default (ex.: `"low"`, `"high"`, `"max"`). Valor é o dialeto literal — nem todo agente suporta; se não suportar, é no-op com log. |

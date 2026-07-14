@@ -178,4 +178,41 @@ describe("parseCapabilities", () => {
       expect(() => parseCapabilities(undefined, ["x"])).not.toThrow();
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Agent-announced defaults (`currentValue`)
+  //
+  // A step that omits mode/model/effort still runs with *something* — the value
+  // the agent already sits on at `session/new`. Capturing it is what lets the
+  // GUI name the inherited default instead of showing an empty field.
+  // -------------------------------------------------------------------------
+  describe("agent-announced defaults", () => {
+    it("captures Claude's currentValue for all three categories", () => {
+      const caps = parseCapabilities(configOptions(claudeFixture));
+      expect(caps.defaultMode).toBe("default");
+      expect(caps.defaultModel).toBe("opus[1m]");
+      expect(caps.defaultEffort).toBe("high");
+    });
+
+    it("captures Codex's currentValue for all three categories", () => {
+      const caps = parseCapabilities(configOptions(codexFixture));
+      expect(caps.defaultMode).toBe("agent");
+      expect(caps.defaultModel).toBe("gpt-5.5");
+      expect(caps.defaultEffort).toBe("xhigh");
+    });
+
+    it("leaves defaultEffort undefined for OpenCode, which announces no thought_level", () => {
+      const caps = parseCapabilities(configOptions(opencodeFixture));
+      expect(caps.defaultMode).toBe("build");
+      expect(caps.defaultModel).toBe("opencode/big-pickle");
+      expect(caps.defaultEffort).toBeUndefined();
+    });
+
+    it("has no defaults when the agent announces no configOptions", () => {
+      const caps = parseCapabilities(undefined, ["plan"]);
+      expect(caps.defaultMode).toBeUndefined();
+      expect(caps.defaultModel).toBeUndefined();
+      expect(caps.defaultEffort).toBeUndefined();
+    });
+  });
 });

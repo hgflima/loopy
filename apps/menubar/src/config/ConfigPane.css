@@ -76,6 +76,69 @@
   line-height: 1;
 }
 
+/* ---- Agents ------------------------------------------------------------ */
+
+.config-pane__agent-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  padding: var(--sp-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.config-pane__preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+}
+
+/* `command`/`env` são detalhe quando há preset: recolhidos, e visualmente
+   subordinados ao resto do card. */
+.config-pane__advanced {
+  border-left: 2px solid var(--border);
+  padding-left: var(--sp-sm);
+}
+
+.config-pane__advanced-summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  user-select: none;
+}
+
+.config-pane__resolved-command {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-sm);
+  margin: var(--sp-xs) 0;
+}
+
+.config-pane__resolved-command-label {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+}
+
+.config-pane__resolved-command code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+  overflow-wrap: anywhere;
+}
+
+.config-pane__probe-status {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+}
+
+.config-pane__probe-status--ok {
+  color: var(--ink-secondary);
+}
+
+.config-pane__probe-status--failed {
+  color: var(--state-failed-ink);
+}
+
 /* ---- Reduced motion ---------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

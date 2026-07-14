@@ -82,22 +82,50 @@ pub fn read_capabilities_cache(dir: String) -> Result<Option<String>, String> {
 /// Runs `loopy probe-agent <name> --json -c <dir>/loopy.yml` as a one-shot
 /// process, collects stdout and returns the JSON. Uses the same sidecar binary
 /// resolution and login-shell PATH recovery as `start_sidecar`.
+///
+/// `model` (optional) is forwarded as `--model`: capabilities can depend on the
+/// current model (OpenCode only announces effort for models that have variants),
+/// so the caller probes with the model it is actually editing.
+///
+/// `command`/`env` (optional) are forwarded as `--command`/`--env`, which probe
+/// the argv **verbatim** instead of resolving `agent_name` against the saved yml.
+/// The GUI edits a draft: an agent whose preset was just switched still has the
+/// *old* adapter on disk, so probing by name would answer for the wrong one.
 #[tauri::command]
-pub async fn probe_agent(dir: String, agent_name: String) -> Result<String, String> {
+pub async fn probe_agent(
+    dir: String,
+    agent_name: String,
+    model: Option<String>,
+    command: Option<Vec<String>>,
+    env: Option<Vec<String>>,
+) -> Result<String, String> {
     let bin = sidecar::resolve_sidecar_path()?;
     let config_path = Path::new(&dir).join("loopy.yml");
 
     let mut cmd = Command::new(&bin);
-    cmd.args([
-        "probe-agent",
-        &agent_name,
-        "--json",
-        "-c",
-        &config_path.to_string_lossy(),
-    ])
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
+    cmd.args(["probe-agent"]);
+
+    let argv = command.unwrap_or_default();
+    if argv.is_empty() {
+        cmd.arg(&agent_name);
+    }
+    cmd.args(["--json", "-c", &config_path.to_string_lossy()]);
+    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
+        cmd.args(["--model", model]);
+    }
+    for pair in env.unwrap_or_default() {
+        cmd.args(["--env", &pair]);
+    }
+    // `--command` consumes the rest of the line (the adapter's argv is opaque and
+    // carries its own flags — every npm preset is `npx -y …`), so it must come
+    // last: anything after it is argv, not a flag of ours.
+    if !argv.is_empty() {
+        cmd.arg("--command");
+        cmd.args(&argv);
+    }
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     // Recover the login-shell PATH so the agent adapter (`npx …`) resolves
     // inside a `.app` bundle — same logic as `SidecarState::start`.

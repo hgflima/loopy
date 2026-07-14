@@ -179,6 +179,26 @@ describe("ViewSwitcher — Config tab (T-008)", () => {
     );
     expect(queryByTestId("config-pane")).toBeNull();
   });
+
+  /**
+   * Regressão: o `dir` era declarado no `ConfigPane` mas nunca chegava nele —
+   * ninguém repassava aqui. Sem `dir`, `useAgentCapabilities` devolve `idle` e
+   * os selects sondados de model/effort degradam silenciosamente para texto
+   * livre. Como a prop é opcional, o `tsc` não reclamava, e os testes do
+   * `ConfigPane` renderizam o componente direto (com `dir`) — a ligação ficava
+   * descoberta. É este teste que a cobre.
+   */
+  it("forwards dir to ConfigPane (senão a Sondagem nunca roda)", () => {
+    render(
+      <ViewSwitcher
+        store={makeStore()}
+        tick={0}
+        configDraft={fakeConfigDraft}
+        dir="/meu/projeto"
+      />,
+    );
+    expect(configPaneProps.dir).toBe("/meu/projeto");
+  });
 });
 
 // ---------------------------------------------------------------------------

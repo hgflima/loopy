@@ -11,18 +11,25 @@ workspace:
 # (mode: build) + Claude audita (mode: plan).
 # mode/model/effort são o DIALETO LITERAL do agente — descubra com `loopy probe-agent <nome>`.
 agents:
+  # `preset` empresta o argv do Catálogo de Agentes (src/acp/catalog.ts): o
+  # comando do adapter (e o pin de versão, quando importa) é conhecimento do
+  # projeto, não escolha sua. Presets: claude, codex, opencode.
   claude:
-    command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
+    preset: claude
   codex:
-    command: ["npx", "-y", "@agentclientprotocol/codex-acp"]
+    preset: codex
     # SEM env → auth por subscription (login ChatGPT via `codex login`; é o default).
     # Para API key opt-in, descomente:
     # env:
     #   CODEX_API_KEY: "${env.CODEX_API_KEY}"
     effort: low
   opencode:
-    # Subcomando do binário opencode — NÃO é pacote npm como os outros dois.
-    command: ["opencode", "acp"]
+    preset: opencode
+
+  # Para um adapter fora do Catálogo, declare o argv na mão com `command:`.
+  # `preset` e `command` são mutuamente exclusivos — um dos dois, nunca os dois.
+  # meu-adapter:
+  #   command: ["meu-acp-adapter", "--stdio"]
 
 acp:
   default_agent: claude

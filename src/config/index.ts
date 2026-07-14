@@ -15,3 +15,11 @@ export {
   parseConfigSource,
   initialConfigTemplate,
 } from "./serialize";
+
+/**
+ * Catálogo de Agentes — reexportado aqui (e não num subpath próprio) porque é
+ * exatamente o público deste barrel: quem edita `agents:` precisa do argv, e o
+ * módulo é puro. A GUI monta o select de `preset` a partir daqui.
+ */
+export { AGENT_CATALOG, AGENT_PRESET_IDS, findAgentPreset } from "../acp/catalog.js";
+export type { AgentPreset } from "../acp/catalog.js";

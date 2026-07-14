@@ -25,14 +25,17 @@ import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 // Mock useAgentCapabilities BEFORE importing StepEditor (vitest hoists vi.mock).
 // Default: idle (no probe) — existing tests keep working unchanged.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockUseAgentCapabilities = vi.fn((): any => ({
+const mockUseAgentCapabilities = vi.fn<(...args: any[]) => any>(() => ({
   status: "idle",
   caps: undefined,
   reason: undefined,
   probe: vi.fn(),
 }));
 vi.mock("./useAgentCapabilities", () => ({
-  useAgentCapabilities: () => mockUseAgentCapabilities(),
+  // Repassa os argumentos: o 4º (o model sob o qual as capabilities são
+  // descobertas) é contrato, não detalhe — há teste que o assere.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  useAgentCapabilities: (...args: any[]) => mockUseAgentCapabilities(...args),
 }));
 
 import { StepEditor } from "./StepEditor";
@@ -511,11 +514,199 @@ describe("StepEditor — agent select (T-010, D26)", () => {
     const agentField = getByLabelText("agent") as HTMLElement;
     expect(agentField.tagName).toBe("INPUT");
   });
+
+  // D29: the yml holds the agent's literal dialect and the engine never
+  // translates it, so mode/model/effort picked for the old agent must not
+  // survive the switch — they'd linger as "(desconhecido)" in the selects.
+  it("clears mode/model/effort when the agent changes", () => {
+    const draft = makeDraftWithAgents(undefined, {
+      pipeline: [
+        {
+          id: "build",
+          type: "agent",
+          prompt: "Build it",
+          agent: "claude",
+          mode: "acceptEdits",
+          model: "opus[1m]",
+          effort: "xhigh",
+        },
+        { id: "test", type: "shell", run: ["npm test"] },
+      ],
+    });
+    const { getByLabelText } = renderAgentStep(draft);
+
+    fireEvent.change(getByLabelText("agent"), { target: { value: "codex" } });
+
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.agent", "codex");
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.mode", undefined);
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.model", undefined);
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.effort", undefined);
+  });
+
+  it("clears the overrides when switching back to the default agent", () => {
+    const draft = makeDraftWithAgents(undefined, {
+      pipeline: [
+        { id: "build", type: "agent", prompt: "Build it", agent: "codex", model: "gpt-5-codex" },
+        { id: "test", type: "shell", run: ["npm test"] },
+      ],
+    });
+    const { getByLabelText } = renderAgentStep(draft);
+
+    fireEvent.change(getByLabelText("agent"), { target: { value: "" } });
+
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.agent", undefined);
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.model", undefined);
+  });
+
+  it("does not touch mode/model/effort when re-selecting the same agent", () => {
+    const draft = makeDraftWithAgents(undefined, {
+      pipeline: [
+        { id: "build", type: "agent", prompt: "Build it", agent: "opencode", mode: "build" },
+        { id: "test", type: "shell", run: ["npm test"] },
+      ],
+    });
+    const { getByLabelText } = renderAgentStep(draft);
+
+    fireEvent.change(getByLabelText("agent"), { target: { value: "opencode" } });
+
+    expect(draft.patch).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
 // StepEditor — probed mode/model/effort selects (T-010, D30/D31)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// A step with no mode/model/effort override is not "empty" — it runs with the
+// agent's own default. The select therefore *sits on that value*: no separate
+// placeholder option, which would list the same outcome twice ("default do
+// agente: xhigh" next to "xhigh") and leave the reader guessing which is live.
+// ---------------------------------------------------------------------------
+
+describe("StepEditor — inherited defaults are selected, not placeheld", () => {
+  const codexCaps = {
+    modes: ["read-only", "agent", "agent-full-access"],
+    models: ["gpt-5.5", "gpt-5-codex"],
+    efforts: ["low", "medium", "high", "xhigh"],
+    defaultMode: "agent",
+    defaultModel: "gpt-5.5",
+    defaultEffort: "xhigh",
+  };
+
+  function values(select: HTMLSelectElement): string[] {
+    return Array.from(select.options).map((o) => o.value);
+  }
+
+  function codexDraft(
+    agents?: Record<string, { command: string[]; model?: string; effort?: string }>,
+  ) {
+    return makeDraftWithAgents(
+      agents ?? { codex: { command: ["npx", "-y", "@openai/codex", "--agent"] } },
+      {
+        pipeline: [
+          { id: "build", type: "agent", prompt: "Build it", agent: "codex" },
+          { id: "test", type: "shell", run: ["npm test"] },
+        ],
+      },
+    );
+  }
+
+  it("selects the agent's own default and offers no empty option", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: codexCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const { getByLabelText } = renderAgentStep(codexDraft());
+
+    const mode = getByLabelText("mode") as HTMLSelectElement;
+    const model = getByLabelText("model") as HTMLSelectElement;
+    const effort = getByLabelText("effort") as HTMLSelectElement;
+
+    expect(mode.value).toBe("agent");
+    expect(model.value).toBe("gpt-5.5");
+    expect(effort.value).toBe("xhigh");
+
+    expect(values(mode)).toEqual(codexCaps.modes);
+    expect(values(model)).toEqual(codexCaps.models);
+    expect(values(effort)).toEqual(codexCaps.efforts);
+    // No duplicate entry for the default: "xhigh" appears exactly once.
+    expect(values(effort).filter((v) => v === "xhigh")).toHaveLength(1);
+  });
+
+  it("prefers the registry's model/effort over the agent's own default", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: codexCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    // The engine resolves `step.model ?? registry[agent].model` — so when the
+    // registry declares one, *that* is what an empty step field inherits.
+    const { getByLabelText } = renderAgentStep(
+      codexDraft({
+        codex: {
+          command: ["npx", "-y", "@openai/codex", "--agent"],
+          model: "gpt-5-codex",
+          effort: "low",
+        },
+      }),
+    );
+
+    expect((getByLabelText("model") as HTMLSelectElement).value).toBe("gpt-5-codex");
+    expect((getByLabelText("effort") as HTMLSelectElement).value).toBe("low");
+    // mode has no registry level — still the agent's own default.
+    expect((getByLabelText("mode") as HTMLSelectElement).value).toBe("agent");
+  });
+
+  it("writes no redundant override when the inherited value is re-selected", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: codexCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const draft = makeDraftWithAgents(
+      { codex: { command: ["npx", "-y", "@openai/codex", "--agent"] } },
+      {
+        pipeline: [
+          { id: "build", type: "agent", prompt: "Build it", agent: "codex", effort: "low" },
+          { id: "test", type: "shell", run: ["npm test"] },
+        ],
+      },
+    );
+    const { getByLabelText } = renderAgentStep(draft);
+
+    // Back to the agent's default (xhigh) — the key is dropped, not rewritten.
+    fireEvent.change(getByLabelText("effort"), { target: { value: "xhigh" } });
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.effort", undefined);
+
+    // Any other value is a real override.
+    fireEvent.change(getByLabelText("effort"), { target: { value: "medium" } });
+    expect(draft.patch).toHaveBeenCalledWith("pipeline.0.effort", "medium");
+  });
+
+  it("keeps an empty option when the probe can't name the default", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: { modes: ["build", "plan"], models: [], efforts: [] },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const { getByLabelText } = renderAgentStep();
+
+    const mode = getByLabelText("mode") as HTMLSelectElement;
+    expect(mode.value).toBe("");
+    expect(Array.from(mode.options).find((o) => o.value === "")!.textContent)
+      .toBe("default do agente");
+  });
+});
 
 describe("StepEditor — probed selects (T-010, D30)", () => {
   const opencodeCaps = {
@@ -577,10 +768,54 @@ describe("StepEditor — probed selects (T-010, D30)", () => {
 
     const effortSelect = getByLabelText("effort") as HTMLSelectElement;
     expect(effortSelect.disabled).toBe(true);
-    // Should show the disabled reason
+    // Sem model escolhido, o motivo é ESSE — e não "o agente não anuncia effort".
+    // No OpenCode o effort são as variants do model corrente: dizer que o agente
+    // não tem effort era falso e escondia um ajuste que funciona.
     const disabledHint = container.querySelector(".field__hint--disabled");
     expect(disabledHint).toBeTruthy();
-    expect(disabledHint!.textContent).toContain("não anuncia effort");
+    expect(disabledHint!.textContent).toContain("effort depende dele");
+  });
+
+  it("blames the model (not the agent) when the chosen model has no efforts", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: opencodeCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const draft = makeDraftWithAgents({
+      opencode: { command: ["opencode", "acp"], model: "opencode/big-pickle" },
+    });
+    const { container } = renderAgentStep(draft);
+
+    const disabledHint = container.querySelector(".field__hint--disabled");
+    expect(disabledHint!.textContent).toContain("opencode/big-pickle");
+  });
+
+  it("probes with the step's effective model (step.model ?? registry model)", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: opencodeCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const draft = makeDraftWithAgents({
+      opencode: { command: ["opencode", "acp"], model: "opencode/big-pickle" },
+    });
+    renderAgentStep(draft);
+
+    // 4º argumento do hook = o model sob o qual as capabilities são descobertas.
+    // Sem ele, o probe do OpenCode roda no model default do adapter e responde
+    // "sem effort" mesmo para um agente cujo model tem variants.
+    expect(mockUseAgentCapabilities).toHaveBeenCalledWith(
+      "opencode",
+      ["opencode", "acp"],
+      "/project",
+      "opencode/big-pickle",
+      undefined, // env do agente (ausente neste fixture)
+    );
   });
 
   it("populates effort select with probed efforts (claude)", () => {

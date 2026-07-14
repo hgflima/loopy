@@ -588,6 +588,54 @@ describe("buildSession / session pool (against the fake agent)", () => {
     session.dispose();
   });
 
+  // The OpenCode shape: capabilities are DERIVED from the current model, so the
+  // effort option only exists after a model with variants is selected. Parsing
+  // capabilities once at `session/new` left `effortConfigId` undefined forever
+  // and silently skipped every `setEffort` on that adapter.
+  it("refreshes capabilities from the set_config_option response (effort derived from model)", async () => {
+    const { session, warnings, configSends } = await startWithCapture({
+      // `session/new`: a model select, and NO effort — exactly what a bare probe
+      // of OpenCode sees on a default model without variants.
+      configOptions: [selectOptionMulti("model", "model", ["big-pickle", "glm-5.2"])],
+      configOptionsByModel: {
+        "glm-5.2": [
+          selectOptionMulti("model", "model", ["big-pickle", "glm-5.2"]),
+          selectOptionMulti("effort", "thought_level", ["high", "max"]),
+        ],
+      },
+      defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+    });
+
+    expect(session.capabilities.efforts).toEqual([]);
+
+    // The step applies model before effort (`steps/agent.ts`).
+    await session.setModel("glm-5.2");
+    expect(session.capabilities.efforts).toEqual(["high", "max"]);
+    expect(session.capabilities.effortConfigId).toBe("effort");
+
+    await session.setEffort("max");
+
+    const sends = configSends();
+    expect(sends).toHaveLength(2);
+    expect(sends[1]!.configId).toBe("effort");
+    expect(sends[1]!.value).toBe("max");
+    expect(warnings).toEqual([]);
+    session.dispose();
+  });
+
+  it("keeps capabilities when the set_config_option response carries no configOptions", async () => {
+    const { session } = await startWithCapture({
+      configOptions: [selectOptionMulti("model", "model", ["a", "b"])],
+      defaultTurn: { text: ["ok"], stopReason: "end_turn" },
+    });
+
+    await session.setModel("b");
+    // The fake echoes the same list; nothing is lost.
+    expect(session.capabilities.models).toEqual(["a", "b"]);
+    expect(session.capabilities.modelConfigId).toBe("model");
+    session.dispose();
+  });
+
   it("setModel emits onWarning when the adapter does not announce model capability", async () => {
     const { session, warnings, configSends } = await startWithCapture({
       defaultTurn: { text: ["ok"], stopReason: "end_turn" },

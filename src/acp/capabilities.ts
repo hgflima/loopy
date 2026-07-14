@@ -34,6 +34,18 @@ export interface AgentCapabilities {
   readonly modelConfigId?: string;
   /** `id` of the config option with `category: "thought_level"` (if present). Differs by adapter: `effort` (Claude), `reasoning_effort` (Codex). */
   readonly effortConfigId?: string;
+  /**
+   * What the agent selects **on its own** when the yml says nothing —
+   * the `currentValue` each select announces at `session/new`.
+   *
+   * An omitted `mode`/`model`/`effort` in a step is never "no value": the
+   * agent still runs with *something*. These are that something, so the GUI can
+   * name the inherited default instead of implying the field is empty.
+   * `undefined` = the agent doesn't announce that category.
+   */
+  readonly defaultMode?: string;
+  readonly defaultModel?: string;
+  readonly defaultEffort?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +69,11 @@ function extractValues(option: SessionConfigOption): readonly string[] {
     return opts.flatMap((g) => g.options.map((o) => o.value));
   }
   return (opts as readonly SessionConfigSelectOption[]).map((o) => o.value);
+}
+
+/** The value a select is already sitting on — the agent's own default. */
+function currentValueOf(option: SessionConfigOption): string | undefined {
+  return option.type === "select" ? option.currentValue : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,5 +116,8 @@ export function parseCapabilities(
     modeConfigId: modeOption?.id,
     modelConfigId: modelOption?.id,
     effortConfigId: effortOption?.id,
+    defaultMode: modeOption ? currentValueOf(modeOption) : undefined,
+    defaultModel: modelOption ? currentValueOf(modelOption) : undefined,
+    defaultEffort: effortOption ? currentValueOf(effortOption) : undefined,
   };
 }

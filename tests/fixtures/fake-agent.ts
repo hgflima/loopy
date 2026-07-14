@@ -75,6 +75,18 @@ export interface FakeScenario {
   readonly configOptions?: readonly SessionConfigOption[];
   /** When `true`, `session/set_config_option` throws method-not-found (T-002). */
   readonly failSetConfigOption?: boolean;
+  /**
+   * Config options the adapter announces **after** a given model is selected —
+   * `{ "<model>": [...] }`. Models absent from the map keep `configOptions`.
+   *
+   * Models an OpenCode-shaped adapter, whose capabilities are *derived from the
+   * current model*: it only announces `thought_level` when that model has
+   * variants, so the `set_config_option` response — not `session/new` — is where
+   * effort first appears.
+   */
+  readonly configOptionsByModel?: Readonly<
+    Record<string, readonly SessionConfigOption[]>
+  >;
   /** Behavior per prompt turn (0-based); turns past the end use `defaultTurn`. */
   readonly turns?: readonly FakeTurn[];
   readonly defaultTurn?: FakeTurn;
@@ -111,6 +123,8 @@ async function main(): Promise<void> {
   };
   let promptTurn = 0;
   let sessionSeq = 0;
+  /** What the agent announces right now — mutated by `configOptionsByModel`. */
+  let currentOptions: SessionConfigOption[] = [...(scenario.configOptions ?? [])];
 
   const app = agent({ name: "fake-agent" })
     .onRequest(AGENT_METHODS.initialize, () => ({
@@ -132,11 +146,15 @@ async function main(): Promise<void> {
       return response;
     })
     .onRequest(AGENT_METHODS.session_set_mode, () => ({}))
-    .onRequest(AGENT_METHODS.session_set_config_option, () => {
+    .onRequest(AGENT_METHODS.session_set_config_option, ({ params }) => {
       if (scenario.failSetConfigOption) {
         throw new Error("method not found: session/set_config_option");
       }
-      return { configOptions: [...(scenario.configOptions ?? [])] };
+      // Selecting a model can change what the agent announces (see
+      // `configOptionsByModel`), and the response is how the client learns it.
+      const derived = scenario.configOptionsByModel?.[String(params.value)];
+      if (derived) currentOptions = [...derived];
+      return { configOptions: [...currentOptions] };
     })
     .onRequest(AGENT_METHODS.session_prompt, async ({ params, client }) => {
       // `/clear` resets context: it completes immediately, streams no text, and

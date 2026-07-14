@@ -224,6 +224,90 @@ describe("run — probe-agent", () => {
 });
 
 // ---------------------------------------------------------------------------
+// probe-agent --command: o argv literal (D-0011) — inclusive com flags do adapter
+// ---------------------------------------------------------------------------
+
+describe("run — probe-agent --command <argv...>", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "probe-argv-"));
+  // Já carrega uma flag (`--import`), como todo preset npm do Catálogo (`npx -y`).
+  const fakeCmd = fakeCommand(CAPS_SCENARIO);
+  const configPath = writeConfig(tempDir, { myagent: { command: fakeCmd } });
+
+  afterAll(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("sonda pelo argv literal, sem consultar o registry", async () => {
+    const cap = capture();
+    const code = await run(
+      ["probe-agent", "--json", "-c", configPath, "--command", ...fakeCmd],
+      cap.io,
+    );
+
+    expect(code).toBe(0);
+    const parsed = JSON.parse(cap.stdout());
+    expect(parsed.modes).toEqual(["build", "plan"]);
+    expect(parsed.efforts).toEqual(["low", "medium", "high"]);
+  });
+
+  it("não trata as flags DO ADAPTER como flags do loopy (regressão: unknown option '-y')", async () => {
+    // O argv de todo preset npm é `npx -y <pkg>`: um token que *parece* opção.
+    // O parser do Commander encerrava o variádico nele e abortava a sondagem.
+    // (O binário não existe de propósito: o que se testa é o parse, não o spawn.)
+    const cap = capture();
+    const code = await run(
+      [
+        "probe-agent",
+        "--json",
+        "-c",
+        configPath,
+        "--command",
+        "nonexistent-binary-xyz-42",
+        "-y",
+        "@agentclientprotocol/codex-acp",
+      ],
+      cap.io,
+    );
+
+    // Falha ao SUBIR o adapter — nunca no parse do argv.
+    expect(cap.stderr()).not.toContain("unknown option");
+    expect(code).toBe(1);
+    expect(cap.stderr()).toContain("falha ao iniciar");
+    expect(cap.stderr()).toContain("-y"); // o argv chegou inteiro ao spawn
+  });
+
+  it("--model e --env valem antes do --command", async () => {
+    const cap = capture();
+    const code = await run(
+      [
+        "probe-agent",
+        "--json",
+        "-c",
+        configPath,
+        "--model",
+        "gpt-5-codex",
+        "--env",
+        "FOO=bar",
+        "--command",
+        ...fakeCmd,
+      ],
+      cap.io,
+    );
+
+    expect(code).toBe(0);
+    expect(JSON.parse(cap.stdout()).models).toEqual(["gpt-4", "gpt-5-codex"]);
+  });
+
+  it("--command sem argv → exit 1 com mensagem acionável", async () => {
+    const cap = capture();
+    const code = await run(["probe-agent", "-c", configPath, "--command"], cap.io);
+
+    expect(code).toBe(1);
+    expect(cap.stderr()).toContain("--command exige o argv");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Regression: [dir] positional still works after adding probe-agent subcommand
 // ---------------------------------------------------------------------------
 

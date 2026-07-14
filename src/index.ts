@@ -28,7 +28,7 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { openAgent, type AgentHandle } from "./acp/agent";
 import type { AgentCapabilities } from "./acp/capabilities";
-import { readCache, writeCache } from "./acp/capabilities-cache";
+import { cacheKey, readCache, writeCache } from "./acp/capabilities-cache";
 import { buildSession } from "./acp/session";
 import { acpTrafficSummary, agentChunkText, usageUpdateUsed } from "./acp/client";
 import {
@@ -90,6 +90,7 @@ import { createFullRegistry } from "./steps/index";
 import { mountApp } from "./tui/mount";
 import { startUi } from "./tui/start";
 import type {
+  AgentDef,
   ChecksRunnerPort,
   LoggerPort,
   LoopyConfig,
@@ -377,8 +378,11 @@ function loadCachedCapabilities(
   for (const name of refs) {
     const def = config.resolvedAgents.byName[name];
     if (!def) continue;
-    const key = def.command.join(" ");
-    const entry = cache[key];
+    // Prefer the entry probed with this agent's model (capabilities can depend
+    // on it — see `cacheKey`); fall back to the bare-argv entry.
+    const entry =
+      (def.model ? cache[cacheKey(def.command, def.model)] : undefined) ??
+      cache[cacheKey(def.command)];
     if (entry) {
       result.set(name, entry.capabilities);
     }
@@ -975,33 +979,103 @@ function formatCapabilities(caps: AgentCapabilities, io: RunIO): void {
  * process, open a disposable session, read `session.capabilities`, print,
  * cache to `.loopy/capabilities.json`, then shut everything down. Zero
  * worktree, zero tokens.
+ *
+ * **Probed with a model applied** (`--model`, defaulting to the agent's `model`
+ * in the registry). Capabilities are not always static: OpenCode announces
+ * `thought_level` only when the *current* model has variants, so a bare probe
+ * reads the adapter's own default model and reports "no effort" for an agent
+ * that does support it. The model is part of the cache key.
+ *
+ * **Two ways to say *which* agent** (D-0011):
+ *  - `<nome>` — resolved against the registry of the **saved** `loopy.yml`;
+ *  - `--command <argv...>` (+ `--env K=V`) — the argv **verbatim**, no registry.
+ *
+ * The argv form exists because the GUI edits a *draft*: an agent whose preset was
+ * just changed (or that was just created) does not exist on disk yet, and probing
+ * it by name would silently answer for the **saved** definition — the old adapter.
+ * Everything else in this feature is already keyed by argv (the cache included),
+ * so the name was the last thing tying a probe to the file.
  */
+/**
+ * Load the config, tolerating its absence/invalidity. Only used by the `--command`
+ * form of `probe-agent`, where the argv is self-sufficient and the config is a
+ * nicety (permission policy) — a project whose yml was never saved must still be
+ * probeable.
+ */
+function tryLoadConfig(configPath: string): LoopyConfig | undefined {
+  try {
+    return loadConfig(configPath);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Parse `--env K=V` pairs into an env record (a value may contain `=`). */
+function parseEnvPairs(pairs: readonly string[] | undefined): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const pair of pairs ?? []) {
+    const eq = pair.indexOf("=");
+    if (eq > 0) env[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+  return env;
+}
+
+/**
+ * The definition the probe runs against: the literal argv (`--command`) when
+ * given, otherwise the registry entry for `<nome>` (D-0011). `undefined` = the
+ * name is not in the registry.
+ */
+function agentDefForProbe(
+  nome: string | undefined,
+  command: readonly string[] | undefined,
+  envPairs: readonly string[] | undefined,
+  config: LoopyConfig | undefined,
+): AgentDef | undefined {
+  if (command && command.length > 0) {
+    const env = parseEnvPairs(envPairs);
+    return {
+      command: [...command],
+      ...(Object.keys(env).length > 0 ? { env } : {}),
+    };
+  }
+  return nome ? config?.resolvedAgents.byName[nome] : undefined;
+}
+
 async function executeProbeAgent(
-  nome: string,
-  opts: { config?: string; json: boolean },
+  nome: string | undefined,
+  opts: {
+    config?: string;
+    json: boolean;
+    model?: string;
+    command?: string[];
+    env?: string[];
+  },
   io: RunIO,
 ): Promise<number> {
   const configPath = opts.config
     ? resolvePath(opts.config)
     : resolvePath("loopy.yml");
 
-  const config = loadConfig(configPath);
+  // With an explicit argv the config is optional (the draft may not be on disk
+  // yet) — it is only consulted for the permission policy.
+  const config = opts.command ? tryLoadConfig(configPath) : loadConfig(configPath);
 
-  const agentDef = config.resolvedAgents.byName[nome];
+  const agentDef = agentDefForProbe(nome, opts.command, opts.env, config);
   if (!agentDef) {
-    const available = Object.keys(config.resolvedAgents.byName).join(", ");
+    const available = Object.keys(config?.resolvedAgents.byName ?? {}).join(", ");
     io.err(
       `loopy: agente "${nome}" não encontrado no registry (disponíveis: ${available}).\n`,
     );
     return 1;
   }
+  const label = nome ?? agentDef.command.join(" ");
 
   // Agent process and session cwd — always the working directory (like execute(dir)).
   const root = resolvePath(".");
   // Cache location — next to the config file (same as the project root when --config is omitted).
   const cacheRoot = dirname(configPath);
-  const resolvedEnv = resolveAgentEnv({ [nome]: agentDef }, process.env);
-  const envOverrides = resolvedEnv[nome];
+  const resolvedEnv = resolveAgentEnv({ [label]: agentDef }, process.env);
+  const envOverrides = resolvedEnv[label];
 
   let handle: AgentHandle;
   try {
@@ -1012,19 +1086,32 @@ async function executeProbeAgent(
         envOverrides && Object.keys(envOverrides).length > 0
           ? { ...process.env, ...envOverrides }
           : undefined,
-      permissions: { on_request: config.acp.permissions.on_request },
+      permissions: {
+        on_request: config?.acp.permissions.on_request ?? "allow",
+      },
     });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    io.err(`loopy: falha ao iniciar o agente "${nome}": ${reason}\n`);
+    io.err(`loopy: falha ao iniciar o agente "${label}": ${reason}\n`);
     return 1;
   }
+
+  // The model the probe runs under: explicit flag wins over the registry.
+  const model = opts.model ?? agentDef.model;
 
   try {
     const session = await buildSession(
       { ctx: handle.ctx, text: handle.text, cost: handle.cost },
       root,
     ).start();
+
+    // Apply the model first — on adapters that derive effort from the model
+    // (OpenCode), this is what makes `thought_level` appear at all. Best-effort:
+    // a model the agent doesn't announce is skipped, and the probe still
+    // reports whatever the session/new capabilities were.
+    if (model !== undefined) {
+      await session.setModel(model);
+    }
 
     const caps = session.capabilities;
 
@@ -1034,12 +1121,12 @@ async function executeProbeAgent(
       formatCapabilities(caps, io);
     }
 
-    writeCache(cacheRoot, agentDef.command, caps);
+    writeCache(cacheRoot, agentDef.command, caps, model);
     session.dispose();
     return 0;
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    io.err(`loopy: falha ao sondar o agente "${nome}": ${reason}\n`);
+    io.err(`loopy: falha ao sondar o agente "${label}": ${reason}\n`);
     return 1;
   } finally {
     await handle.shutdown();
@@ -1108,6 +1195,41 @@ async function execute(
 }
 
 /**
+ * Fatia o `--command` do `probe-agent`, que consome **o resto da linha, cru**.
+ *
+ * O parser do Commander encerra um option variádico no primeiro token que
+ * *parece* uma flag (`maybeOption()`: começa com `-`), e então tenta resolvê-lo
+ * contra as opções do subcomando. Logo `--command npx -y <pkg>` morria com
+ * `error: unknown option '-y'` — e `npx -y …` é o argv de todo preset npm do
+ * Catálogo (ADR-0010), o que deixava a Sondagem por argv da GUI (D-0011)
+ * quebrada justamente para Claude e Codex.
+ *
+ * O argv de um adapter é **opaco** para o motor: pode carregar qualquer flag, e
+ * nenhuma delas é nossa. Por isso ele não passa pelo parser — o que vem depois
+ * de `--command` é fatiado aqui e só o prefixo segue para o Commander. Puro
+ * (AD-6): a declaração da option sobrevive apenas para o `--help`.
+ */
+function splitAgentCommand(argv: readonly string[]): {
+  readonly head: readonly string[];
+  readonly command?: readonly string[];
+} {
+  if (argv[0] !== "probe-agent") return { head: argv };
+
+  const at = argv.findIndex(
+    (arg) => arg === "--command" || arg.startsWith("--command="),
+  );
+  if (at < 0) return { head: argv };
+
+  const inline = argv[at]!.startsWith("--command=")
+    ? [argv[at]!.slice("--command=".length)]
+    : [];
+  return {
+    head: argv.slice(0, at),
+    command: [...inline, ...argv.slice(at + 1)],
+  };
+}
+
+/**
  * Parse `argv` (user args, no node/script), then run. Returns the process exit
  * code. Never throws for expected failures: commander usage errors and config /
  * backlog / interpolation errors become a clear message + non-zero code.
@@ -1123,6 +1245,10 @@ export async function run(
 ): Promise<number> {
   const program = buildProgram(io);
   let exitCode = 0;
+
+  // O argv do adapter (`probe-agent --command …`) é fatiado antes do parser:
+  // ele pode conter flags que não são nossas (`-y`). Ver `splitAgentCommand`.
+  const { head, command: adapterArgv } = splitAgentCommand(argv);
 
   // Root command action — the default flow (loopy [dir]).
   program.action(async (dir: string) => {
@@ -1147,29 +1273,74 @@ export async function run(
   program
     .command("probe-agent")
     .description("Sonda as capabilities de um agente ACP e grava o cache")
-    .argument("<nome>", "nome do agente no registry (agents: do loopy.yml)")
+    .argument(
+      "[nome]",
+      "nome do agente no registry (agents: do loopy.yml); dispensável com --command",
+    )
     .option("-c, --config <path>", "caminho alternativo do loopy.yml")
     .option("--json", "imprime o objeto AgentCapabilities cru em JSON", false)
+    .option(
+      "--model <id>",
+      "sonda COM este model aplicado (default: o model do agente no registry) — " +
+        "adapters como o OpenCode só anunciam effort a partir do model corrente",
+    )
+    .option(
+      "--command <argv...>",
+      "argv literal do adapter — sonda sem passar pelo registry (nem pelo yml salvo). " +
+        "DEVE vir por último: consome o resto da linha, inclusive as flags do próprio " +
+        "adapter (ex.: --command npx -y @agentclientprotocol/codex-acp)",
+    )
+    .option(
+      "--env <pair>",
+      "env do adapter no formato K=V (repetível); só com --command",
+      (pair: string, acc: string[]) => [...acc, pair],
+      [] as string[],
+    )
     .exitOverride()
     .configureOutput({
       writeOut: (str) => io.out(str),
       writeErr: (str) => io.err(str),
     })
-    .action(async (nome: string, opts: { config?: string; json: boolean }) => {
-      try {
-        exitCode = await executeProbeAgent(nome, opts, io);
-      } catch (err) {
-        if (err instanceof ConfigError) {
-          io.err(`loopy: ${err.message}\n`);
+    .action(
+      async (
+        nome: string | undefined,
+        opts: {
+          config?: string;
+          json: boolean;
+          model?: string;
+          command?: string[];
+          env?: string[];
+        },
+      ) => {
+        // O argv veio do fatiamento, não do parser (`splitAgentCommand`).
+        const command = adapterArgv ? [...adapterArgv] : undefined;
+        if (command && command.length === 0) {
+          io.err(
+            "loopy: --command exige o argv do adapter (ex.: --command npx -y <pacote>).\n",
+          );
           exitCode = 1;
           return;
         }
-        throw err;
-      }
-    });
+        if (!nome && !command) {
+          io.err("loopy: informe o <nome> do agente ou --command <argv...>.\n");
+          exitCode = 1;
+          return;
+        }
+        try {
+          exitCode = await executeProbeAgent(nome, { ...opts, command }, io);
+        } catch (err) {
+          if (err instanceof ConfigError) {
+            io.err(`loopy: ${err.message}\n`);
+            exitCode = 1;
+            return;
+          }
+          throw err;
+        }
+      },
+    );
 
   try {
-    await program.parseAsync([...argv], { from: "user" });
+    await program.parseAsync([...head], { from: "user" });
   } catch (err) {
     // exitOverride turns help/version/usage exits into throws; help & version
     // carry exitCode 0, usage errors a non-zero code. The message (if any) was

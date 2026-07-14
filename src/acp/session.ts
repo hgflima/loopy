@@ -38,6 +38,7 @@ import { AGENT_METHODS } from "@agentclientprotocol/sdk";
 import type {
   ActiveSession,
   ClientContext,
+  SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 import type {
   AgentSession,
@@ -144,6 +145,14 @@ class SessionWrapper implements LoopySession {
    */
   private _capabilities!: AgentCapabilities;
 
+  /**
+   * Legacy `modes.availableModes` from `session/new`. Kept because a
+   * `set_config_option` response carries only `configOptions` — re-parsing
+   * without this would drop the mode fallback for adapters that announce modes
+   * the old way.
+   */
+  private legacyModes: string[] | undefined;
+
   // Stored config values for replay after reopen (session/new resets to defaults).
   private appliedMode: string | undefined;
   private appliedModel: string | undefined;
@@ -171,9 +180,34 @@ class SessionWrapper implements LoopySession {
   /** Extract capabilities from a (possibly new) session via `parseCapabilities` (T-006). */
   private parseConfigFromSession(session: ActiveSession): void {
     const opts = session.newSessionResponse.configOptions ?? undefined;
-    const fallbackModes =
-      session.newSessionResponse.modes?.availableModes.map((m) => m.id);
-    this._capabilities = parseCapabilities(opts, fallbackModes);
+    this.legacyModes = session.newSessionResponse.modes?.availableModes.map(
+      (m) => m.id,
+    );
+    this._capabilities = parseCapabilities(opts, this.legacyModes);
+  }
+
+  /**
+   * Re-parse capabilities from the `configOptions` a `set_config_option`
+   * response carries back.
+   *
+   * **Capabilities are not necessarily static.** In OpenCode the `thought_level`
+   * option is *derived from the current model*: the adapter only announces it
+   * when that model has variants, and the values themselves change with the
+   * model (`zai-coding-plan/glm-5.2` → `[high, max]`; `openai/gpt-5` →
+   * `[minimal, low, medium, high]`). Parsed once at `session/new` — where the
+   * model is still the agent's own default — `effortConfigId` stayed `undefined`
+   * forever and `setEffort` was skipped no matter what the yml said.
+   *
+   * The step applies `setModel` **before** `setEffort` (`steps/agent.ts`), so
+   * refreshing here is what makes effort reachable at all on such adapters.
+   * A response without `configOptions` leaves capabilities untouched.
+   */
+  private refreshCapabilities(res: unknown): void {
+    const opts = (
+      res as { configOptions?: readonly SessionConfigOption[] } | null | undefined
+    )?.configOptions;
+    if (!opts || opts.length === 0) return;
+    this._capabilities = parseCapabilities(opts, this.legacyModes);
   }
 
   get capabilities(): AgentCapabilities {
@@ -300,10 +334,13 @@ class SessionWrapper implements LoopySession {
     const params = { sessionId: this.sessionId, configId, value };
     this.send("session/set_config_option", params);
     try {
-      await this.deps.ctx.request(
+      const res = await this.deps.ctx.request(
         AGENT_METHODS.session_set_config_option,
         params,
       );
+      // The response carries the updated option list — some adapters derive one
+      // category from another (see `refreshCapabilities`).
+      this.refreshCapabilities(res);
       this.logAction(`set_config_option(${label}) ${value}`);
       return true;
     } catch (err) {

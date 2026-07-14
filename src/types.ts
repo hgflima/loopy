@@ -23,7 +23,28 @@ import type { StoreEvent } from "./tui/store";
 // Agent registry (C-0008, ADR-0006)
 // ---------------------------------------------------------------------------
 
-/** A named agent definition from the `agents:` registry in `loopy.yml`. */
+/**
+ * A named agent **as declared in the yml** — o argv vem de `preset` (empresta do
+ * Catálogo de Agentes) **ou** de `command` (na mão). Exatamente um dos dois.
+ *
+ * Distinto de {@link AgentDef}: esta é a forma *fonte*, aquela é a *resolvida*.
+ * `resolveAgents` converte uma na outra e o `preset` não sobrevive à conversão.
+ */
+export interface AgentDefSource {
+  /** Id de um preset do Catálogo (`src/acp/catalog.ts`). Exclusivo com `command`. */
+  readonly preset?: string;
+  /** Argv literal do adapter. Exclusivo com `preset`. */
+  readonly command?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly display_name?: string;
+}
+
+/**
+ * A named agent definition **após a resolução** — o que o runtime consome.
+ * `command` é sempre presente aqui (o `preset` já foi resolvido para argv).
+ */
 export interface AgentDef {
   readonly command: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
@@ -312,7 +333,7 @@ export interface LoopyConfig {
   readonly name: string;
   readonly workspace: WorkspaceConfig;
   /** Named agent registry (C-0008); mutually exclusive with `acp.command`. */
-  readonly agents?: Readonly<Record<string, AgentDef>>;
+  readonly agents?: Readonly<Record<string, AgentDefSource>>;
   readonly acp: AcpConfig;
   readonly inputs: InputsConfig;
   readonly checks: ChecksConfig;

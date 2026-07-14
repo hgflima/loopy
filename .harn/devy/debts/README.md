@@ -73,3 +73,4 @@ histórico.
 | [D-0008](D-0008-run-cost-undercounts-since-task-cost-became-a-sum.md) | Custo do Run subconta: Task virou soma (ADR-0006), Run/Change seguem *last-non-null* | `src/metrics/folds.ts` · `src/types.ts` | média | aberto |
 | [D-0009](D-0009-loopy-types-subpath-not-exported.md) | O app importa `loopy/types`, mas o subpath não existe no `exports` do pacote (alias wildcard esconde) | `package.json` · `tsup.config.ts` | baixa | aberto |
 | [D-0010](D-0010-fast-mode-not-exposed.md) | `fast mode` (`category: model_config`) revelado pela sondagem mas não exposto no yml | `src/acp/capabilities.ts` · `src/config/schema.ts` | baixa | aberto |
+| [D-0011](D-0011-probe-agent-requires-saved-yml.md) | Probe por nome + yml salvo: agente novo não sonda **e** preset trocado sonda o adapter ANTIGO (dado errado, sem falhar) | `apps/menubar/src-tauri/src/project_fs.rs` · `src/index.ts` | alta | resolvido em 2026-07-14 (`--command`) |

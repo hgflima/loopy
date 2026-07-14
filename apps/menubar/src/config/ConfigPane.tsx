@@ -14,11 +14,15 @@
  * shared draft. Save stays fail-closed: blocked while any error exists (C4).
  */
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AGENT_CATALOG, findAgentPreset } from "loopy/config";
+import { agentCommandOf, CUSTOM_PRESET } from "./agent-source";
+import type { AgentSource } from "./agent-source";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
 import { renameAgent, renameChecksList } from "./rename";
 import { useAgentCapabilities } from "./useAgentCapabilities";
+import { effortDisabledReason, effortHint, probeSummary } from "./capability-hints";
 import {
   TextField,
   NumberField,
@@ -72,20 +76,8 @@ function crossFieldErrors(errors: readonly ConfigError[]): readonly ConfigError[
 }
 
 // ---------------------------------------------------------------------------
-// Agent presets — GUI-only shortcut (T-011, D27)
+// Agents — o argv vem do Catálogo do motor (`loopy/config`)
 // ---------------------------------------------------------------------------
-
-/**
- * Pre-defined command arrays for known ACP agents.
- * These live ONLY in the GUI as typing shortcuts — the engine has no allowlist
- * and no `if (agent === …)` anywhere in `src/` (AD-1).
- */
-const AGENT_PRESETS = [
-  { label: "Claude", defaultName: "claude", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
-  { label: "Codex", defaultName: "codex", command: ["npx", "-y", "@agentclientprotocol/codex-acp"] },
-  { label: "OpenCode", defaultName: "opencode", command: ["opencode", "acp"] },
-  { label: "Em branco", defaultName: "agent", command: [""] },
-] as const;
 
 /** Generate a unique agent name, appending `-N` on collision. */
 function uniqueAgentName(base: string, existing: Record<string, unknown>): string {
@@ -100,22 +92,29 @@ function uniqueAgentName(base: string, existing: Record<string, unknown>): strin
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure a value appears in the option list, even if unknown to the probe.
- * Same logic as StepEditor's `ensureOption` (D31 degradation).
+ * As opções de um select sondado do registry (`model`/`effort`).
+ *
+ * **Não há opção de placeholder.** Um Agente do registry roda com *algum* model:
+ * ao trocar o preset, o `seed` grava o default que o adapter anunciou, então
+ * "vazio" não é uma escolha — é a ausência de resposta. Oferecê-lo ao lado do
+ * valor real só convida a gravar um yml que não diz nada.
+ *
+ * O vazio sobrevive em exatamente um caso: o campo **está** vazio (a sondagem não
+ * soube nomear um default). Aí ele é obrigatório — um `<select>` sem a option do
+ * seu próprio `value` exibe a primeira da lista, mentindo sobre o yml.
+ *
+ * Um valor que a sondagem não conhece é preservado, não corrigido (D31): o yml é
+ * do usuário, e um adapter pode aceitar mais do que anuncia.
  */
-function ensureOption(options: readonly string[], value: string): string[] {
-  if (!value || options.includes(value)) return [...options];
-  return [...options, value];
+function capOptions(
+  values: readonly string[],
+  current: string | undefined,
+): string[] {
+  const withCurrent =
+    current && !values.includes(current) ? [current, ...values] : [...values];
+  return current ? withCurrent : ["", ...withCurrent];
 }
 
-/** Human-readable probe summary for inline display. */
-function probeSummary(caps: { modes: readonly string[]; models: readonly string[]; efforts: readonly string[] }): string {
-  const parts: string[] = [];
-  if (caps.modes.length > 0) parts.push(`modes: ${caps.modes.join(", ")}`);
-  if (caps.models.length > 0) parts.push(`${caps.models.length} models`);
-  parts.push(caps.efforts.length > 0 ? `effort: ${caps.efforts.join(", ")}` : "sem effort");
-  return parts.join(" · ");
-}
 
 // ---------------------------------------------------------------------------
 // Section header with error counter (R5)
@@ -140,8 +139,10 @@ function SectionHeader({ title, errorCount }: { title: string; errorCount: numbe
 
 interface AgentEntryProps {
   name: string;
-  agent: { command: string[]; env?: Record<string, string>; model?: string; effort?: string; display_name?: string };
+  agent: AgentSource;
   onPatch: (subpath: string, value: unknown) => void;
+  /** Troca o agente inteiro — usado ao alternar preset↔command (o par é XOR: um some, o outro nasce). */
+  onReplace: (next: AgentSource) => void;
   onRemove: () => void;
   onRename: (newName: string) => void;
   fieldError: (path: string) => string | undefined;
@@ -149,13 +150,84 @@ interface AgentEntryProps {
   dir?: string;
 }
 
-function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir }: AgentEntryProps) {
-  // Probe capabilities for this agent (T-011, D30/D31/D32)
+function AgentEntry({ name, agent, onPatch, onReplace, onRemove, onRename, fieldError, dir }: AgentEntryProps) {
+  const command = agentCommandOf(agent);
+  const preset = agent.preset ? findAgentPreset(agent.preset) : undefined;
+  const isCustom = agent.preset === undefined;
+
+  // Probe capabilities for this agent (T-011, D30/D31/D32).
+  // A chave é o argv RESOLVIDO — o cache do motor é keyed por argv, e um agente
+  // por `preset` não tem `command` próprio para oferecer.
+  // O `model` entra na sondagem: em adapters que derivam o effort do model
+  // (OpenCode → variants), sondar "pelado" responde "sem effort" para um agente
+  // que tem effort. Trocar o model re-sonda.
   const { status: probeStatus, caps, reason: probeReason, probe } = useAgentCapabilities(
     name,
-    agent.command,
+    command,
     dir,
+    agent.model,
+    agent.env,
   );
+
+  /**
+   * O que semear quando a próxima sondagem chegar. `model`/`effort` são **Dialeto
+   * por-Agente**: ao trocar o adapter, o valor antigo (`gpt-5.6-terra` do Codex)
+   * não existe no novo — mas deixar em branco também mente, porque o agente vai
+   * rodar com *algum* model. Então preenchemos com o **default do próprio agente**
+   * (o `currentValue` que ele anuncia no `session/new`), assim que a sondagem do
+   * novo argv responder.
+   *
+   *  - `"all"`  → trocou o preset: semeia o model default e, com ele, o effort.
+   *  - `"effort"` → trocou o model: só o effort (que **depende** do model no
+   *    OpenCode — pode aparecer, mudar de lista, ou sumir).
+   */
+  const [seed, setSeed] = useState<null | "all" | "effort">(null);
+
+  /**
+   * Alterna a origem do argv. `preset` e `command` são exclusivos no schema, então
+   * trocar não é patchar um campo: é reescrever o agente sem o campo antigo.
+   * Ao virar custom, semeia o `command` com o argv que estava valendo — o custom
+   * quase sempre é "o preset, com um ajuste".
+   *
+   * `model`/`effort` do adapter anterior morrem aqui: são de outro dialeto. Os do
+   * novo entram pelo `seed` quando a sondagem responder.
+   */
+  function changePreset(value: string) {
+    const rest: AgentSource = { ...agent };
+    delete rest.preset;
+    delete rest.command;
+    delete rest.model;
+    delete rest.effort;
+    setSeed("all");
+    if (value === CUSTOM_PRESET) {
+      onReplace({ ...rest, command: [...(command ?? [""])] });
+    } else {
+      onReplace({ ...rest, preset: value });
+    }
+  }
+
+  /** Trocar o model reabre a pergunta do effort — ver `seed`. */
+  function changeModel(value: string) {
+    setSeed("effort");
+    onPatch("model", value || undefined);
+  }
+
+  // Aplica o `seed` assim que as capabilities do (argv, model) corrente chegam.
+  // Semear o model dispara uma nova sondagem (agora COM ele), e é essa que traz o
+  // effort — daí o encadeamento "all" → "effort".
+  useEffect(() => {
+    if (seed === null || probeStatus !== "ok" || !caps) return;
+
+    if (seed === "all" && !agent.model && caps.defaultModel) {
+      setSeed("effort");
+      onPatch("model", caps.defaultModel);
+      return;
+    }
+    setSeed(null);
+    if (caps.defaultEffort !== agent.effort) {
+      onPatch("effort", caps.defaultEffort);
+    }
+  }, [seed, probeStatus, caps, agent.model, agent.effort, onPatch]);
 
   const probeOk = probeStatus === "ok" && caps != null;
   const effortDisabled = probeOk && caps!.efforts.length === 0;
@@ -163,13 +235,13 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir 
   // Model select options — include current value if unknown (D31)
   const modelOptions = useMemo(() => {
     if (!probeOk || !caps) return [];
-    return ensureOption(["", ...caps.models], agent.model ?? "");
+    return capOptions(caps.models, agent.model);
   }, [probeOk, caps, agent.model]);
 
   // Effort select options
   const effortOptions = useMemo(() => {
     if (!probeOk || !caps) return [];
-    return ensureOption(["", ...caps.efforts], agent.effort ?? "");
+    return capOptions(caps.efforts, agent.effort);
   }, [probeOk, caps, agent.effort]);
 
   return (
@@ -183,27 +255,55 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir 
         <button type="button" className="field__icon-btn field__icon-btn--danger" onClick={onRemove} aria-label={`Remove agent ${name}`}>×</button>
         <button type="button" className="field__icon-btn" onClick={probe} aria-label={`Sondar ${name}`}>⟳</button>
       </div>
-      <CommandListEditor
-        label="command"
-        value={agent.command}
-        onChange={(v) => onPatch("command", v)}
-        error={fieldError("command")}
+      <SelectField
+        label="preset"
+        value={agent.preset ?? CUSTOM_PRESET}
+        options={[...AGENT_CATALOG.map((p) => p.id), CUSTOM_PRESET]}
+        renderOption={(id) =>
+          id === CUSTOM_PRESET
+            ? "Custom (command na mão)"
+            : (findAgentPreset(id)?.label ?? id)
+        }
+        onChange={changePreset}
+        error={fieldError("preset")}
+        hint={preset?.note ?? "O argv do adapter vem do catálogo do loopy."}
       />
-      <RecordEditor
-        label="env"
-        value={agent.env ?? {}}
-        onChange={(v) => onPatch("env", Object.keys(v).length > 0 ? v : undefined)}
-        error={fieldError("env")}
-        keyPlaceholder="VAR"
-        valuePlaceholder="value"
-      />
+      {/*
+        `command` e `env` são detalhe: com um preset, o argv é conhecimento do
+        projeto, não escolha do operador. Fica atrás do disclosure — aberto por
+        default no custom, onde ele é o campo principal.
+      */}
+      <details className="config-pane__advanced" open={isCustom}>
+        <summary className="config-pane__advanced-summary">avançado (command, env)</summary>
+        {isCustom ? (
+          <CommandListEditor
+            label="command"
+            value={agent.command ?? [""]}
+            onChange={(v) => onPatch("command", v)}
+            error={fieldError("command")}
+          />
+        ) : (
+          <div className="config-pane__resolved-command">
+            <span className="config-pane__resolved-command-label">command</span>
+            <code>{command?.join(" ")}</code>
+          </div>
+        )}
+        <RecordEditor
+          label="env"
+          value={agent.env ?? {}}
+          onChange={(v) => onPatch("env", Object.keys(v).length > 0 ? v : undefined)}
+          error={fieldError("env")}
+          keyPlaceholder="VAR"
+          valuePlaceholder="value"
+        />
+      </details>
       {/* model — probed select or text fallback (T-011, D30/D31) */}
       {probeOk ? (
         <SelectField
           label="model"
           value={agent.model ?? ""}
           options={modelOptions}
-          onChange={(v) => onPatch("model", v || undefined)}
+          onChange={changeModel}
           error={fieldError("model")}
           hint="Model ID (best-effort)"
         />
@@ -211,7 +311,7 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir 
         <TextField
           label="model"
           value={agent.model ?? ""}
-          onChange={(v) => onPatch("model", v || undefined)}
+          onChange={changeModel}
           error={fieldError("model")}
           hint="Model ID (best-effort)"
         />
@@ -225,8 +325,8 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir 
           onChange={(v) => onPatch("effort", v || undefined)}
           error={fieldError("effort")}
           disabled={effortDisabled}
-          disabledReason="Este agente não anuncia effort"
-          hint={effortDisabled ? undefined : "Reasoning effort (best-effort)"}
+          disabledReason={effortDisabledReason(caps!, agent.model)}
+          hint={effortDisabled ? undefined : effortHint(agent.model)}
         />
       ) : (
         <TextField
@@ -242,7 +342,7 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir 
         <div className="config-pane__probe-status">Sondando…</div>
       )}
       {probeStatus === "ok" && caps && (
-        <div className="config-pane__probe-status config-pane__probe-status--ok">{probeSummary(caps)}</div>
+        <div className="config-pane__probe-status config-pane__probe-status--ok">{probeSummary(caps, agent.model)}</div>
       )}
       {probeStatus === "failed" && (
         <div className="config-pane__probe-status config-pane__probe-status--failed">
@@ -367,6 +467,7 @@ export function ConfigPane({ configDraft, dir }: ConfigPaneProps) {
   const agents = draft.agents ?? {};
   const agentNames = Object.keys(agents);
 
+  /** Agente custom (argv na mão) — a saída de emergência para um adapter fora do catálogo. */
   function addAgent() {
     const name = newAgentName.trim();
     if (!name || agents[name]) return;
@@ -374,11 +475,11 @@ export function ConfigPane({ configDraft, dir }: ConfigPaneProps) {
     setNewAgentName("");
   }
 
-  function addAgentFromPreset(preset: typeof AGENT_PRESETS[number]) {
+  /** O caminho normal: o agente nasce apontando para o Catálogo, sem argv nenhum no yml. */
+  function addAgentFromPreset(presetId: string) {
     const typed = newAgentName.trim();
-    const baseName = typed || preset.defaultName;
-    const name = uniqueAgentName(baseName, agents);
-    patch("agents", { ...agents, [name]: { command: [...preset.command] } });
+    const name = uniqueAgentName(typed || presetId, agents);
+    patch("agents", { ...agents, [name]: { preset: presetId } });
     setNewAgentName("");
   }
 
@@ -490,6 +591,7 @@ export function ConfigPane({ configDraft, dir }: ConfigPaneProps) {
             name={name}
             agent={agents[name]!}
             onPatch={(subpath, value) => patch(`agents.${name}.${subpath}`, value)}
+            onReplace={(next) => patch("agents", { ...agents, [name]: next })}
             onRemove={() => removeAgent(name)}
             onRename={(newName) => {
               const result = renameAgent(draft, name, newName);
@@ -515,12 +617,13 @@ export function ConfigPane({ configDraft, dir }: ConfigPaneProps) {
           <button type="button" className="field__add-btn" onClick={addAgent}>+ Add agent</button>
         </div>
         <div className="config-pane__preset-row">
-          {AGENT_PRESETS.map((preset) => (
+          {AGENT_CATALOG.map((preset) => (
             <button
-              key={preset.label}
+              key={preset.id}
               type="button"
               className="field__add-btn"
-              onClick={() => addAgentFromPreset(preset)}
+              onClick={() => addAgentFromPreset(preset.id)}
+              title={preset.note}
             >
               {preset.label}
             </button>

@@ -14,6 +14,8 @@
  */
 import { z } from "zod";
 
+import { AGENT_PRESET_IDS, findAgentPreset } from "../acp/catalog.js";
+
 // ---------------------------------------------------------------------------
 // Shared leaf schemas
 // ---------------------------------------------------------------------------
@@ -62,16 +64,58 @@ const acpSchema = z
 // agents (named registry, C-0008)
 // ---------------------------------------------------------------------------
 
-/** A single agent definition: `{ command, env?, model?, effort? }`. */
+/**
+ * A single agent definition: `{ preset | command, env?, model?, effort? }`.
+ *
+ * `preset` e `command` são as duas formas de dizer a **mesma** coisa (o argv do
+ * adapter), e por isso são mutuamente exclusivas: `preset` empresta o argv do
+ * Catálogo de Agentes (`../acp/catalog.ts`), `command` o declara na mão. Uma
+ * das duas é obrigatória — sem argv não há processo a subir.
+ *
+ * O `preset` é resolvido para `command` em `resolveAgents` (`./parse.ts`) e não
+ * sobrevive à resolução: o motor a jusante só conhece `command` (AD-1).
+ */
 const agentDefSchema = z
   .object({
-    command: z.array(z.string()).min(1),
+    preset: nonEmptyString.optional(),
+    command: z.array(z.string()).min(1).optional(),
     env: z.record(z.string(), z.string()).optional(),
     model: nonEmptyString.optional(),
     effort: nonEmptyString.optional(),
     display_name: nonEmptyString.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((agent, ctx) => {
+    const hasPreset = agent.preset !== undefined;
+    const hasCommand = agent.command !== undefined;
+
+    if (hasPreset && hasCommand) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "'preset' e 'command' são mutuamente exclusivos — use um ou outro.",
+        path: ["preset"],
+      });
+      return;
+    }
+
+    if (!hasPreset && !hasCommand) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Agente sem argv: defina 'preset' (${AGENT_PRESET_IDS.join(", ")}) ou 'command'.`,
+        path: ["preset"],
+      });
+      return;
+    }
+
+    if (hasPreset && findAgentPreset(agent.preset!) === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `'preset' desconhecido: "${agent.preset}" (conhecidos: ${AGENT_PRESET_IDS.join(", ")}). Use 'command' para um adapter fora do catálogo.`,
+        path: ["preset"],
+      });
+    }
+  });
 
 /** Optional top-level `agents:` registry (`name → AgentDef`). */
 const agentsSchema = z.record(nonEmptyString, agentDefSchema);

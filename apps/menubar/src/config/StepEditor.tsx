@@ -14,11 +14,14 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import type { StepConfig, StepType, AgentStep, ShellStep, ChecksStep, ApprovalStep } from "loopy/types";
+import { agentCommandOf } from "./agent-source";
+import type { AgentSource } from "./agent-source";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
 import { migrateStepType } from "./pipeline-edit";
 import { renameStepId } from "./rename";
 import { useAgentCapabilities } from "./useAgentCapabilities";
+import { effortDisabledReason } from "./capability-hints";
 import {
   TextField,
   NumberField,
@@ -326,7 +329,7 @@ interface FieldSectionProps<S> {
 // ---------------------------------------------------------------------------
 
 interface AgentFieldsProps extends FieldSectionProps<AgentStep> {
-  agents?: Readonly<Record<string, { command: readonly string[]; model?: string; effort?: string; display_name?: string }>>;
+  agents?: Readonly<Record<string, AgentSource>>;
   defaultAgentName?: string;
   dir?: string;
 }
@@ -343,6 +346,38 @@ function ensureOption(
     return options;
   }
   return [currentValue, ...options];
+}
+
+/**
+ * Options for a probed mode/model/effort select.
+ *
+ * There is **no placeholder option**: an omitted `mode`/`model`/`effort` is not
+ * "no value" — it *is* the agent's default, so the select just sits on that
+ * value. Offering both "default do agente: xhigh" and "xhigh" listed the same
+ * outcome twice and left the reader guessing which one they were on.
+ *
+ * The empty option survives in exactly one case: the probe announced values but
+ * couldn't name the inherited default, so something has to mean "don't override".
+ */
+function capOptions(
+  values: readonly string[],
+  current: string | undefined,
+  inherited: string | undefined,
+): readonly string[] {
+  const withCurrent = ensureOption(values, current);
+  if (!inherited) return ["", ...withCurrent];
+  return ensureOption(withCurrent, inherited);
+}
+
+/**
+ * Selecting the inherited default means "no override" — it clears the key
+ * instead of writing a redundant one back into the yml.
+ */
+function capChange(
+  inherited: string | undefined,
+  apply: (value: string | undefined) => void,
+): (value: string) => void {
+  return (value) => apply(value && value !== inherited ? value : undefined);
 }
 
 /** Hint for the text-field fallback when the probe isn't "ok" yet. */
@@ -362,11 +397,22 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
   const resolvedAgentName = selectedAgent || defaultAgentName || agentNames[0] || "";
   const agentDef = resolvedAgentName ? agents?.[resolvedAgentName] : undefined;
 
-  // Probe capabilities for the selected agent
+  /**
+   * O model que ESTE step roda — a mesma precedência do motor
+   * (`step.model ?? registry[agent].model`). Entra na sondagem porque em
+   * adapters como o OpenCode o effort é derivado do model (variants): sondar sem
+   * ele responde "sem effort" para um agente que tem effort.
+   */
+  const effectiveModel = step.model ?? agentDef?.model;
+
+  // Probe capabilities for the selected agent. A chave é o argv RESOLVIDO — um
+  // agente por `preset` não tem `command` no yml, e o cache é keyed por argv+model.
   const { status: probeStatus, caps, reason: probeReason, probe } = useAgentCapabilities(
     resolvedAgentName || undefined,
-    agentDef?.command,
+    agentCommandOf(agentDef),
     dir,
+    effectiveModel,
+    agentDef?.env,
   );
 
   // Agent select: closed, keys from registry + "" for default (D26)
@@ -382,29 +428,65 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
     [defaultAgentName, agentNames],
   );
 
+  /**
+   * What the step runs with when it declares no override.
+   *
+   * Precedence mirrors the engine: `step.model ?? registry[agent].model` (idem
+   * effort) and, failing that, whatever the agent selected at `session/new`
+   * (`currentValue`). `mode` has no registry level — and `acp.default_mode` is
+   * inert in the engine (no reader), so it is deliberately NOT consulted here.
+   */
+  const inheritedMode = caps?.defaultMode;
+  const inheritedModel = agentDef?.model ?? caps?.defaultModel;
+  const inheritedEffort = agentDef?.effort ?? caps?.defaultEffort;
+
   // Mode/model/effort select options — include current value if unknown (D31)
   const modeOptions = useMemo(() => {
     if (probeStatus !== "ok" || !caps) return [];
-    return ensureOption(["", ...caps.modes], step.mode ?? "");
-  }, [probeStatus, caps, step.mode]);
+    return capOptions(caps.modes, step.mode, inheritedMode);
+  }, [probeStatus, caps, step.mode, inheritedMode]);
 
   const modelOptions = useMemo(() => {
     if (probeStatus !== "ok" || !caps) return [];
-    return ensureOption(["", ...caps.models], step.model ?? "");
-  }, [probeStatus, caps, step.model]);
+    return capOptions(caps.models, step.model, inheritedModel);
+  }, [probeStatus, caps, step.model, inheritedModel]);
 
   const effortOptions = useMemo(() => {
     if (probeStatus !== "ok" || !caps) return [];
-    return ensureOption(["", ...caps.efforts], step.effort ?? "");
-  }, [probeStatus, caps, step.effort]);
+    return capOptions(caps.efforts, step.effort, inheritedEffort);
+  }, [probeStatus, caps, step.effort, inheritedEffort]);
 
   const renderCapOption = useCallback(
-    (knownValues: readonly string[]) => (opt: string) => {
-      if (opt === "") return "(nenhum)";
-      if (!knownValues.includes(opt)) return `${opt} (desconhecido)`;
-      return opt;
-    },
+    (knownValues: readonly string[]) =>
+      (opt: string) => {
+        // Only reachable when the probe couldn't name the inherited default.
+        if (opt === "") return "default do agente";
+        if (!knownValues.includes(opt)) return `${opt} (desconhecido)`;
+        return opt;
+      },
     [],
+  );
+
+  /**
+   * Switching agent drops mode/model/effort (D29).
+   *
+   * The yml stores the agent's **literal dialect** and the engine never
+   * translates it, so a value picked for the previous agent is meaningless for
+   * the new one — it would linger as `"… (desconhecido)"` in the probed selects
+   * and be sent verbatim to an agent that doesn't know it. Clearing the three
+   * overrides makes the step inherit the chosen agent's defaults
+   * (`registry[agent].model`/`.effort`, `acp.default_mode`).
+   */
+  const handleAgentChange = useCallback(
+    (v: string) => {
+      const next = v || undefined;
+      if (next === step.agent) return;
+      patchStep("agent", next);
+      patchStep("mode", undefined);
+      patchStep("model", undefined);
+      patchStep("effort", undefined);
+    },
+    [patchStep, step.agent],
   );
 
   // Effort disabled when agent doesn't announce it
@@ -434,7 +516,7 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
           label="agent"
           value={selectedAgent}
           options={agentOptions}
-          onChange={(v) => patchStep("agent", v || undefined)}
+          onChange={handleAgentChange}
           error={fieldError("agent")}
           renderOption={renderAgentOption}
           hint="Agente no registry"
@@ -443,7 +525,7 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
         <TextField
           label="agent"
           value={selectedAgent}
-          onChange={(v) => patchStep("agent", v || undefined)}
+          onChange={handleAgentChange}
           error={fieldError("agent")}
           hint="Nenhum agente no registry — adicione em Config > Agents"
         />
@@ -457,9 +539,9 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
       {useSelects ? (
         <SelectField
           label="mode"
-          value={step.mode ?? ""}
+          value={step.mode ?? inheritedMode ?? ""}
           options={modeOptions}
-          onChange={(v) => patchStep("mode", v || undefined)}
+          onChange={capChange(inheritedMode, (v) => patchStep("mode", v))}
           error={fieldError("mode")}
           renderOption={renderCapOption(caps!.modes)}
           hint="ACP autonomy mode"
@@ -477,9 +559,9 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
       {useSelects ? (
         <SelectField
           label="model"
-          value={step.model ?? ""}
+          value={step.model ?? inheritedModel ?? ""}
           options={modelOptions}
-          onChange={(v) => patchStep("model", v || undefined)}
+          onChange={capChange(inheritedModel, (v) => patchStep("model", v))}
           error={fieldError("model")}
           renderOption={renderCapOption(caps!.models)}
           hint="Model override (best-effort)"
@@ -497,12 +579,12 @@ function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, di
       {useSelects ? (
         <SelectField
           label="effort"
-          value={step.effort ?? ""}
+          value={effortDisabled ? "" : step.effort ?? inheritedEffort ?? ""}
           options={effortDisabled ? [""] : effortOptions}
-          onChange={(v) => patchStep("effort", v || undefined)}
+          onChange={capChange(inheritedEffort, (v) => patchStep("effort", v))}
           error={fieldError("effort")}
           disabled={effortDisabled}
-          disabledReason={`Este agente não anuncia effort`}
+          disabledReason={effortDisabledReason(caps!, effectiveModel)}
           renderOption={effortDisabled ? undefined : renderCapOption(caps!.efforts)}
           hint={effortDisabled ? undefined : "Reasoning effort override (best-effort)"}
         />
