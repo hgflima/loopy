@@ -335,7 +335,7 @@ A saída **pura e renderer-agnóstica** de **`computeDagreLayout`** (`layoutGrap
 _Avoid_: layout (sozinho), coordenadas; `layoutGraph` (é o wrapper — a fonte é `computeDagreLayout`)
 
 **Native UI** (redefinida no C-0009 — ADR-0007):
-O app **GUI de menubar do macOS** (`apps/menubar/`: Tauri v2 + React + React Flow) que roda o motor como subprocesso (`--no-tui --emit-events`) e renderiza o mesmo estado fora do terminal. É o **segundo renderer** do `store` + `computeDagreLayout` (consumidos via subpath export), **não** um substituto do Dashboard Ink — os dois coexistem.
+O app **GUI de menubar do macOS** (`apps/menubar/`: Tauri v2 + React + React Flow) que roda o motor como subprocesso (`--no-tui --emit-events`) e renderiza o mesmo estado fora do terminal. É o **segundo renderer** do `store` + `computeDagreLayout` (consumidos via subpath export), **não** um substituto do Dashboard Ink — os dois coexistem. O protocolo entre os dois é o **Transport** (ver o cluster abaixo).
 _Avoid_: **OpenTUI, framebuffer, "TUI nativa"** — a definição anterior (uma TUI futura sobre OpenTUI) está **morta**: OpenTUI nunca entrou no código. A Native UI é uma GUI de janela, então **"GUI" é o termo correto** aqui.
 
 **Pulso** (_pulse_):
@@ -357,3 +357,19 @@ _Avoid_: hook, dispatch (é o consumidor na store), callback (genérico)
 **onTraffic**:
 O callback de observação no boundary ACP (`OpenAgentOptions.onTraffic`) que capta o Tráfego send/recv e o roteia para **dois** consumidores: o arquivo (`TaskLogger.acp`) e a store (`acp_traffic`). Carimba `taskId` via o mapa `sessionId → taskId`. Observador puro — não altera o comportamento ACP.
 _Avoid_: confundir com `onUpdate` (é o seam do **texto** do Agente, que vira Stream)
+
+## Transport e Native UI (ADR-0007)
+
+Como a GUI (fora do processo) conversa com o motor. Distinto do **Emit seam** (que é interno ao processo): o Transport é a **serialização** desses eventos para outro processo.
+
+**Sidecar**:
+O processo do motor spawnado **pela** Native UI: `loopy --no-tui --emit-events <dir>`. A GUI é a pai; o motor é o filho. Um Run por vez.
+_Avoid_: backend, servidor, daemon (não escuta porta; é stdio)
+
+**Transport**:
+O protocolo **NDJSON duplex** entre motor e Native UI: uma linha JSON por mensagem, motor→UI pelo **stdout**, UI→motor pelo **stdin**. Sob `--emit-events`, o stdout é exclusivo do Transport (todo texto de log vai para stderr). Implementado em `src/tui/transport.ts`, publicado como subpath export.
+_Avoid_: IPC, canal, socket (não há socket); "API" (não é RPC nem HTTP)
+
+**Frame**:
+Uma linha do Transport, discriminada pelo campo `frame`. Três classes: **`event`** (wrapper de um `StoreEvent` — o mesmo do Emit seam), **`control`** (fatos do Run que não são StoreEvent: `run_started`, `run_finished`, `approval_requested`) e **`command`** (a única direção UI→motor: `approval_decision`). Parse é **fail-soft** (linha inválida vira valor de erro, nunca exceção — AD-5).
+_Avoid_: mensagem, payload, evento (solto — `event` é **uma** das três classes)
