@@ -42,6 +42,11 @@ function task(id: string, title: string, deps: readonly string[] = [], body = ""
   };
 }
 
+/** A task já concluída no `todo.md` (`- [x]`). */
+function doneTask(id: string, title: string, deps: readonly string[] = []): Task {
+  return { ...task(id, title, deps), done: true };
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -108,6 +113,45 @@ describe("configToStore", () => {
 
     expect(state.tasks[0]!.status).toBe("ready");
     expect(state.tasks[1]!.status).toBe("blocked");
+  });
+
+  it("task marcada '- [x]' fica 'done' e cai na coluna Fim", () => {
+    const cfg = config([{ id: "implement", type: "agent" }]);
+    const tasks = [doneTask("T-001", "Concluída"), task("T-002", "Pendente")];
+    const state = configToStore(cfg, tasks);
+
+    expect(state.tasks[0]!.status).toBe("done");
+    expect(state.tasks[1]!.status).toBe("ready");
+
+    const columns = groupByStep(state);
+    expect(columns.find((c) => c.id === "fim")!.cards.map((c) => c.taskId)).toEqual(["T-001"]);
+    expect(columns.find((c) => c.id === "backlog")!.cards.map((c) => c.taskId)).toEqual(["T-002"]);
+  });
+
+  it("deps já concluídas ⇒ dependente fica 'ready', não 'blocked'", () => {
+    const cfg = config([{ id: "implement", type: "agent" }]);
+    const tasks = [doneTask("T-001", "Feita"), task("T-002", "Destravada", ["T-001"])];
+    const state = configToStore(cfg, tasks);
+
+    expect(state.tasks[1]!.status).toBe("ready");
+  });
+
+  it("dep parcialmente concluída ⇒ dependente segue 'blocked'", () => {
+    const cfg = config([{ id: "implement", type: "agent" }]);
+    const tasks = [
+      doneTask("T-001", "Feita"),
+      task("T-002", "Pendente"),
+      task("T-003", "Espera as duas", ["T-001", "T-002"]),
+    ];
+    const state = configToStore(cfg, tasks);
+
+    expect(state.tasks[2]!.status).toBe("blocked");
+  });
+
+  it("dep para id desconhecido ⇒ 'blocked' (fail-closed)", () => {
+    const state = configToStore(config([]), [task("T-002", "Dep órfã", ["T-999"])]);
+
+    expect(state.tasks[0]!.status).toBe("blocked");
   });
 
   it("pipeline vazio ⇒ só Backlog + Fim", () => {
