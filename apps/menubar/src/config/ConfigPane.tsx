@@ -44,6 +44,7 @@ export interface ConfigPaneProps {
 const SECTION_PREFIXES = [
   "workspace",
   "concurrency",
+  "max_concurrency",
   "agents",
   "acp",
   "inputs",
@@ -329,16 +330,35 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
 
       {/* Concurrency section */}
       <fieldset className="config-pane__section" data-testid="section-concurrency">
-        <SectionHeader title="Concurrency" errorCount={sectionErrors.concurrency.length} />
-        <NumberField
-          label="concurrency"
-          value={typeof draft.concurrency === "number" ? draft.concurrency : 1}
-          onChange={(v) => patch("concurrency", v)}
-          error={fieldError("concurrency")}
-          hint="Número fixo; use 'auto' no yml para derivar do DAG"
-          min={1}
-          id="concurrency"
+        <SectionHeader title="Concurrency" errorCount={sectionErrors.concurrency.length + sectionErrors.max_concurrency.length} />
+        <ToggleField
+          label="auto (derivar do DAG)"
+          value={draft.concurrency === "auto"}
+          onChange={(checked) => patch("concurrency", checked ? "auto" : 1)}
+          hint="Usa a camada topológica mais larga como concurrency"
         />
+        {draft.concurrency !== "auto" && (
+          <NumberField
+            label="concurrency"
+            value={typeof draft.concurrency === "number" ? draft.concurrency : 1}
+            onChange={(v) => patch("concurrency", v)}
+            error={fieldError("concurrency")}
+            hint="Número fixo de tasks paralelas"
+            min={1}
+            id="concurrency"
+          />
+        )}
+        {draft.concurrency === "auto" && (
+          <NumberField
+            label="max_concurrency"
+            value={draft.max_concurrency}
+            onChange={(v) => patch("max_concurrency", v)}
+            error={fieldError("max_concurrency")}
+            hint="Teto do auto — ignorado quando concurrency é um número"
+            min={1}
+            id="max-concurrency"
+          />
+        )}
       </fieldset>
 
       {/* Agents section */}
