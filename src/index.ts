@@ -452,6 +452,10 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
         sessionToTask.set(newSessionId, entry);
       }
     },
+    // T-006: surface best-effort config warnings (D18/D28/D33) via StoreEvent.
+    (message) => {
+      ui.dispatch({ type: "warning", message });
+    },
   );
   const git = createGit({ root });
   const checks: ChecksRunnerPort = {

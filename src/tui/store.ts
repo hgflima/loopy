@@ -56,6 +56,17 @@ export interface CheckState {
   readonly status: CheckStatus;
 }
 
+/** A single warning entry accumulated in the store. */
+export interface WarningEntry {
+  readonly taskId?: string;
+  readonly stepId?: string;
+  readonly agentName?: string;
+  readonly message: string;
+}
+
+/** Maximum entries kept in {@link StoreState.warnings}. */
+export const WARNINGS_CAP = 50;
+
 /** Live state of one pipeline step. */
 export interface StepState {
   readonly id: string;
@@ -73,6 +84,8 @@ export interface StepState {
   readonly checks: readonly CheckState[];
   /** Failure reason when `status` is `failed`. */
   readonly reason?: string;
+  /** True when this step has received at least one `warning` event. */
+  readonly warned?: boolean;
   /** Live context-window tokens used (last `usage_update` sample, T-007). */
   readonly used?: number;
   /** Live context-window size limit (last `usage_update` sample, T-007). */
@@ -133,6 +146,8 @@ export interface StoreState {
   readonly activeAgents: ReadonlySet<string>;
   /** Declared pipeline steps in order (T-003: populated by `pipeline_declared`). */
   readonly pipeline: readonly { id: string; type: StepType }[];
+  /** Accumulated warnings — bounded to {@link WARNINGS_CAP}. */
+  readonly warnings: readonly WarningEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +246,13 @@ export type StoreEvent =
   | {
       readonly type: "pipeline_declared";
       readonly steps: readonly { id: string; type: StepType }[];
+    }
+  | {
+      readonly type: "warning";
+      readonly taskId?: string;
+      readonly stepId?: string;
+      readonly agentName?: string;
+      readonly message: string;
     };
 
 // ---------------------------------------------------------------------------
@@ -239,7 +261,7 @@ export type StoreEvent =
 
 /** The empty starting state (no tasks, no edges). */
 export function initialState(): StoreState {
-  return { tasks: [], edges: [], acpLog: [], activeAgents: new Set<string>(), pipeline: [] };
+  return { tasks: [], edges: [], acpLog: [], activeAgents: new Set<string>(), pipeline: [], warnings: [] };
 }
 
 /**
@@ -474,6 +496,29 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
 
     case "pipeline_declared":
       return { ...state, pipeline: [...event.steps] };
+
+    case "warning": {
+      if (state.warnings.at(-1)?.message === event.message) return state;
+
+      const entry: WarningEntry = {
+        message: event.message,
+        ...(event.taskId !== undefined && { taskId: event.taskId }),
+        ...(event.stepId !== undefined && { stepId: event.stepId }),
+        ...(event.agentName !== undefined && { agentName: event.agentName }),
+      };
+      const warnings = [...state.warnings, entry];
+
+      const withWarnings = { ...state, warnings: warnings.length > WARNINGS_CAP ? warnings.slice(-WARNINGS_CAP) : warnings };
+      if (event.taskId && event.stepId) {
+        return updateTaskStep(
+          withWarnings,
+          event.taskId,
+          event.stepId,
+          (step) => ({ ...step, warned: true }),
+        );
+      }
+      return withWarnings;
+    }
   }
 }
 

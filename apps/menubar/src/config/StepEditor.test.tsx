@@ -64,6 +64,7 @@ function store(tasks: TaskState[]): StoreState {
       { id: "build", type: "agent" },
       { id: "test", type: "shell" },
     ],
+    warnings: [],
   };
 }
 

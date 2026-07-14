@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   ACP_LOG_CAP,
+  WARNINGS_CAP,
   blockedTasks,
   createStore,
   initialState,
@@ -1253,6 +1254,105 @@ describe("reduce · pipeline_declared", () => {
 // initialState includes edges, acpLog, and pipeline
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// reduce — warning (14th event type, T-007)
+// ---------------------------------------------------------------------------
+
+describe("reduce · warning", () => {
+  it("accumulates warnings in state.warnings", () => {
+    const state = play({ type: "warning", message: "capability not supported" });
+    expect(state.warnings).toHaveLength(1);
+    expect(state.warnings[0]).toEqual({ message: "capability not supported" });
+  });
+
+  it("carries optional taskId, stepId and agentName", () => {
+    const state = play({
+      type: "warning",
+      taskId: "T-001",
+      stepId: "implement",
+      agentName: "Claude",
+      message: "effort not supported",
+    });
+    expect(state.warnings[0]).toEqual({
+      taskId: "T-001",
+      stepId: "implement",
+      agentName: "Claude",
+      message: "effort not supported",
+    });
+  });
+
+  it("deduplicates consecutive identical messages", () => {
+    const state = play(
+      { type: "warning", message: "same warning" },
+      { type: "warning", message: "same warning" },
+    );
+    expect(state.warnings).toHaveLength(1);
+  });
+
+  it("does not dedup non-consecutive identical messages", () => {
+    const state = play(
+      { type: "warning", message: "first" },
+      { type: "warning", message: "different" },
+      { type: "warning", message: "first" },
+    );
+    expect(state.warnings).toHaveLength(3);
+  });
+
+  it("caps at WARNINGS_CAP entries", () => {
+    const events: StoreEvent[] = Array.from(
+      { length: WARNINGS_CAP + 10 },
+      (_, i) => ({ type: "warning" as const, message: `w-${i}` }),
+    );
+    const state = play(...events);
+    expect(state.warnings).toHaveLength(WARNINGS_CAP);
+    expect(state.warnings[0]?.message).toBe("w-10");
+    expect(state.warnings[WARNINGS_CAP - 1]?.message).toBe(
+      `w-${WARNINGS_CAP + 9}`,
+    );
+  });
+
+  it("marks step.warned when taskId and stepId target a known step", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "implement",
+        stepType: "agent",
+      },
+      {
+        type: "warning",
+        taskId: "T-001",
+        stepId: "implement",
+        message: "effort not supported",
+      },
+    );
+    expect(findStep(state, "T-001", "implement").warned).toBe(true);
+  });
+
+  it("does not break without taskId (pre-task global warning)", () => {
+    const state = play({ type: "warning", message: "global warning" });
+    expect(state.warnings).toHaveLength(1);
+    expect(state.warnings[0]?.message).toBe("global warning");
+  });
+
+  it("does not affect other state fields", () => {
+    let state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "edges_set", edges: [["T-001", "T-002"]] },
+    );
+    const tasksBefore = state.tasks;
+    const edgesBefore = state.edges;
+    state = reduce(state, { type: "warning", message: "test" });
+    expect(state.tasks).toBe(tasksBefore);
+    expect(state.edges).toBe(edgesBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// initialState includes edges, acpLog, pipeline, and warnings
+// ---------------------------------------------------------------------------
+
 describe("initialState", () => {
   it("includes an empty edges array", () => {
     expect(initialState().edges).toEqual([]);
@@ -1264,5 +1364,9 @@ describe("initialState", () => {
 
   it("includes an empty pipeline array", () => {
     expect(initialState().pipeline).toEqual([]);
+  });
+
+  it("includes an empty warnings array", () => {
+    expect(initialState().warnings).toEqual([]);
   });
 });

@@ -9,11 +9,13 @@ import {
   prefixAgentLines,
   pulseFrame,
   renderGraph,
+  renderWarnings,
   streamTail,
   SYMBOLS,
 } from "../../src/tui/view";
 import type { GraphGeometry, StyledRow, StyledSpan } from "../../src/tui/view";
 import type { CheckState, TaskStatus } from "../../src/tui/store";
+import { initialState } from "../../src/tui/store";
 
 // ---------------------------------------------------------------------------
 // Shared test helpers
@@ -595,5 +597,47 @@ describe("computeDagreLayout", () => {
     expect(edges).toEqual(edgesCopy);
     expect(statuses).toEqual(statusesCopy);
     expect(order).toEqual(orderCopy);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// renderWarnings — warning lines for the dashboard footer (T-007)
+// ---------------------------------------------------------------------------
+
+describe("renderWarnings", () => {
+  it("returns empty array when no warnings", () => {
+    expect(renderWarnings(initialState())).toEqual([]);
+  });
+
+  it("renders ⚠ message without agent", () => {
+    const state = {
+      ...initialState(),
+      warnings: [{ message: "something failed" }],
+    };
+    expect(renderWarnings(state)).toEqual(["⚠ something failed"]);
+  });
+
+  it("renders ⚠ agent: message with agent", () => {
+    const state = {
+      ...initialState(),
+      warnings: [{ agentName: "Claude", message: "effort not supported" }],
+    };
+    expect(renderWarnings(state)).toEqual(["⚠ Claude: effort not supported"]);
+  });
+
+  it("renders N lines for N warnings", () => {
+    const state = {
+      ...initialState(),
+      warnings: [
+        { message: "first" },
+        { agentName: "Codex", message: "second" },
+        { message: "third" },
+      ],
+    };
+    const lines = renderWarnings(state);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toBe("⚠ first");
+    expect(lines[1]).toBe("⚠ Codex: second");
+    expect(lines[2]).toBe("⚠ third");
   });
 });

@@ -38,8 +38,6 @@ import { AGENT_METHODS } from "@agentclientprotocol/sdk";
 import type {
   ActiveSession,
   ClientContext,
-  SessionConfigOption,
-  SessionConfigOptionCategory,
 } from "@agentclientprotocol/sdk";
 import type {
   AgentSession,
@@ -50,6 +48,7 @@ import type {
 } from "../types";
 import type { AcpTrafficEntry } from "../logging/logger";
 import type { CostBuffer, TurnTextBuffer } from "./client";
+import { parseCapabilities, type AgentCapabilities } from "./capabilities";
 
 // ---------------------------------------------------------------------------
 // Stop-reason classification (AC3) — pure, reused by the `agent` step (T-014).
@@ -106,11 +105,19 @@ export interface SessionDeps {
    * re-register here.
    */
   readonly onReopen?: (oldSessionId: string, newSessionId: string) => void;
+  /**
+   * Called when a best-effort config option is silently skipped or rejected.
+   * The engine wires this to a `StoreEvent` `warning` so the user sees it in
+   * the TUI/GUI — not just in the debug log (T-006, D18/D28/D33).
+   */
+  readonly onWarning?: (message: string) => void;
   readonly logger?: LoggerPort;
 }
 
 /** A worktree-bound ACP session plus explicit teardown. */
 export interface LoopySession extends AgentSession {
+  /** What this agent announced it supports (modes, models, efforts). */
+  readonly capabilities: AgentCapabilities;
   /** Stop routing this session's updates (teardown). Idempotent. */
   dispose(): void;
 }
@@ -125,35 +132,17 @@ const ZERO_USAGE = {
   totalTokens: 0,
 };
 
-/**
- * Find the `configId` for a given {@link SessionConfigOptionCategory} from the
- * config options announced in `session/new`. Returns `undefined` when the
- * adapter does not announce the category (best-effort — the caller no-ops).
- */
-function findConfigId(
-  options: readonly SessionConfigOption[] | null | undefined,
-  category: SessionConfigOptionCategory,
-): string | undefined {
-  if (!options) return undefined;
-  return options.find((o) => o.category === category)?.id;
-}
-
 class SessionWrapper implements LoopySession {
   private lastTurnText = "";
   private usageAcc = { ...ZERO_USAGE };
   private usageAvailable = false;
 
-  /** `configId` for the `model` category (discovered from `session/new`). */
-  private modelConfigId: string | undefined;
-  /** `configId` for the `thought_level` category (discovered from `session/new`). */
-  private effortConfigId: string | undefined;
   /**
-   * Mode ids the adapter announced in `session/new` (empty when none announced).
-   * Modes are **per-agent vocabulary** (claude-agent-acp: `acceptEdits`/`plan`;
-   * codex-acp: `read-only`/`agent`/`agent-full-access`), so a mode valid for one
-   * agent is invalid for another — {@link setMode} validates against this list.
+   * Discovered capabilities from `session/new` — the single source of truth
+   * for modes, models, efforts, and their `configId`s. Replaces the old
+   * `modelConfigId`/`effortConfigId`/`availableModeIds` triple (T-006).
    */
-  private availableModeIds!: readonly string[];
+  private _capabilities!: AgentCapabilities;
 
   // Stored config values for replay after reopen (session/new resets to defaults).
   private appliedMode: string | undefined;
@@ -179,13 +168,16 @@ class SessionWrapper implements LoopySession {
     this.parseConfigFromSession(active);
   }
 
-  /** Extract config ids and available modes from a (possibly new) session. */
+  /** Extract capabilities from a (possibly new) session via `parseCapabilities` (T-006). */
   private parseConfigFromSession(session: ActiveSession): void {
-    const opts = session.newSessionResponse.configOptions;
-    this.modelConfigId = findConfigId(opts, "model");
-    this.effortConfigId = findConfigId(opts, "thought_level");
-    this.availableModeIds =
-      session.newSessionResponse.modes?.availableModes.map((m) => m.id) ?? [];
+    const opts = session.newSessionResponse.configOptions ?? undefined;
+    const fallbackModes =
+      session.newSessionResponse.modes?.availableModes.map((m) => m.id);
+    this._capabilities = parseCapabilities(opts, fallbackModes);
+  }
+
+  get capabilities(): AgentCapabilities {
+    return this._capabilities;
   }
 
   get sessionId(): string {
@@ -204,24 +196,33 @@ class SessionWrapper implements LoopySession {
 
   /**
    * Set the session mode via `session/set_mode`. Modes are per-agent vocabulary,
-   * so this validates `modeId` against the modes the adapter announced in
-   * `session/new` and **fails-closed** with an actionable message when it is not
-   * among them — the adapter would otherwise reject it with an opaque `-32602`
-   * "Invalid params" that gives no hint of the mismatch. Unlike `setModel`/
-   * `setEffort` the failure is NOT swallowed: mode governs the session's autonomy
-   * (read-only vs. write), so a wrong mode must not run under the wrong one.
-   * When the adapter announces no modes we cannot validate — the call is sent and
-   * the adapter decides.
+   * so this validates `modeId` against `capabilities.modes` and **fails-closed**
+   * with an actionable message when it is not among them (T-006, D33).
+   *
+   * **Fail-closed semantics**: when the agent announced modes (via `configOptions`
+   * or legacy `availableModes`), any `modeId` not in that list throws. This
+   * closes the old hole where OpenCode (`modes: null` but `configOptions` with
+   * category `mode`) escaped all validation.
+   *
+   * When `capabilities.modes` is **empty** (adapter announces nothing at all —
+   * neither `configOptions` nor `availableModes`) we cannot validate: the call is
+   * sent raw and a warning is emitted so the user knows.
    */
   async setMode(modeId: string): Promise<void> {
-    if (
-      this.availableModeIds.length > 0 &&
-      !this.availableModeIds.includes(modeId)
-    ) {
+    const { modes } = this._capabilities;
+    if (modes.length > 0 && !modes.includes(modeId)) {
       throw new Error(
-        `mode "${modeId}" não é anunciado por este agente ` +
-          `(modos disponíveis: ${this.availableModeIds.join(", ")}). ` +
+        `mode '${modeId}' não é aceito por este agente ` +
+          `(aceita: ${modes.join(", ")}). ` +
           `Modos são vocabulário por-agente — cheque o mode do Step contra o agente-alvo.`,
+      );
+    }
+    if (modes.length === 0) {
+      this.deps.onWarning?.(
+        `mode '${modeId}' enviado cru — agente não anuncia modos (sem validação possível)`,
+      );
+      this.deps.logger?.debug(
+        `[acp] setMode(${modeId}) — no modes announced, sending raw (${this.sessionId})`,
       );
     }
     const params = { sessionId: this.sessionId, modeId };
@@ -233,38 +234,68 @@ class SessionWrapper implements LoopySession {
 
   /**
    * Best-effort model override via `session/set_config_option` (category `model`).
-   * No-op + log when the adapter does not announce the capability; adapter errors
-   * are swallowed (AD-5 — never propagated to the loop).
+   * Validates the value against `capabilities.models` (T-006, D18): value outside
+   * the announced list is **not sent** and emits a warning. Category absent =>
+   * warning + skip. Adapter errors are swallowed (AD-5).
    */
   async setModel(modelId: string): Promise<void> {
-    await this.setConfigOption(this.modelConfigId, "model", modelId);
-    this.appliedModel = modelId;
+    const sent = await this.setConfigOption(
+      this._capabilities.modelConfigId,
+      "model",
+      modelId,
+      this._capabilities.models,
+    );
+    if (sent) this.appliedModel = modelId;
   }
 
   /**
    * Best-effort effort override via `session/set_config_option` (category `thought_level`).
-   * Same best-effort semantics as {@link setModel}.
+   * Same validation semantics as {@link setModel} (T-006, D18).
    */
   async setEffort(level: string): Promise<void> {
-    await this.setConfigOption(this.effortConfigId, "thought_level", level);
-    this.appliedEffort = level;
+    const sent = await this.setConfigOption(
+      this._capabilities.effortConfigId,
+      "effort",
+      level,
+      this._capabilities.efforts,
+    );
+    if (sent) this.appliedEffort = level;
   }
 
   /**
-   * Shared impl for `setModel`/`setEffort`: send `session/set_config_option`
-   * when the `configId` was discovered; no-op + log otherwise. Adapter errors
-   * are caught and swallowed (AD-5).
+   * Shared impl for `setModel`/`setEffort`: validates the value against the
+   * announced values for the category (T-006, D18). Three outcomes:
+   *
+   *  1. **Category absent** (`configId` undefined) => warning + skip (not sent).
+   *  2. **Value outside announced list** (non-empty) => warning + skip (not sent).
+   *  3. **Value accepted** (or announced list empty — can't validate) => send.
+   *
+   * Never clampers, never translates values (D18): `xhigh` (Codex) is NOT `max`
+   * (Claude). Returns `true` when the RPC was actually sent.
    */
   private async setConfigOption(
     configId: string | undefined,
     label: string,
     value: string,
-  ): Promise<void> {
+    announcedValues: readonly string[],
+  ): Promise<boolean> {
     if (configId === undefined) {
+      const msg = `agente não anuncia ${label} — '${value}' ignorado`;
+      this.deps.onWarning?.(msg);
       this.deps.logger?.debug(
         `[acp] set_config_option(${label}) skipped — capability not announced (${this.sessionId})`,
       );
-      return;
+      return false;
+    }
+    if (announcedValues.length > 0 && !announcedValues.includes(value)) {
+      const msg =
+        `${label} '${value}' não é aceito por este agente ` +
+        `(aceita: ${announcedValues.join(", ")}) — ignorado`;
+      this.deps.onWarning?.(msg);
+      this.deps.logger?.debug(
+        `[acp] set_config_option(${label}) rejected — '${value}' not in announced values (${this.sessionId})`,
+      );
+      return false;
     }
     const params = { sessionId: this.sessionId, configId, value };
     this.send("session/set_config_option", params);
@@ -274,11 +305,13 @@ class SessionWrapper implements LoopySession {
         params,
       );
       this.logAction(`set_config_option(${label}) ${value}`);
+      return true;
     } catch (err) {
       // AD-5: adapter error swallowed — best-effort, never propagated.
       this.deps.logger?.debug(
         `[acp] set_config_option(${label}) failed (${this.sessionId}): ${String(err)}`,
       );
+      return false;
     }
   }
 
@@ -289,8 +322,7 @@ class SessionWrapper implements LoopySession {
    * underlying `sessionId` **changes**.
    *
    * After reopen:
-   *  - `modelConfigId`/`effortConfigId`/`availableModeIds` are re-parsed from
-   *    the new `newSessionResponse`.
+   *  - `_capabilities` is re-parsed from the new `newSessionResponse`.
    *  - Stored mode/model/effort are re-applied so the session resumes with the
    *    same autonomy level (critical for `mode: plan` in audit steps).
    *  - `costCarry` captures the old session's cumulative cost so `readCost()`

@@ -45,7 +45,7 @@
     Files: src/scheduler/graph.ts, src/scheduler/index.ts, package.json, tsup.config.ts, tests/scheduler/maxLayerWidth.test.ts, tests/scheduler/resolveConcurrency.test.ts
     Scope: M
 
-- [ ] T-005: `src/acp/capabilities.ts` — parse puro de `configOptions` + fixtures reais das spikes (D28)
+- [x] T-005: `src/acp/capabilities.ts` — parse puro de `configOptions` + fixtures reais das spikes (D28)
     NOVO `src/acp/capabilities.ts`, **puro** (zero I/O, zero SDK call — só tipos do SDK):
     `export interface AgentCapabilities { readonly modes: readonly string[]; readonly models:
     readonly string[]; readonly efforts: readonly string[]; readonly modeConfigId?: string; readonly
@@ -81,7 +81,7 @@
     Files: src/acp/capabilities.ts, tests/acp/capabilities.test.ts, tests/fixtures/capabilities/claude.json, tests/fixtures/capabilities/codex.json, tests/fixtures/capabilities/opencode.json
     Scope: S
 
-- [ ] T-007: `StoreEvent` `warning` — o 14º tipo, o canal do aviso visível (D15)
+- [x] T-007: `StoreEvent` `warning` — o 14º tipo, o canal do aviso visível (D15)
     `src/tui/store.ts`: 14ª variante da união `StoreEvent` (`:148-234`) — `{ type: "warning";
     taskId?: string; stepId?: string; agentName?: string; message: string }` (`taskId`/`stepId`
     opcionais: um aviso pode nascer **antes** de qualquer task, na validação eager do Run). O
@@ -157,7 +157,7 @@
     Files: src/types.ts, src/config/schema.ts, src/config/serialize.ts, src/loop/orchestrator.ts, src/index.ts, tests/config/schema.test.ts, tests/config/serialize.test.ts, tests/loop/orchestrator.test.ts, tests/cli/dry-run.test.ts
     Scope: L
 
-- [ ] T-006: a Sessão descobre por categoria, valida `mode` fail-closed e avisa alto (D18/D28/D33)
+- [x] T-006: a Sessão descobre por categoria, valida `mode` fail-closed e avisa alto (D18/D28/D33)
     **O bug de fundo são duas linhas lendo a fonte errada.** `src/acp/session.ts`,
     `parseConfigFromSession` (`:183-189`): trocar o par `findConfigId(opts,"model")` +
     `newSessionResponse.modes?.availableModes` por **uma** chamada a `parseCapabilities(opts,

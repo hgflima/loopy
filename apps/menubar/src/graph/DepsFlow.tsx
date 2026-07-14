@@ -155,6 +155,7 @@ export function DepsFlow({ tasks, edges, tick, active, concurrency, selectedTask
             isRunning: status === "running",
             onWavefront: front.has(n.id),
             failedAtStepId: t ? failedStepId(t) : undefined,
+            hasWarning: t ? t.steps.some((s) => s.warned) : false,
             selected: n.id === selectedTaskId,
             reducedMotion,
             onSelect: handleSelect,

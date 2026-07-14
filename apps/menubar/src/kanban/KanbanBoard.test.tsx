@@ -24,6 +24,7 @@ function store(
     acpLog: [],
     activeAgents: new Set<string>(),
     pipeline: pipeline as StoreState["pipeline"],
+    warnings: [],
   };
 }
 

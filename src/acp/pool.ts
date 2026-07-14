@@ -63,6 +63,7 @@ function depsFromHandle(
   handle: AgentHandle,
   logger?: LoggerPort,
   onReopen?: (oldSessionId: string, newSessionId: string) => void,
+  onWarning?: (message: string) => void,
 ): SessionDeps {
   return {
     ctx: handle.ctx,
@@ -70,6 +71,7 @@ function depsFromHandle(
     cost: handle.cost,
     logger,
     onReopen,
+    onWarning,
   };
 }
 
@@ -83,6 +85,7 @@ export async function createAgentProcessPool(
   spawner: AgentSpawner,
   logger?: LoggerPort,
   onReopen?: (oldSessionId: string, newSessionId: string) => void,
+  onWarning?: (message: string) => void,
 ): Promise<AgentProcessPool> {
   const handles = new Map<string, AgentHandle>();
 
@@ -141,7 +144,7 @@ export async function createAgentProcessPool(
       if (inFlight) return inFlight;
 
       const h = getHandle(agentName);
-      const deps = depsFromHandle(h, logger, onReopen);
+      const deps = depsFromHandle(h, logger, onReopen, onWarning);
       const started = buildSession(deps, cwd)
         .start()
         .then((session) => {

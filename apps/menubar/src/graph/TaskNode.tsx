@@ -28,6 +28,8 @@ export interface TaskNodeData {
   /** Task na frente de onda — roda a seguir (âmbar). Ver {@link nodeStatusMeta}. */
   readonly onWavefront?: boolean;
   readonly failedAtStepId?: string;
+  /** True when at least one step received a warning event. */
+  readonly hasWarning?: boolean;
   readonly reducedMotion?: boolean;
   readonly onSelect?: (id: string) => void;
   readonly onFocusNode?: (id: string) => void;
@@ -45,6 +47,7 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
     isRunning = false,
     onWavefront = false,
     failedAtStepId,
+    hasWarning = false,
     reducedMotion = false,
     onSelect,
     onFocusNode,
@@ -90,6 +93,9 @@ function TaskNodeComponent({ id, data }: NodeProps<TaskNodeType>) {
       <span className="deps-node__title t-body">{title}</span>
       {failedAtStepId && (
         <span className="deps-node__failed t-data">@{failedAtStepId}</span>
+      )}
+      {hasWarning && (
+        <span className="deps-node__warned t-data" title="Warning">⚠</span>
       )}
       <Handle type="source" position={Position.Right} style={{ visibility: "hidden" }} />
     </div>

@@ -55,5 +55,6 @@ export function configToStore(
     acpLog: [],
     activeAgents: new Set<string>(),
     pipeline,
+    warnings: [],
   };
 }

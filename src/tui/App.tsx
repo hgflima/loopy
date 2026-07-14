@@ -31,7 +31,7 @@ import { StreamPane } from "./components/StreamPane";
 import { TaskListPane } from "./components/TaskListPane";
 import { useStore } from "./hooks";
 import type { Store } from "./store";
-import { pulseFrame } from "./view";
+import { pulseFrame, renderWarnings } from "./view";
 
 const PULSE_MS = 500;
 /** Most concurrent stream panes to render; the rest fold into a `+K` note. */
@@ -88,17 +88,19 @@ export function App({
   }, [running.length]);
 
   const pulsing = pulseFrame(tick) === "on";
+  const warningLines = renderWarnings(state);
 
   // ---- Fixed geometry (derived once per render from the terminal size) -----
   const headerH = 1;
+  const warningH = warningLines.length;
   // Graph gets ~60% of the terminal (the DAG was being clipped at ~40%); the
   // body (tasks | streams) gets the rest, floored so both stay visible.
   const graphH = clamp(
     Math.round(rows * 0.6),
     6,
-    Math.max(6, rows - headerH - 5),
+    Math.max(6, rows - headerH - warningH - 5),
   );
-  const bodyH = Math.max(5, rows - headerH - graphH);
+  const bodyH = Math.max(5, rows - headerH - graphH - warningH);
   const leftW = clamp(Math.round(cols * 0.44), 24, Math.max(24, cols - 30));
   const rightW = cols - leftW;
   // With the ACP pane removed, the agent streams fill the whole right column.
@@ -169,6 +171,17 @@ export function App({
           )}
         </Box>
       </Box>
+
+      {/* Warnings — N lines at the bottom, zero frame when empty */}
+      {warningLines.length > 0 && (
+        <Box flexDirection="column">
+          {warningLines.map((line, i) => (
+            <Text key={i} color="yellow">
+              {line}
+            </Text>
+          ))}
+        </Box>
+      )}
 
       {/* Approval gate */}
       <ApprovalPrompt controller={approval} />
