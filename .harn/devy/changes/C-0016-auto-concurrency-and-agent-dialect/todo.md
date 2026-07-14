@@ -45,7 +45,7 @@
     Files: src/scheduler/graph.ts, src/scheduler/index.ts, package.json, tsup.config.ts, tests/scheduler/maxLayerWidth.test.ts, tests/scheduler/resolveConcurrency.test.ts
     Scope: M
 
-- [ ] T-005: `src/acp/capabilities.ts` — parse puro de `configOptions` + fixtures reais das spikes (D28)
+- [x] T-005: `src/acp/capabilities.ts` — parse puro de `configOptions` + fixtures reais das spikes (D28)
     NOVO `src/acp/capabilities.ts`, **puro** (zero I/O, zero SDK call — só tipos do SDK):
     `export interface AgentCapabilities { readonly modes: readonly string[]; readonly models:
     readonly string[]; readonly efforts: readonly string[]; readonly modeConfigId?: string; readonly
