@@ -1,0 +1,1293 @@
+{
+  "command": [
+    "opencode",
+    "acp"
+  ],
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "embeddedContext": true,
+        "image": true
+      },
+      "sessionCapabilities": {
+        "close": {},
+        "fork": {},
+        "list": {},
+        "resume": {}
+      }
+    },
+    "authMethods": [
+      {
+        "description": "Run `opencode auth login` in the terminal",
+        "name": "Login with opencode",
+        "id": "opencode-login"
+      }
+    ],
+    "agentInfo": {
+      "name": "OpenCode",
+      "version": "1.17.9"
+    }
+  },
+  "session": {
+    "sessionId": "ses_0a26bd179ffeSiokY5AwjTdMCI",
+    "configOptions": [
+      {
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "type": "select",
+        "currentValue": "opencode/big-pickle",
+        "options": [
+          {
+            "value": "huggingface/deepseek-ai/DeepSeek-V4-Flash",
+            "name": "Hugging Face/DeepSeek V4 Flash"
+          },
+          {
+            "value": "huggingface/deepseek-ai/DeepSeek-V4-Pro",
+            "name": "Hugging Face/DeepSeek V4 Pro"
+          },
+          {
+            "value": "huggingface/deepseek-ai/DeepSeek-R1",
+            "name": "Hugging Face/DeepSeek-R1"
+          },
+          {
+            "value": "huggingface/deepseek-ai/DeepSeek-R1-0528",
+            "name": "Hugging Face/DeepSeek-R1-0528"
+          },
+          {
+            "value": "huggingface/deepseek-ai/DeepSeek-V3.2",
+            "name": "Hugging Face/DeepSeek-V3.2"
+          },
+          {
+            "value": "huggingface/google/gemma-4-26B-A4B-it",
+            "name": "Hugging Face/Gemma 4 26B A4B IT"
+          },
+          {
+            "value": "huggingface/google/gemma-4-31B-it",
+            "name": "Hugging Face/Gemma 4 31B IT"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-4.5",
+            "name": "Hugging Face/GLM-4.5"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-4.5-Air",
+            "name": "Hugging Face/GLM-4.5-Air"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-4.5V",
+            "name": "Hugging Face/GLM-4.5V"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-4.6",
+            "name": "Hugging Face/GLM-4.6"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-4.7",
+            "name": "Hugging Face/GLM-4.7"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-4.7-Flash",
+            "name": "Hugging Face/GLM-4.7-Flash"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-5",
+            "name": "Hugging Face/GLM-5"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-5.1",
+            "name": "Hugging Face/GLM-5.1"
+          },
+          {
+            "value": "huggingface/zai-org/GLM-5.2",
+            "name": "Hugging Face/GLM-5.2"
+          },
+          {
+            "value": "huggingface/openai/gpt-oss-120b",
+            "name": "Hugging Face/GPT OSS 120B"
+          },
+          {
+            "value": "huggingface/openai/gpt-oss-20b",
+            "name": "Hugging Face/GPT OSS 20B"
+          },
+          {
+            "value": "huggingface/moonshotai/Kimi-K2.7-Code",
+            "name": "Hugging Face/Kimi K2.7 Code"
+          },
+          {
+            "value": "huggingface/moonshotai/Kimi-K2-Instruct",
+            "name": "Hugging Face/Kimi-K2-Instruct"
+          },
+          {
+            "value": "huggingface/moonshotai/Kimi-K2-Instruct-0905",
+            "name": "Hugging Face/Kimi-K2-Instruct-0905"
+          },
+          {
+            "value": "huggingface/moonshotai/Kimi-K2-Thinking",
+            "name": "Hugging Face/Kimi-K2-Thinking"
+          },
+          {
+            "value": "huggingface/moonshotai/Kimi-K2.5",
+            "name": "Hugging Face/Kimi-K2.5"
+          },
+          {
+            "value": "huggingface/moonshotai/Kimi-K2.6",
+            "name": "Hugging Face/Kimi-K2.6"
+          },
+          {
+            "value": "huggingface/meta-llama/Llama-3.3-70B-Instruct",
+            "name": "Hugging Face/Llama-3.3-70B-Instruct"
+          },
+          {
+            "value": "huggingface/XiaomiMiMo/MiMo-V2-Flash",
+            "name": "Hugging Face/MiMo-V2-Flash"
+          },
+          {
+            "value": "huggingface/XiaomiMiMo/MiMo-V2.5-Pro",
+            "name": "Hugging Face/MiMo-V2.5-Pro"
+          },
+          {
+            "value": "huggingface/MiniMaxAI/MiniMax-M2",
+            "name": "Hugging Face/MiniMax-M2"
+          },
+          {
+            "value": "huggingface/MiniMaxAI/MiniMax-M2.1",
+            "name": "Hugging Face/MiniMax-M2.1"
+          },
+          {
+            "value": "huggingface/MiniMaxAI/MiniMax-M2.5",
+            "name": "Hugging Face/MiniMax-M2.5"
+          },
+          {
+            "value": "huggingface/MiniMaxAI/MiniMax-M2.7",
+            "name": "Hugging Face/MiniMax-M2.7"
+          },
+          {
+            "value": "huggingface/MiniMaxAI/MiniMax-M3",
+            "name": "Hugging Face/MiniMax-M3"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Embedding-4B",
+            "name": "Hugging Face/Qwen 3 Embedding 4B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Embedding-8B",
+            "name": "Hugging Face/Qwen 3 Embedding 8B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-235B-A22B",
+            "name": "Hugging Face/Qwen3 235B-A22B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-32B",
+            "name": "Hugging Face/Qwen3 32B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-235B-A22B-Thinking-2507",
+            "name": "Hugging Face/Qwen3-235B-A22B-Thinking-2507"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Coder-30B-A3B-Instruct",
+            "name": "Hugging Face/Qwen3-Coder 30B-A3B Instruct"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Coder-480B-A35B-Instruct",
+            "name": "Hugging Face/Qwen3-Coder-480B-A35B-Instruct"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Coder-Next",
+            "name": "Hugging Face/Qwen3-Coder-Next"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Next-80B-A3B-Instruct",
+            "name": "Hugging Face/Qwen3-Next-80B-A3B-Instruct"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3-Next-80B-A3B-Thinking",
+            "name": "Hugging Face/Qwen3-Next-80B-A3B-Thinking"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.5-122B-A10B",
+            "name": "Hugging Face/Qwen3.5 122B-A10B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.5-27B",
+            "name": "Hugging Face/Qwen3.5 27B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.5-35B-A3B",
+            "name": "Hugging Face/Qwen3.5 35B-A3B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.5-9B",
+            "name": "Hugging Face/Qwen3.5 9B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.5-397B-A17B",
+            "name": "Hugging Face/Qwen3.5-397B-A17B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.6-27B",
+            "name": "Hugging Face/Qwen3.6 27B"
+          },
+          {
+            "value": "huggingface/Qwen/Qwen3.6-35B-A3B",
+            "name": "Hugging Face/Qwen3.6 35B-A3B"
+          },
+          {
+            "value": "huggingface/stepfun-ai/Step-3.5-Flash",
+            "name": "Hugging Face/Step 3.5 Flash"
+          },
+          {
+            "value": "huggingface/stepfun-ai/Step-3.7-Flash",
+            "name": "Hugging Face/Step 3.7 Flash"
+          },
+          {
+            "value": "openai/chatgpt-image-latest",
+            "name": "OpenAI/chatgpt-image-latest"
+          },
+          {
+            "value": "openai/gpt-3.5-turbo",
+            "name": "OpenAI/GPT-3.5-turbo"
+          },
+          {
+            "value": "openai/gpt-4",
+            "name": "OpenAI/GPT-4"
+          },
+          {
+            "value": "openai/gpt-4-turbo",
+            "name": "OpenAI/GPT-4 Turbo"
+          },
+          {
+            "value": "openai/gpt-4.1",
+            "name": "OpenAI/GPT-4.1"
+          },
+          {
+            "value": "openai/gpt-4.1-mini",
+            "name": "OpenAI/GPT-4.1 mini"
+          },
+          {
+            "value": "openai/gpt-4.1-nano",
+            "name": "OpenAI/GPT-4.1 nano"
+          },
+          {
+            "value": "openai/gpt-4o",
+            "name": "OpenAI/GPT-4o"
+          },
+          {
+            "value": "openai/gpt-4o-2024-05-13",
+            "name": "OpenAI/GPT-4o (2024-05-13)"
+          },
+          {
+            "value": "openai/gpt-4o-2024-08-06",
+            "name": "OpenAI/GPT-4o (2024-08-06)"
+          },
+          {
+            "value": "openai/gpt-4o-2024-11-20",
+            "name": "OpenAI/GPT-4o (2024-11-20)"
+          },
+          {
+            "value": "openai/gpt-4o-mini",
+            "name": "OpenAI/GPT-4o mini"
+          },
+          {
+            "value": "openai/gpt-5",
+            "name": "OpenAI/GPT-5"
+          },
+          {
+            "value": "openai/gpt-5-mini",
+            "name": "OpenAI/GPT-5 Mini"
+          },
+          {
+            "value": "openai/gpt-5-nano",
+            "name": "OpenAI/GPT-5 Nano"
+          },
+          {
+            "value": "openai/gpt-5-pro",
+            "name": "OpenAI/GPT-5 Pro"
+          },
+          {
+            "value": "openai/gpt-5-codex",
+            "name": "OpenAI/GPT-5-Codex"
+          },
+          {
+            "value": "openai/gpt-5.1",
+            "name": "OpenAI/GPT-5.1"
+          },
+          {
+            "value": "openai/gpt-5.1-chat-latest",
+            "name": "OpenAI/GPT-5.1 Chat"
+          },
+          {
+            "value": "openai/gpt-5.1-codex",
+            "name": "OpenAI/GPT-5.1 Codex"
+          },
+          {
+            "value": "openai/gpt-5.1-codex-max",
+            "name": "OpenAI/GPT-5.1 Codex Max"
+          },
+          {
+            "value": "openai/gpt-5.1-codex-mini",
+            "name": "OpenAI/GPT-5.1 Codex mini"
+          },
+          {
+            "value": "openai/gpt-5.2",
+            "name": "OpenAI/GPT-5.2"
+          },
+          {
+            "value": "openai/gpt-5.2-chat-latest",
+            "name": "OpenAI/GPT-5.2 Chat"
+          },
+          {
+            "value": "openai/gpt-5.2-codex",
+            "name": "OpenAI/GPT-5.2 Codex"
+          },
+          {
+            "value": "openai/gpt-5.2-pro",
+            "name": "OpenAI/GPT-5.2 Pro"
+          },
+          {
+            "value": "openai/gpt-5.3-chat-latest",
+            "name": "OpenAI/GPT-5.3 Chat (latest)"
+          },
+          {
+            "value": "openai/gpt-5.3-codex",
+            "name": "OpenAI/GPT-5.3 Codex"
+          },
+          {
+            "value": "openai/gpt-5.3-codex-spark",
+            "name": "OpenAI/GPT-5.3 Codex Spark"
+          },
+          {
+            "value": "openai/gpt-5.4",
+            "name": "OpenAI/GPT-5.4"
+          },
+          {
+            "value": "openai/gpt-5.4-fast",
+            "name": "OpenAI/GPT-5.4 Fast"
+          },
+          {
+            "value": "openai/gpt-5.4-mini",
+            "name": "OpenAI/GPT-5.4 mini"
+          },
+          {
+            "value": "openai/gpt-5.4-mini-fast",
+            "name": "OpenAI/GPT-5.4 mini Fast"
+          },
+          {
+            "value": "openai/gpt-5.4-nano",
+            "name": "OpenAI/GPT-5.4 nano"
+          },
+          {
+            "value": "openai/gpt-5.4-pro",
+            "name": "OpenAI/GPT-5.4 Pro"
+          },
+          {
+            "value": "openai/gpt-5.5",
+            "name": "OpenAI/GPT-5.5"
+          },
+          {
+            "value": "openai/gpt-5.5-fast",
+            "name": "OpenAI/GPT-5.5 Fast"
+          },
+          {
+            "value": "openai/gpt-5.5-pro",
+            "name": "OpenAI/GPT-5.5 Pro"
+          },
+          {
+            "value": "openai/gpt-5.6",
+            "name": "OpenAI/GPT-5.6"
+          },
+          {
+            "value": "openai/gpt-5.6-fast",
+            "name": "OpenAI/GPT-5.6 Fast"
+          },
+          {
+            "value": "openai/gpt-5.6-luna",
+            "name": "OpenAI/GPT-5.6 Luna"
+          },
+          {
+            "value": "openai/gpt-5.6-luna-fast",
+            "name": "OpenAI/GPT-5.6 Luna Fast"
+          },
+          {
+            "value": "openai/gpt-5.6-luna-pro",
+            "name": "OpenAI/GPT-5.6 Luna Pro"
+          },
+          {
+            "value": "openai/gpt-5.6-pro",
+            "name": "OpenAI/GPT-5.6 Pro"
+          },
+          {
+            "value": "openai/gpt-5.6-sol",
+            "name": "OpenAI/GPT-5.6 Sol"
+          },
+          {
+            "value": "openai/gpt-5.6-sol-fast",
+            "name": "OpenAI/GPT-5.6 Sol Fast"
+          },
+          {
+            "value": "openai/gpt-5.6-sol-pro",
+            "name": "OpenAI/GPT-5.6 Sol Pro"
+          },
+          {
+            "value": "openai/gpt-5.6-terra",
+            "name": "OpenAI/GPT-5.6 Terra"
+          },
+          {
+            "value": "openai/gpt-5.6-terra-fast",
+            "name": "OpenAI/GPT-5.6 Terra Fast"
+          },
+          {
+            "value": "openai/gpt-5.6-terra-pro",
+            "name": "OpenAI/GPT-5.6 Terra Pro"
+          },
+          {
+            "value": "openai/gpt-image-1",
+            "name": "OpenAI/gpt-image-1"
+          },
+          {
+            "value": "openai/gpt-image-1-mini",
+            "name": "OpenAI/gpt-image-1-mini"
+          },
+          {
+            "value": "openai/gpt-image-1.5",
+            "name": "OpenAI/gpt-image-1.5"
+          },
+          {
+            "value": "openai/gpt-image-2",
+            "name": "OpenAI/gpt-image-2"
+          },
+          {
+            "value": "openai/gpt-realtime-2.1",
+            "name": "OpenAI/GPT-Realtime-2.1"
+          },
+          {
+            "value": "openai/o1",
+            "name": "OpenAI/o1"
+          },
+          {
+            "value": "openai/o1-pro",
+            "name": "OpenAI/o1-pro"
+          },
+          {
+            "value": "openai/o3",
+            "name": "OpenAI/o3"
+          },
+          {
+            "value": "openai/o3-deep-research",
+            "name": "OpenAI/o3-deep-research"
+          },
+          {
+            "value": "openai/o3-mini",
+            "name": "OpenAI/o3-mini"
+          },
+          {
+            "value": "openai/o3-pro",
+            "name": "OpenAI/o3-pro"
+          },
+          {
+            "value": "openai/o4-mini",
+            "name": "OpenAI/o4-mini"
+          },
+          {
+            "value": "openai/o4-mini-deep-research",
+            "name": "OpenAI/o4-mini-deep-research"
+          },
+          {
+            "value": "openai/text-embedding-3-large",
+            "name": "OpenAI/text-embedding-3-large"
+          },
+          {
+            "value": "openai/text-embedding-3-small",
+            "name": "OpenAI/text-embedding-3-small"
+          },
+          {
+            "value": "openai/text-embedding-ada-002",
+            "name": "OpenAI/text-embedding-ada-002"
+          },
+          {
+            "value": "zai/glm-4.5",
+            "name": "Z.AI/GLM-4.5"
+          },
+          {
+            "value": "zai/glm-4.5-air",
+            "name": "Z.AI/GLM-4.5-Air"
+          },
+          {
+            "value": "zai/glm-4.5-flash",
+            "name": "Z.AI/GLM-4.5-Flash"
+          },
+          {
+            "value": "zai/glm-4.5v",
+            "name": "Z.AI/GLM-4.5V"
+          },
+          {
+            "value": "zai/glm-4.6",
+            "name": "Z.AI/GLM-4.6"
+          },
+          {
+            "value": "zai/glm-4.6v",
+            "name": "Z.AI/GLM-4.6V"
+          },
+          {
+            "value": "zai/glm-4.7",
+            "name": "Z.AI/GLM-4.7"
+          },
+          {
+            "value": "zai/glm-4.7-flash",
+            "name": "Z.AI/GLM-4.7-Flash"
+          },
+          {
+            "value": "zai/glm-4.7-flashx",
+            "name": "Z.AI/GLM-4.7-FlashX"
+          },
+          {
+            "value": "zai/glm-5",
+            "name": "Z.AI/GLM-5"
+          },
+          {
+            "value": "zai/glm-5-turbo",
+            "name": "Z.AI/GLM-5-Turbo"
+          },
+          {
+            "value": "zai/glm-5.1",
+            "name": "Z.AI/GLM-5.1"
+          },
+          {
+            "value": "zai/glm-5.2",
+            "name": "Z.AI/GLM-5.2"
+          },
+          {
+            "value": "zai/glm-5v-turbo",
+            "name": "Z.AI/GLM-5V-Turbo"
+          },
+          {
+            "value": "zai-coding-plan/glm-4.5-air",
+            "name": "Z.AI Coding Plan/GLM-4.5-Air"
+          },
+          {
+            "value": "zai-coding-plan/glm-4.7",
+            "name": "Z.AI Coding Plan/GLM-4.7"
+          },
+          {
+            "value": "zai-coding-plan/glm-5-turbo",
+            "name": "Z.AI Coding Plan/GLM-5-Turbo"
+          },
+          {
+            "value": "zai-coding-plan/glm-5.1",
+            "name": "Z.AI Coding Plan/GLM-5.1"
+          },
+          {
+            "value": "zai-coding-plan/glm-5.2",
+            "name": "Z.AI Coding Plan/GLM-5.2"
+          },
+          {
+            "value": "zai-coding-plan/glm-5v-turbo",
+            "name": "Z.AI Coding Plan/GLM-5V-Turbo"
+          },
+          {
+            "value": "opencode/big-pickle",
+            "name": "OpenCode Zen/Big Pickle"
+          },
+          {
+            "value": "opencode/deepseek-v4-flash-free",
+            "name": "OpenCode Zen/DeepSeek V4 Flash Free"
+          },
+          {
+            "value": "opencode/hy3-free",
+            "name": "OpenCode Zen/Hy3 Free"
+          },
+          {
+            "value": "opencode/mimo-v2.5-free",
+            "name": "OpenCode Zen/MiMo V2.5 Free"
+          },
+          {
+            "value": "opencode/nemotron-3-ultra-free",
+            "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+          },
+          {
+            "value": "opencode/north-mini-code-free",
+            "name": "OpenCode Zen/North Mini Code Free"
+          },
+          {
+            "value": "sakana/fugu",
+            "name": "Sakana Fugu/Fugu"
+          },
+          {
+            "value": "sakana/fugu-ultra-20260615",
+            "name": "Sakana Fugu/Fugu Ultra"
+          },
+          {
+            "value": "sakana/fugu-ultra",
+            "name": "Sakana Fugu/Fugu Ultra"
+          }
+        ]
+      },
+      {
+        "id": "mode",
+        "name": "Session Mode",
+        "category": "mode",
+        "type": "select",
+        "currentValue": "build",
+        "options": [
+          {
+            "value": "build",
+            "name": "build",
+            "description": "The default agent. Executes tools based on configured permissions."
+          },
+          {
+            "value": "plan",
+            "name": "plan",
+            "description": "Plan mode. Disallows all edit tools."
+          }
+        ]
+      }
+    ]
+  },
+  "extra": {
+    "before": "build",
+    "setMode": {
+      "label": "session/set_mode { modeId: 'plan' }",
+      "ok": true,
+      "result": {},
+      "modeAfter": "plan"
+    },
+    "setModeGarbage": {
+      "label": "session/set_mode { modeId: 'xpto-invalido' }",
+      "ok": false,
+      "error": {
+        "code": -32602,
+        "message": "Invalid params: mode not found: xpto-invalido"
+      },
+      "modeAfter": "plan"
+    },
+    "setConfigOption": {
+      "label": "session/set_config_option { configId: 'mode', value: 'plan' }",
+      "ok": true,
+      "result": {
+        "configOptions": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "opencode/big-pickle",
+            "options": [
+              {
+                "value": "huggingface/deepseek-ai/DeepSeek-V4-Flash",
+                "name": "Hugging Face/DeepSeek V4 Flash"
+              },
+              {
+                "value": "huggingface/deepseek-ai/DeepSeek-V4-Pro",
+                "name": "Hugging Face/DeepSeek V4 Pro"
+              },
+              {
+                "value": "huggingface/deepseek-ai/DeepSeek-R1",
+                "name": "Hugging Face/DeepSeek-R1"
+              },
+              {
+                "value": "huggingface/deepseek-ai/DeepSeek-R1-0528",
+                "name": "Hugging Face/DeepSeek-R1-0528"
+              },
+              {
+                "value": "huggingface/deepseek-ai/DeepSeek-V3.2",
+                "name": "Hugging Face/DeepSeek-V3.2"
+              },
+              {
+                "value": "huggingface/google/gemma-4-26B-A4B-it",
+                "name": "Hugging Face/Gemma 4 26B A4B IT"
+              },
+              {
+                "value": "huggingface/google/gemma-4-31B-it",
+                "name": "Hugging Face/Gemma 4 31B IT"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-4.5",
+                "name": "Hugging Face/GLM-4.5"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-4.5-Air",
+                "name": "Hugging Face/GLM-4.5-Air"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-4.5V",
+                "name": "Hugging Face/GLM-4.5V"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-4.6",
+                "name": "Hugging Face/GLM-4.6"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-4.7",
+                "name": "Hugging Face/GLM-4.7"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-4.7-Flash",
+                "name": "Hugging Face/GLM-4.7-Flash"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-5",
+                "name": "Hugging Face/GLM-5"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-5.1",
+                "name": "Hugging Face/GLM-5.1"
+              },
+              {
+                "value": "huggingface/zai-org/GLM-5.2",
+                "name": "Hugging Face/GLM-5.2"
+              },
+              {
+                "value": "huggingface/openai/gpt-oss-120b",
+                "name": "Hugging Face/GPT OSS 120B"
+              },
+              {
+                "value": "huggingface/openai/gpt-oss-20b",
+                "name": "Hugging Face/GPT OSS 20B"
+              },
+              {
+                "value": "huggingface/moonshotai/Kimi-K2.7-Code",
+                "name": "Hugging Face/Kimi K2.7 Code"
+              },
+              {
+                "value": "huggingface/moonshotai/Kimi-K2-Instruct",
+                "name": "Hugging Face/Kimi-K2-Instruct"
+              },
+              {
+                "value": "huggingface/moonshotai/Kimi-K2-Instruct-0905",
+                "name": "Hugging Face/Kimi-K2-Instruct-0905"
+              },
+              {
+                "value": "huggingface/moonshotai/Kimi-K2-Thinking",
+                "name": "Hugging Face/Kimi-K2-Thinking"
+              },
+              {
+                "value": "huggingface/moonshotai/Kimi-K2.5",
+                "name": "Hugging Face/Kimi-K2.5"
+              },
+              {
+                "value": "huggingface/moonshotai/Kimi-K2.6",
+                "name": "Hugging Face/Kimi-K2.6"
+              },
+              {
+                "value": "huggingface/meta-llama/Llama-3.3-70B-Instruct",
+                "name": "Hugging Face/Llama-3.3-70B-Instruct"
+              },
+              {
+                "value": "huggingface/XiaomiMiMo/MiMo-V2-Flash",
+                "name": "Hugging Face/MiMo-V2-Flash"
+              },
+              {
+                "value": "huggingface/XiaomiMiMo/MiMo-V2.5-Pro",
+                "name": "Hugging Face/MiMo-V2.5-Pro"
+              },
+              {
+                "value": "huggingface/MiniMaxAI/MiniMax-M2",
+                "name": "Hugging Face/MiniMax-M2"
+              },
+              {
+                "value": "huggingface/MiniMaxAI/MiniMax-M2.1",
+                "name": "Hugging Face/MiniMax-M2.1"
+              },
+              {
+                "value": "huggingface/MiniMaxAI/MiniMax-M2.5",
+                "name": "Hugging Face/MiniMax-M2.5"
+              },
+              {
+                "value": "huggingface/MiniMaxAI/MiniMax-M2.7",
+                "name": "Hugging Face/MiniMax-M2.7"
+              },
+              {
+                "value": "huggingface/MiniMaxAI/MiniMax-M3",
+                "name": "Hugging Face/MiniMax-M3"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Embedding-4B",
+                "name": "Hugging Face/Qwen 3 Embedding 4B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Embedding-8B",
+                "name": "Hugging Face/Qwen 3 Embedding 8B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-235B-A22B",
+                "name": "Hugging Face/Qwen3 235B-A22B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-32B",
+                "name": "Hugging Face/Qwen3 32B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-235B-A22B-Thinking-2507",
+                "name": "Hugging Face/Qwen3-235B-A22B-Thinking-2507"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Coder-30B-A3B-Instruct",
+                "name": "Hugging Face/Qwen3-Coder 30B-A3B Instruct"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Coder-480B-A35B-Instruct",
+                "name": "Hugging Face/Qwen3-Coder-480B-A35B-Instruct"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Coder-Next",
+                "name": "Hugging Face/Qwen3-Coder-Next"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Next-80B-A3B-Instruct",
+                "name": "Hugging Face/Qwen3-Next-80B-A3B-Instruct"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3-Next-80B-A3B-Thinking",
+                "name": "Hugging Face/Qwen3-Next-80B-A3B-Thinking"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.5-122B-A10B",
+                "name": "Hugging Face/Qwen3.5 122B-A10B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.5-27B",
+                "name": "Hugging Face/Qwen3.5 27B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.5-35B-A3B",
+                "name": "Hugging Face/Qwen3.5 35B-A3B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.5-9B",
+                "name": "Hugging Face/Qwen3.5 9B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.5-397B-A17B",
+                "name": "Hugging Face/Qwen3.5-397B-A17B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.6-27B",
+                "name": "Hugging Face/Qwen3.6 27B"
+              },
+              {
+                "value": "huggingface/Qwen/Qwen3.6-35B-A3B",
+                "name": "Hugging Face/Qwen3.6 35B-A3B"
+              },
+              {
+                "value": "huggingface/stepfun-ai/Step-3.5-Flash",
+                "name": "Hugging Face/Step 3.5 Flash"
+              },
+              {
+                "value": "huggingface/stepfun-ai/Step-3.7-Flash",
+                "name": "Hugging Face/Step 3.7 Flash"
+              },
+              {
+                "value": "openai/chatgpt-image-latest",
+                "name": "OpenAI/chatgpt-image-latest"
+              },
+              {
+                "value": "openai/gpt-3.5-turbo",
+                "name": "OpenAI/GPT-3.5-turbo"
+              },
+              {
+                "value": "openai/gpt-4",
+                "name": "OpenAI/GPT-4"
+              },
+              {
+                "value": "openai/gpt-4-turbo",
+                "name": "OpenAI/GPT-4 Turbo"
+              },
+              {
+                "value": "openai/gpt-4.1",
+                "name": "OpenAI/GPT-4.1"
+              },
+              {
+                "value": "openai/gpt-4.1-mini",
+                "name": "OpenAI/GPT-4.1 mini"
+              },
+              {
+                "value": "openai/gpt-4.1-nano",
+                "name": "OpenAI/GPT-4.1 nano"
+              },
+              {
+                "value": "openai/gpt-4o",
+                "name": "OpenAI/GPT-4o"
+              },
+              {
+                "value": "openai/gpt-4o-2024-05-13",
+                "name": "OpenAI/GPT-4o (2024-05-13)"
+              },
+              {
+                "value": "openai/gpt-4o-2024-08-06",
+                "name": "OpenAI/GPT-4o (2024-08-06)"
+              },
+              {
+                "value": "openai/gpt-4o-2024-11-20",
+                "name": "OpenAI/GPT-4o (2024-11-20)"
+              },
+              {
+                "value": "openai/gpt-4o-mini",
+                "name": "OpenAI/GPT-4o mini"
+              },
+              {
+                "value": "openai/gpt-5",
+                "name": "OpenAI/GPT-5"
+              },
+              {
+                "value": "openai/gpt-5-mini",
+                "name": "OpenAI/GPT-5 Mini"
+              },
+              {
+                "value": "openai/gpt-5-nano",
+                "name": "OpenAI/GPT-5 Nano"
+              },
+              {
+                "value": "openai/gpt-5-pro",
+                "name": "OpenAI/GPT-5 Pro"
+              },
+              {
+                "value": "openai/gpt-5-codex",
+                "name": "OpenAI/GPT-5-Codex"
+              },
+              {
+                "value": "openai/gpt-5.1",
+                "name": "OpenAI/GPT-5.1"
+              },
+              {
+                "value": "openai/gpt-5.1-chat-latest",
+                "name": "OpenAI/GPT-5.1 Chat"
+              },
+              {
+                "value": "openai/gpt-5.1-codex",
+                "name": "OpenAI/GPT-5.1 Codex"
+              },
+              {
+                "value": "openai/gpt-5.1-codex-max",
+                "name": "OpenAI/GPT-5.1 Codex Max"
+              },
+              {
+                "value": "openai/gpt-5.1-codex-mini",
+                "name": "OpenAI/GPT-5.1 Codex mini"
+              },
+              {
+                "value": "openai/gpt-5.2",
+                "name": "OpenAI/GPT-5.2"
+              },
+              {
+                "value": "openai/gpt-5.2-chat-latest",
+                "name": "OpenAI/GPT-5.2 Chat"
+              },
+              {
+                "value": "openai/gpt-5.2-codex",
+                "name": "OpenAI/GPT-5.2 Codex"
+              },
+              {
+                "value": "openai/gpt-5.2-pro",
+                "name": "OpenAI/GPT-5.2 Pro"
+              },
+              {
+                "value": "openai/gpt-5.3-chat-latest",
+                "name": "OpenAI/GPT-5.3 Chat (latest)"
+              },
+              {
+                "value": "openai/gpt-5.3-codex",
+                "name": "OpenAI/GPT-5.3 Codex"
+              },
+              {
+                "value": "openai/gpt-5.3-codex-spark",
+                "name": "OpenAI/GPT-5.3 Codex Spark"
+              },
+              {
+                "value": "openai/gpt-5.4",
+                "name": "OpenAI/GPT-5.4"
+              },
+              {
+                "value": "openai/gpt-5.4-fast",
+                "name": "OpenAI/GPT-5.4 Fast"
+              },
+              {
+                "value": "openai/gpt-5.4-mini",
+                "name": "OpenAI/GPT-5.4 mini"
+              },
+              {
+                "value": "openai/gpt-5.4-mini-fast",
+                "name": "OpenAI/GPT-5.4 mini Fast"
+              },
+              {
+                "value": "openai/gpt-5.4-nano",
+                "name": "OpenAI/GPT-5.4 nano"
+              },
+              {
+                "value": "openai/gpt-5.4-pro",
+                "name": "OpenAI/GPT-5.4 Pro"
+              },
+              {
+                "value": "openai/gpt-5.5",
+                "name": "OpenAI/GPT-5.5"
+              },
+              {
+                "value": "openai/gpt-5.5-fast",
+                "name": "OpenAI/GPT-5.5 Fast"
+              },
+              {
+                "value": "openai/gpt-5.5-pro",
+                "name": "OpenAI/GPT-5.5 Pro"
+              },
+              {
+                "value": "openai/gpt-5.6",
+                "name": "OpenAI/GPT-5.6"
+              },
+              {
+                "value": "openai/gpt-5.6-fast",
+                "name": "OpenAI/GPT-5.6 Fast"
+              },
+              {
+                "value": "openai/gpt-5.6-luna",
+                "name": "OpenAI/GPT-5.6 Luna"
+              },
+              {
+                "value": "openai/gpt-5.6-luna-fast",
+                "name": "OpenAI/GPT-5.6 Luna Fast"
+              },
+              {
+                "value": "openai/gpt-5.6-luna-pro",
+                "name": "OpenAI/GPT-5.6 Luna Pro"
+              },
+              {
+                "value": "openai/gpt-5.6-pro",
+                "name": "OpenAI/GPT-5.6 Pro"
+              },
+              {
+                "value": "openai/gpt-5.6-sol",
+                "name": "OpenAI/GPT-5.6 Sol"
+              },
+              {
+                "value": "openai/gpt-5.6-sol-fast",
+                "name": "OpenAI/GPT-5.6 Sol Fast"
+              },
+              {
+                "value": "openai/gpt-5.6-sol-pro",
+                "name": "OpenAI/GPT-5.6 Sol Pro"
+              },
+              {
+                "value": "openai/gpt-5.6-terra",
+                "name": "OpenAI/GPT-5.6 Terra"
+              },
+              {
+                "value": "openai/gpt-5.6-terra-fast",
+                "name": "OpenAI/GPT-5.6 Terra Fast"
+              },
+              {
+                "value": "openai/gpt-5.6-terra-pro",
+                "name": "OpenAI/GPT-5.6 Terra Pro"
+              },
+              {
+                "value": "openai/gpt-image-1",
+                "name": "OpenAI/gpt-image-1"
+              },
+              {
+                "value": "openai/gpt-image-1-mini",
+                "name": "OpenAI/gpt-image-1-mini"
+              },
+              {
+                "value": "openai/gpt-image-1.5",
+                "name": "OpenAI/gpt-image-1.5"
+              },
+              {
+                "value": "openai/gpt-image-2",
+                "name": "OpenAI/gpt-image-2"
+              },
+              {
+                "value": "openai/gpt-realtime-2.1",
+                "name": "OpenAI/GPT-Realtime-2.1"
+              },
+              {
+                "value": "openai/o1",
+                "name": "OpenAI/o1"
+              },
+              {
+                "value": "openai/o1-pro",
+                "name": "OpenAI/o1-pro"
+              },
+              {
+                "value": "openai/o3",
+                "name": "OpenAI/o3"
+              },
+              {
+                "value": "openai/o3-deep-research",
+                "name": "OpenAI/o3-deep-research"
+              },
+              {
+                "value": "openai/o3-mini",
+                "name": "OpenAI/o3-mini"
+              },
+              {
+                "value": "openai/o3-pro",
+                "name": "OpenAI/o3-pro"
+              },
+              {
+                "value": "openai/o4-mini",
+                "name": "OpenAI/o4-mini"
+              },
+              {
+                "value": "openai/o4-mini-deep-research",
+                "name": "OpenAI/o4-mini-deep-research"
+              },
+              {
+                "value": "openai/text-embedding-3-large",
+                "name": "OpenAI/text-embedding-3-large"
+              },
+              {
+                "value": "openai/text-embedding-3-small",
+                "name": "OpenAI/text-embedding-3-small"
+              },
+              {
+                "value": "openai/text-embedding-ada-002",
+                "name": "OpenAI/text-embedding-ada-002"
+              },
+              {
+                "value": "zai/glm-4.5",
+                "name": "Z.AI/GLM-4.5"
+              },
+              {
+                "value": "zai/glm-4.5-air",
+                "name": "Z.AI/GLM-4.5-Air"
+              },
+              {
+                "value": "zai/glm-4.5-flash",
+                "name": "Z.AI/GLM-4.5-Flash"
+              },
+              {
+                "value": "zai/glm-4.5v",
+                "name": "Z.AI/GLM-4.5V"
+              },
+              {
+                "value": "zai/glm-4.6",
+                "name": "Z.AI/GLM-4.6"
+              },
+              {
+                "value": "zai/glm-4.6v",
+                "name": "Z.AI/GLM-4.6V"
+              },
+              {
+                "value": "zai/glm-4.7",
+                "name": "Z.AI/GLM-4.7"
+              },
+              {
+                "value": "zai/glm-4.7-flash",
+                "name": "Z.AI/GLM-4.7-Flash"
+              },
+              {
+                "value": "zai/glm-4.7-flashx",
+                "name": "Z.AI/GLM-4.7-FlashX"
+              },
+              {
+                "value": "zai/glm-5",
+                "name": "Z.AI/GLM-5"
+              },
+              {
+                "value": "zai/glm-5-turbo",
+                "name": "Z.AI/GLM-5-Turbo"
+              },
+              {
+                "value": "zai/glm-5.1",
+                "name": "Z.AI/GLM-5.1"
+              },
+              {
+                "value": "zai/glm-5.2",
+                "name": "Z.AI/GLM-5.2"
+              },
+              {
+                "value": "zai/glm-5v-turbo",
+                "name": "Z.AI/GLM-5V-Turbo"
+              },
+              {
+                "value": "zai-coding-plan/glm-4.5-air",
+                "name": "Z.AI Coding Plan/GLM-4.5-Air"
+              },
+              {
+                "value": "zai-coding-plan/glm-4.7",
+                "name": "Z.AI Coding Plan/GLM-4.7"
+              },
+              {
+                "value": "zai-coding-plan/glm-5-turbo",
+                "name": "Z.AI Coding Plan/GLM-5-Turbo"
+              },
+              {
+                "value": "zai-coding-plan/glm-5.1",
+                "name": "Z.AI Coding Plan/GLM-5.1"
+              },
+              {
+                "value": "zai-coding-plan/glm-5.2",
+                "name": "Z.AI Coding Plan/GLM-5.2"
+              },
+              {
+                "value": "zai-coding-plan/glm-5v-turbo",
+                "name": "Z.AI Coding Plan/GLM-5V-Turbo"
+              },
+              {
+                "value": "opencode/big-pickle",
+                "name": "OpenCode Zen/Big Pickle"
+              },
+              {
+                "value": "opencode/deepseek-v4-flash-free",
+                "name": "OpenCode Zen/DeepSeek V4 Flash Free"
+              },
+              {
+                "value": "opencode/hy3-free",
+                "name": "OpenCode Zen/Hy3 Free"
+              },
+              {
+                "value": "opencode/mimo-v2.5-free",
+                "name": "OpenCode Zen/MiMo V2.5 Free"
+              },
+              {
+                "value": "opencode/nemotron-3-ultra-free",
+                "name": "OpenCode Zen/Nemotron 3 Ultra Free"
+              },
+              {
+                "value": "opencode/north-mini-code-free",
+                "name": "OpenCode Zen/North Mini Code Free"
+              },
+              {
+                "value": "sakana/fugu",
+                "name": "Sakana Fugu/Fugu"
+              },
+              {
+                "value": "sakana/fugu-ultra-20260615",
+                "name": "Sakana Fugu/Fugu Ultra"
+              },
+              {
+                "value": "sakana/fugu-ultra",
+                "name": "Sakana Fugu/Fugu Ultra"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Session Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "plan",
+            "options": [
+              {
+                "value": "build",
+                "name": "build",
+                "description": "The default agent. Executes tools based on configured permissions."
+              },
+              {
+                "value": "plan",
+                "name": "plan",
+                "description": "Plan mode. Disallows all edit tools."
+              }
+            ]
+          }
+        ]
+      },
+      "modeAfter": "plan"
+    }
+  }
+}
