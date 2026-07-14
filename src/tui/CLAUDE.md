@@ -15,7 +15,7 @@ Duas responsabilidades hoje:
   - `command` — `approval_decision` (UI → motor, por stdin).
   `parseTransportLine` **nunca lança** (erro como valor — AD-5); `createEventTransport(sink)` é best-effort e **engole exceção do sink** (AD-1: consumidor quebrado nunca perturba o Run).
 - `UiPort` (aprovação) tem **três** transportes: `--yes` curto-circuita (auto-aprova); sob `--emit-events` a decisão vem por **stdin NDJSON** (`createStdinApproval`, `approval.ts`); senão TUI usa `ApprovalController` e o fallback usa `readline`.
-- `store.ts` — `reduce`/`initialState`, **13 variantes de `StoreEvent`** (`pipeline_declared`, `edges_set`, `task_registered`, `task_started`, `step_started`, `attempt_started`, `check_started`, `check_finished`, `stream_chunk`, `acp_traffic`, `usage_sample`, `step_finished`, `task_finished`), selectors (`readyTasks`/`runningTasks`/`blockedTasks`/`skippedTasks`) e `ACP_LOG_CAP`.
+- `store.ts` — `reduce`/`initialState`, **14 variantes de `StoreEvent`** (`pipeline_declared`, `edges_set`, `task_registered`, `task_started`, `step_started`, `attempt_started`, `check_started`, `check_finished`, `stream_chunk`, `acp_traffic`, `usage_sample`, `step_finished`, `task_finished`, **`warning`** — ADR-0008), selectors (`readyTasks`/`runningTasks`/`blockedTasks`/`skippedTasks`), `ACP_LOG_CAP` e `WARNINGS_CAP`. `StoreState` inclui `warnings: readonly WarningEntry[]` (ring bounded) e `StepState.warned?: boolean`.
 - `MountApp` (Ink) é **injetado** por `mount.tsx` — `start.ts`/`store.ts`/`view.ts`/`transport.ts`/`line-reporter.ts` nunca carregam React.
 
 ## Usage Patterns

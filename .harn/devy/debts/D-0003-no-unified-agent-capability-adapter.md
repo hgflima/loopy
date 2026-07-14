@@ -1,7 +1,8 @@
 # D-0003 — Não há uma interface única que faça o de/para das particularidades de cada coding agent (mode/model/effort); o dialeto de cada adapter vaza pro yml
 
-> **Status:** aberto · **Severidade:** média · **Área:** `src/acp/session.ts` · `src/steps/agent.ts` · `src/config/schema.ts` · `src/types.ts`
+> **Status:** resolvido em C-0016 (ADR-0008) · **Severidade:** média · **Área:** `src/acp/session.ts` · `src/acp/capabilities.ts` · `src/steps/agent.ts` · `src/config/schema.ts` · `src/types.ts`
 > **Descoberto em:** 2026-07-12 · **Origem:** spikes ACP (`spikes/acp-codex-capabilities.ts` · `spikes/acp-claude-capabilities.ts`) — ao medir os vocabulários reais de Codex e Claude via `session/new`
+> **Resolvido em:** 2026-07-14 · **Resolução:** C-0016 / ADR-0008 — resolvido **por outro caminho**: não por abstração (de/para), mas por **descoberta** (`configOptions`). Ver §Resolução abaixo.
 
 ## Sintoma
 
@@ -125,13 +126,37 @@ caso comum, ou quando um 3º adapter (Gemini/etc.) entrar.
 
 ## Workaround atual
 
-- Escrever `mode`/`model`/`effort` de cada Step no vocabulário do `agent:` **daquele**
-  Step. Referência canônica: `examples/loopy.yml` — `implement`/`review` (Claude)
-  usam `acceptEdits`/`plan`; `simplify` (Codex) usa `agent`.
-- Mapeamento mental: Claude `plan` ↔ Codex `read-only`; Claude `acceptEdits` ↔
-  Codex `agent`.
-- Rodar `spikes/acp-<agente>-capabilities.ts` para redescobrir o vocabulário de
-  qualquer adapter/versão **antes** de escrever o yml.
-- Contar com a rede fail-hard de `setMode`: um `mode` inválido derruba o run **cedo**
-  (primeiro Step de Agente), com diagnóstico nomeando agente + modos disponíveis —
-  nunca roda silenciosamente no mode errado.
+*(Não mais necessário — ver Resolução.)*
+
+## Resolução (C-0016, ADR-0008)
+
+O débito pedia "uma interface única que faça o de/para das particularidades de
+cada agente" — um `AgentProfile`/`CapabilityPort` com vocabulário canônico
+(`read-only`/`edit`/`full`) que traduzisse intenções do motor para o dialeto de
+cada adapter.
+
+A resposta é: **não fazer de/para — expor**. O achado que inverteu a direção:
+os `configOptions` do `session/new` ACP contêm as listas de modes/models/efforts
+de **todos os três adapters** (inclusive o OpenCode, que deixa `availableModes`
+nulo). O motor estava lendo a **fonte errada** — e a descoberta que se
+acreditava impossível funciona nos três, nos três eixos.
+
+**Por que o de/para envelhece e a descoberta não:** o vocabulário é por-Agente
+**e por-versão** (o Claude não tinha effort na 0.26; na 0.59 tem; os model ids
+mudam). Uma tabela estática de tradução envelhece a cada `npx -y` que puxa uma
+versão nova do adapter. A sondagem, não — pergunta ao adapter vivo. O custo
+aceito: trocar de agente exige reescolher os valores no dialeto do novo agente
+(a GUI torna isso trivial via selects sondados).
+
+O que foi feito:
+
+1. `parseCapabilities(configOptions)` (`src/acp/capabilities.ts`) — parse puro
+   dos `configOptions` por categoria (`mode`/`model`/`thought_level`).
+2. `setMode` validado fail-closed contra `capabilities.modes` **nos três
+   adapters** (inclusive OpenCode, que antes escapava).
+3. `setModel`/`setEffort` emitem **warning visível** (`StoreEvent` `warning`)
+   quando o valor está fora da lista, em vez do antigo `logger.debug` silencioso.
+4. `loopy probe-agent <nome> [--json]` — sonda, grava cache, encerra.
+5. Validação **eager** no início do Run (sessão descartável; zero token gasto).
+6. GUI: selects sondados no `StepEditor`, presets de `command` no `ConfigPane`,
+   degradação para texto livre quando a sondagem falha.

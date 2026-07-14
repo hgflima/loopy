@@ -147,3 +147,7 @@
 | T-002 | 8m 32s | 3.8k | 13.6k | 1.4M | 1.4M | 9 | $1.71 |
 | T-004 | 9m 9s | 14.3k | 16.2k | 1.7M | 1.7M | 9 | $2.08 |
 
+## C-0016-auto-concurrency-and-agent-dialect
+
+*(Run em andamento — métricas serão preenchidas pelo motor ao concluir.)*
+
