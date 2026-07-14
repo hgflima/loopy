@@ -220,7 +220,7 @@
     Files: apps/menubar/src/config/ConfigPane.tsx, apps/menubar/src/config/ConfigPane.test.tsx
     Scope: S
 
-- [ ] T-004: `DepsFlow` — a frente de onda resolve o `auto` com a MESMA função do motor (D7/D12)
+- [x] T-004: `DepsFlow` — a frente de onda resolve o `auto` com a MESMA função do motor (D7/D12)
     **O bug latente**: `wavefront(statusById, edges, limit)` (`flow-state.ts:37`, corte em `:51`)
     recebe hoje o `concurrency` **cru do draft** (`App.tsx:422` → `ViewSwitcher` → `DepsFlow.tsx:88`).
     Com `concurrency: "auto"`, `front.size >= "auto"` é **sempre `false`** ⇒ o corte **desaparece em
