@@ -141,7 +141,7 @@ O modelo do Agente para um Step (`model:`), aplicado via `session/set_config_opt
 _Avoid_: LLM, provedor
 
 **Effort** (ADR-0006):
-O reasoning effort do Agente para um Step (`effort:`), aplicado via config option (categoria `thought_level`/reasoning). String open-ended, repassada crua. **Best-effort e por-Agente** — Agente sem a capability (ex.: Claude) ⇒ no-op + log. Distinto de **Modo** (autonomia: `acceptEdits`/`plan`) e de **Model**.
+O reasoning effort do Agente para um Step (`effort:`), aplicado via config option (categoria `thought_level`/reasoning). String open-ended, repassada crua. **Best-effort e por-Agente** — Agente sem a capability (ex.: OpenCode) ⇒ no-op + log. O vocabulário também é por-Agente **e por-versão**: o Claude não tinha effort na 0.26 e passou a ter na 0.59. Distinto de **Modo** (autonomia: `acceptEdits`/`plan`) e de **Model**.
 _Avoid_: nível de raciocínio (use "effort" direto), intensidade
 
 **Contexto fresco** (`clear_context`):

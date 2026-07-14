@@ -1,9 +1,9 @@
 /**
  * Helper compartilhado das spikes de capacidade ACP (prefixo `_` = **não** é um
- * entrypoint executável). Toda a plumbing é genérica de ACP — não conhece Codex
- * nem Claude —, então as spikes concretas (`acp-codex-capabilities.ts`,
- * `acp-claude-capabilities.ts`) são wrappers finos que só trocam o comando de
- * spawn default e o nome do artefato.
+ * entrypoint executável). Toda a plumbing é genérica de ACP — não conhece Codex,
+ * Claude nem OpenCode —, então as spikes concretas (`acp-<agente>-capabilities.ts`)
+ * são wrappers finos que só trocam o comando de spawn default, o nome do artefato
+ * e, opcionalmente, uma sonda específica do adapter ({@link ProbeOptions.extraProbe}).
  *
  * O que a sonda faz (read-only, nenhum prompt, nenhum turno consumido):
  * spawn stdio → `ndJsonStream` → `client().connectWith` → `initialize` →
@@ -31,7 +31,9 @@ import {
   ndJsonStream,
 } from "@agentclientprotocol/sdk";
 import type {
+  ActiveSession,
   ClientCapabilities,
+  ClientContext,
   InitializeRequest,
   InitializeResponse,
   NewSessionResponse,
@@ -134,7 +136,9 @@ function report(init: InitializeResponse, sess: NewSessionResponse): string {
     out.push("\n  # MODELS (category: model)");
     const models = byCat("model");
     out.push(
-      models.length ? models.map(renderConfigOption).join("\n\n") : "  (nenhum)",
+      models.length
+        ? models.map(renderConfigOption).join("\n\n")
+        : "  (nenhum)",
     );
 
     out.push("\n  # EFFORTS (category: thought_level)");
@@ -158,12 +162,38 @@ function report(init: InitializeResponse, sess: NewSessionResponse): string {
 // Probe
 // ---------------------------------------------------------------------------
 
+/** Sonda extra, rodada dentro da sessão viva (antes do `dispose`). */
+export interface ExtraProbeArgs {
+  /**
+   * Contexto vivo do cliente: `request(method, params)` cru para exercitar
+   * qualquer método ACP, e `buildSession(cwd)` para reabrir sessão (é o que o
+   * `clear()` do motor faz — `dispose()` + `session/new`).
+   */
+  readonly ctx: ClientContext;
+  /** A sessão aberta pela sonda (tem `prompt()`/`readText()`/`dispose()`). */
+  readonly active: ActiveSession;
+  readonly sessionId: string;
+  readonly session: NewSessionResponse;
+}
+
 /** Opções de uma spike concreta. */
 export interface ProbeOptions {
   /** Comando de spawn default; sobreponível por `process.argv.slice(2)`. */
   readonly defaultCommand: readonly string[];
   /** Basename do artefato JSON escrito ao lado (em `spikes/`). */
   readonly outFile: string;
+  /**
+   * Sonda opcional específica do adapter, rodada na sessão viva depois do
+   * `session/new`. Use para exercitar o que a sonda genérica não cobre (ex.:
+   * `session/set_mode` vs. `session/set_config_option`, ou o ciclo de reopen do
+   * `clear()`). O retorno entra no artefato JSON sob `extra`. **Se a sonda mandar
+   * `prompt()`, ela consome turnos** — diga isso no docstring da spike.
+   */
+  readonly extraProbe?: (args: ExtraProbeArgs) => Promise<unknown>;
+  /** Suprime o relatório de capacidades (útil quando o foco é o `extraProbe`). */
+  readonly quiet?: boolean;
+  /** Teto de tempo total (default {@link HARD_TIMEOUT_MS}); suba se houver prompts. */
+  readonly timeoutMs?: number;
 }
 
 /**
@@ -202,13 +232,14 @@ export async function probeAgent(opts: ProbeOptions): Promise<void> {
 
   const app = client({ name: "loopy-spike" });
 
+  const timeoutMs = opts.timeoutMs ?? HARD_TIMEOUT_MS;
   const timer = setTimeout(() => {
     console.error(
-      `[spike] timeout ${HARD_TIMEOUT_MS}ms — adapter não respondeu (auth?).`,
+      `[spike] timeout ${timeoutMs}ms — adapter não respondeu (auth?).`,
     );
     child.kill();
     process.exit(2);
-  }, HARD_TIMEOUT_MS);
+  }, timeoutMs);
 
   const captured = await app.connectWith(stream, async (ctx) => {
     const init = await ctx.request<InitializeResponse, InitializeRequest>(
@@ -222,14 +253,28 @@ export async function probeAgent(opts: ProbeOptions): Promise<void> {
 
     const active = await ctx.buildSession(process.cwd()).start();
     const sess = active.newSessionResponse;
-    active.dispose();
-    return { init, sess };
+    const extra = opts.extraProbe
+      ? await opts.extraProbe({
+          ctx,
+          active,
+          sessionId: active.sessionId,
+          session: sess,
+        })
+      : undefined;
+    // Uma sonda de reopen já dispôs esta sessão — dispor de novo é inofensivo,
+    // mas não pode derrubar a spike.
+    try {
+      active.dispose();
+    } catch {
+      /* já disposta pelo extraProbe */
+    }
+    return { init, sess, extra };
   });
 
   clearTimeout(timer);
   child.kill();
 
-  console.log(report(captured.init, captured.sess));
+  if (!opts.quiet) console.log(report(captured.init, captured.sess));
 
   // Artefato cru para inspeção/diff futuro (gitignored).
   const here = dirname(fileURLToPath(import.meta.url));
@@ -237,7 +282,12 @@ export async function probeAgent(opts: ProbeOptions): Promise<void> {
   await writeFile(
     outPath,
     JSON.stringify(
-      { command, initialize: captured.init, session: captured.sess },
+      {
+        command,
+        initialize: captured.init,
+        session: captured.sess,
+        extra: captured.extra,
+      },
       null,
       2,
     ),

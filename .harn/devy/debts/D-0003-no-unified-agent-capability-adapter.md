@@ -15,17 +15,28 @@ resolva para o `modeId` de cada adapter — o de/para fica espalhado entre **a
 cabeça do autor do yml** (escrever o mode certo por agente) e **uma validação
 fail-hard tardia** no meio do run.
 
-As spikes tornaram a disparidade concreta (capturado 2026-07-12):
+As spikes tornaram a disparidade concreta (Codex/OpenCode 2026-07-12/13; Claude
+**recapturado em 2026-07-14 na 0.59**):
 
-| | Codex (codex-acp 1.1.2) | Claude (claude-agent-acp 0.26) |
+| | Codex (codex-acp 1.1.2) | Claude (claude-agent-acp 0.59) |
 |---|---|---|
 | **modes** | `read-only` / `agent` / `agent-full-access` | `auto` / `default` / `acceptEdits` / `plan` / `dontAsk` / `bypassPermissions` |
-| **effort** (`thought_level`) | `low`..`xhigh` (id `reasoning_effort`) | **ausente** (`setEffort` vira no-op) |
-| **fast-mode** | sim (`model_config`) | não |
-| **model ids** | `gpt-5.6-*` / `gpt-5.5` / `gpt-5.4*` | `default` / `sonnet` / `sonnet[1m]` / `haiku` / `opus[1m]` |
+| **effort** (`thought_level`) | `low`..`xhigh`, id `reasoning_effort` | `low`..`max`, id **`effort`** |
+| **fast mode** | sim, id `fast-mode` | sim, id `fast` |
+| **model ids** | `gpt-5.6-*` / `gpt-5.5` / `gpt-5.4*` | `default` / `opus[1m]` / `sonnet` / `haiku` |
 
 Trocar o `agent:` de um Step sem reescrever `mode`/`model`/`effort` no dialeto do
 novo agente → falha (mode) ou silêncio (effort/model best-effort).
+
+**O débito piorou com a 0.59** (2026-07-14). Na 0.26 o Claude não anunciava
+`thought_level` — a disparidade de effort era *binária* (tem × não tem), e o
+no-op silencioso era o pior caso. Agora os dois adapters têm effort com
+**vocabulários e ids divergentes** (`max` só existe no Claude; `xhigh` é o topo do
+Codex; o id difere), então um `effort: max` que funciona no Claude é
+silenciosamente descartado no Codex — a mesma classe de bug, agora com um dial a
+mais e sem sinal. Também mostra que o dialeto é **por-Agente _e_ por-versão**: um
+`loopy.yml` correto pode virar incorreto só por um `npx -y` puxar uma versão nova
+do adapter.
 
 ## Causa raiz
 
@@ -53,9 +64,10 @@ são best-effort no-op (AD-5) — sem um lugar único que arbitre o de/para.
 - **Escala mal:** cada novo coding agent (Gemini CLI, etc.) multiplica os
   vocabulários que o autor precisa memorizar; **nada centraliza o de/para**. O
   débito cresce linearmente com o nº de adapters × nº de dials.
-- **Divergências sem árbitro único:** effort ausente no Claude (`setEffort` no-op
-  **silencioso**), `fast-mode` só no Codex, model ids totalmente distintos — hoje
-  cada uma é tratada isoladamente, não por uma política única.
+- **Divergências sem árbitro único:** effort ausente no OpenCode (`setEffort` no-op
+  **silencioso**) e com vocabulário divergente entre Codex e Claude (`max` só no
+  Claude), id do toggle de fast mode distinto, model ids totalmente distintos —
+  hoje cada uma é tratada isoladamente, não por uma política única.
 - **Risco de autonomia latente:** `mode` governa read-only × escrita. A rede
   fail-hard evita rodar num mode **inválido**, mas um Step que **omite** `mode` cai
   no *default do adapter* (`agent` no Codex já **escreve**; `default` no Claude
@@ -98,8 +110,10 @@ Introduzir uma **interface única de capacidades do agente** (um `AgentProfile` 
    `read-only`/`agent`/`agent-full-access`). O yml declara a **intenção**; a
    interface resolve o `modeId`. Retrocompatível: um `mode:` literal continua
    passando cru (escape hatch).
-2. **Effort canônico** (`low`/`med`/`high`) → `thought_level` do adapter, com
-   **no-op declarado e visível** quando ausente (Claude) — não um silêncio.
+2. **Effort canônico** (`low`/`med`/`high`) → `thought_level` do adapter (id
+   `reasoning_effort` no Codex, `effort` no Claude), clampando ao vocabulário
+   real do agente (`max` → `xhigh` no Codex) e com **no-op declarado e visível**
+   quando ausente (OpenCode) — não um silêncio.
 3. **Model** por alias canônico (`strong`/`fast`) → `ModelId` do adapter.
 4. **Alternativa leve** (se não quiser abstração canônica agora): mover a
    validação de `mode`+`agent` para o **carregamento da config** (fail-fast no
