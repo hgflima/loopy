@@ -113,7 +113,7 @@
 
 ## Fase 2 — O contrato quebra (T-002) e a sessão pergunta (T-006)
 
-- [ ] T-002: `concurrency: number | "auto"` + `max_concurrency` — schema, tipos, serialize, CLI e orchestrator (D6/D7/D8/D9/D11/D17/D38)
+- [x] T-002: `concurrency: number | "auto"` + `max_concurrency` — schema, tipos, serialize, CLI e orchestrator (D6/D7/D8/D9/D11/D17/D38)
     **A fatia vertical inteira da Feature 1 no motor.** Indivisível: mudar `LoopyConfig.concurrency`
     quebra o `tsc` em todos os consumidores de uma vez (D11 — efeito desejado).
     `src/types.ts`: `LoopyConfig.concurrency: number | "auto"` (`:322`); **nova** `LoopyConfig.
