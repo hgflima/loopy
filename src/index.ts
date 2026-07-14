@@ -21,12 +21,15 @@
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
 import { realpathSync, statSync } from "node:fs";
-import { basename, normalize, relative, resolve as resolvePath } from "node:path";
+import { basename, dirname, normalize, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import pkg from "../package.json" with { type: "json" };
-import { openAgent } from "./acp/agent";
+import { openAgent, type AgentHandle } from "./acp/agent";
+import type { AgentCapabilities } from "./acp/capabilities";
+import { writeCache } from "./acp/capabilities-cache";
+import { buildSession } from "./acp/session";
 import { acpTrafficSummary, agentChunkText, usageUpdateUsed } from "./acp/client";
 import {
   createAgentProcessPool,
@@ -207,6 +210,7 @@ export function buildProgram(io: RunIO): Command {
     )
     .option("--verbose", "inclui trafego ACP no log", false)
     .allowExcessArguments(false)
+    .enablePositionalOptions()
     .exitOverride()
     .configureOutput({
       writeOut: (str) => io.out(str),
@@ -752,6 +756,94 @@ function isFile(path: string): boolean {
   }
 }
 
+/** Print capabilities in human-readable form (no `--json`). */
+function formatCapabilities(caps: AgentCapabilities, io: RunIO): void {
+  const line = (label: string, items: readonly string[]): string =>
+    items.length > 0 ? `${label}: ${items.join(", ")}` : `${label}: —`;
+
+  const models = caps.models.length > 0
+    ? `models: ${caps.models.length} (${caps.models.slice(0, 3).join(", ")}${caps.models.length > 3 ? ", …" : ""})`
+    : "models: —";
+
+  io.out(`${line("modes", caps.modes)}\n${models}\n${line("efforts", caps.efforts)}\n`);
+}
+
+/**
+ * `probe-agent <nome>` subcommand (T-008, D30/D32): spawn a single agent
+ * process, open a disposable session, read `session.capabilities`, print,
+ * cache to `.loopy/capabilities.json`, then shut everything down. Zero
+ * worktree, zero tokens.
+ */
+async function executeProbeAgent(
+  nome: string,
+  opts: { config?: string; json: boolean },
+  io: RunIO,
+): Promise<number> {
+  const configPath = opts.config
+    ? resolvePath(opts.config)
+    : resolvePath("loopy.yml");
+
+  const config = loadConfig(configPath);
+
+  const agentDef = config.resolvedAgents.byName[nome];
+  if (!agentDef) {
+    const available = Object.keys(config.resolvedAgents.byName).join(", ");
+    io.err(
+      `loopy: agente "${nome}" não encontrado no registry (disponíveis: ${available}).\n`,
+    );
+    return 1;
+  }
+
+  // Agent process and session cwd — always the working directory (like execute(dir)).
+  const root = resolvePath(".");
+  // Cache location — next to the config file (same as the project root when --config is omitted).
+  const cacheRoot = dirname(configPath);
+  const resolvedEnv = resolveAgentEnv({ [nome]: agentDef }, process.env);
+  const envOverrides = resolvedEnv[nome];
+
+  let handle: AgentHandle;
+  try {
+    handle = await openAgent({
+      command: agentDef.command,
+      cwd: root,
+      env:
+        envOverrides && Object.keys(envOverrides).length > 0
+          ? { ...process.env, ...envOverrides }
+          : undefined,
+      permissions: { on_request: config.acp.permissions.on_request },
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    io.err(`loopy: falha ao iniciar o agente "${nome}": ${reason}\n`);
+    return 1;
+  }
+
+  try {
+    const session = await buildSession(
+      { ctx: handle.ctx, text: handle.text, cost: handle.cost },
+      root,
+    ).start();
+
+    const caps = session.capabilities;
+
+    if (opts.json) {
+      io.out(JSON.stringify(caps) + "\n");
+    } else {
+      formatCapabilities(caps, io);
+    }
+
+    writeCache(cacheRoot, agentDef.command, caps);
+    session.dispose();
+    return 0;
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    io.err(`loopy: falha ao sondar o agente "${nome}": ${reason}\n`);
+    return 1;
+  } finally {
+    await handle.shutdown();
+  }
+}
+
 /** Load config + backlog for `dir` and dispatch on the flags. */
 async function execute(
   dir: string,
@@ -817,6 +909,10 @@ async function execute(
  * Parse `argv` (user args, no node/script), then run. Returns the process exit
  * code. Never throws for expected failures: commander usage errors and config /
  * backlog / interpolation errors become a clear message + non-zero code.
+ *
+ * T-008: now uses `parseAsync` + `.action()` so the `probe-agent` subcommand
+ * coexists with the root `[dir]` positional without ambiguity — Commander
+ * matches subcommands before optional arguments.
  */
 export async function run(
   argv: readonly string[],
@@ -824,9 +920,54 @@ export async function run(
   hooks: RunHooks = {},
 ): Promise<number> {
   const program = buildProgram(io);
+  let exitCode = 0;
+
+  // Root command action — the default flow (loopy [dir]).
+  program.action(async (dir: string) => {
+    const flags = toFlags(program.opts());
+    try {
+      exitCode = await execute(dir, flags, io, hooks);
+    } catch (err) {
+      if (
+        err instanceof ConfigError ||
+        err instanceof BacklogError ||
+        err instanceof InterpolationError
+      ) {
+        io.err(`loopy: ${err.message}\n`);
+        exitCode = 1;
+        return;
+      }
+      throw err;
+    }
+  });
+
+  // T-008: probe-agent subcommand (D30/D32).
+  program
+    .command("probe-agent")
+    .description("Sonda as capabilities de um agente ACP e grava o cache")
+    .argument("<nome>", "nome do agente no registry (agents: do loopy.yml)")
+    .option("-c, --config <path>", "caminho alternativo do loopy.yml")
+    .option("--json", "imprime o objeto AgentCapabilities cru em JSON", false)
+    .exitOverride()
+    .configureOutput({
+      writeOut: (str) => io.out(str),
+      writeErr: (str) => io.err(str),
+    })
+    .action(async (nome: string, opts: { config?: string; json: boolean }) => {
+      try {
+        exitCode = await executeProbeAgent(nome, opts, io);
+      } catch (err) {
+        if (err instanceof ConfigError) {
+          io.err(`loopy: ${err.message}\n`);
+          exitCode = 1;
+          return;
+        }
+        throw err;
+      }
+    });
 
   try {
-    program.parse([...argv], { from: "user" });
+    await program.parseAsync([...argv], { from: "user" });
   } catch (err) {
     // exitOverride turns help/version/usage exits into throws; help & version
     // carry exitCode 0, usage errors a non-zero code. The message (if any) was
@@ -835,22 +976,7 @@ export async function run(
     throw err;
   }
 
-  const flags = toFlags(program.opts());
-  const dir = (program.args[0] as string | undefined) ?? ".";
-
-  try {
-    return await execute(dir, flags, io, hooks);
-  } catch (err) {
-    if (
-      err instanceof ConfigError ||
-      err instanceof BacklogError ||
-      err instanceof InterpolationError
-    ) {
-      io.err(`loopy: ${err.message}\n`);
-      return 1;
-    }
-    throw err;
-  }
+  return exitCode;
 }
 
 /** `true` when this module is the process entrypoint (not an import). */
