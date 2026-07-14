@@ -198,7 +198,7 @@
 
 ## Fase 3 — As superfícies (T-003 ∥ T-004 ∥ T-008)
 
-- [ ] T-003: `ConfigPane` — toggle `auto` + campo `max_concurrency` (D7/D11)
+- [x] T-003: `ConfigPane` — toggle `auto` + campo `max_concurrency` (D7/D11)
     `apps/menubar/src/config/ConfigPane.tsx`, seção `concurrency` (`:330-343`): o `NumberField` de
     hoje é `number`-only e **não** representa `"auto"`. Adicionar um `ToggleField` **"auto (derivar
     do DAG)"**: ligado ⇒ o `NumberField` de `concurrency` **some** (o valor no draft é a string
