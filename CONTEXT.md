@@ -306,12 +306,12 @@ _Avoid_: usar "change" como conceito do motor — é puramente derivado do path
 O dashboard ao vivo do Run e o seam aditivo que o alimenta. A apresentação é **pura** em `view.ts` (AD-6) e o motor apenas **observa**: emitir um evento jamais altera o loop (AD-1) — `RunLoopResult` é byte-idêntico com e sem os seams. Não confundir estes termos com o cluster de verificação (Check/Verify/Tentativa/Visita) nem com Iteração.
 
 **Dashboard**:
-O layout **fixo** da TUI de execução: quatro Painéis simultâneos (Grafo, Tasks, Stream, Logs), todos vivos, sem foco nem navegação por teclado (a única entrada é o Gate de Aprovação). Distinto do **fallback de linha** (append-only, usado em no-TTY/`--no-tui`).
+O layout **fixo** da TUI de execução: três Painéis simultâneos (Grafo, Tasks, Stream), todos vivos, sem foco nem navegação por teclado (a única entrada é o Gate de Aprovação). Distinto do **fallback de linha** (append-only, usado em no-TTY/`--no-tui`).
 _Avoid_: tela, UI (genérico); "painel" (é o conjunto, não uma região)
 
 **Painel** (_pane_):
-Uma região do Dashboard com um recorte do estado do Run. Exatamente quatro: **Painel de Grafo** (o Grafo de tasks), **Painel de Tasks** (uma linha por Task, glyph+cor por status, step/try/checks quando `running`), **Painel de Stream** (o Stream das Tasks `running`, ~3 mais recentes + contador `+K`) e **Painel de Logs** (tail do Tráfego ACP).
-_Avoid_: janela, aba; "view" (colide com `view.ts`)
+Uma região do Dashboard com um recorte do estado do Run. Exatamente três: **Painel de Grafo** (o Grafo de tasks), **Painel de Tasks** (uma linha por Task, glyph+cor por status, step/try/checks quando `running`) e **Painel de Stream** (o Stream das Tasks `running`, ~3 mais recentes + contador `+K`). Um **Painel de Logs** (tail do Tráfego ACP) chegou a ser especificado e foi **removido**: cada chunk de texto virava um `session/update`, duplicando o Stream. O Tráfego ACP segue capturado — só não tem Painel.
+_Avoid_: janela, aba; "view" (colide com `view.ts`); Painel de Logs (não existe)
 
 **Painel de Grafo**:
 A renderização do **Grafo de tasks** (ADR-0004) com layout computado por **dagre** (camadas Sugiyama, `rankdir:LR`): Tasks na mesma camada = candidatas a rodar em paralelo; arestas de dependência via os waypoints do dagre; cada nó colorido por `TaskStatus`; a Task `running` pulsa. Materialização visual do que era só dado em `StoreState.edges`.
@@ -322,8 +322,8 @@ A saída **pura e renderer-agnóstica** de `layoutGraph`: posição de cada nó 
 _Avoid_: layout (sozinho), coordenadas
 
 **Native UI**:
-A TUI **futura** sobre **OpenTUI** (fora do escopo desta change) que troca o renderer Ink por um framebuffer nativo, reaproveitando `view.ts` + `store` sem carregar Ink. É o motivo de a geometria e o estilo viverem puros em `view.ts` (AD-6).
-_Avoid_: GUI; "TUI nativa" solto (é especificamente OpenTUI)
+A **GUI** macOS de menubar (`apps/menubar/`, Tauri + React) que observa e dirige um Run — **entregue** (ADR-0007). Não é um renderer alternativo dentro do processo: roda **fora**, como app, com o motor de **Sidecar**, e reaproveita `view.ts` + `store` via subpath exports. É o motivo de a geometria e o estilo viverem puros em `view.ts` (AD-6).
+_Avoid_: OpenTUI, "TUI nativa" (a Native UI é uma GUI, não uma TUI)
 
 **Pulso** (_pulse_):
 A animação da Task `running`: alternância temporizada da ênfase do glyph no Painel de Grafo/Tasks. Pura em `view.ts` (`pulseFrame(tick)`); o relógio (`setInterval`) vive só no `.tsx`. **Só o Dashboard pulsa** (o fallback de linha, não).
@@ -334,7 +334,7 @@ O texto **legível** do que executa agora: `agent_message_chunk` do Agente (via 
 _Avoid_: output, log; não confundir com Tráfego ACP
 
 **Tráfego ACP** (_ACP traffic_):
-As mensagens JSON-RPC **send/recv** entre motor e Agente (`AcpTrafficEntry { direction, method?, payload }`), exibidas no Painel de Logs. O "por baixo do capô" do protocolo. Novo evento de store **`acp_traffic`**; buffer **bounded** (~200 linhas); captura gated por `--verbose`/`capture_acp_traffic`.
+As mensagens JSON-RPC **send/recv** entre motor e Agente (`AcpTrafficEntry { direction, method?, payload }`). O "por baixo do capô" do protocolo. Evento de store **`acp_traffic`**; buffer **bounded** (~200 linhas); captura gated por `--verbose`/`capture_acp_traffic`. **Não tem Painel** no Dashboard: vai para o log de arquivo (e para a store, que a Native UI consome).
 _Avoid_: mensagens, protocolo; não confundir com Stream
 
 **Emit seam** (_porta de progresso_):
@@ -344,3 +344,19 @@ _Avoid_: hook, dispatch (é o consumidor na store), callback (genérico)
 **onTraffic**:
 O callback de observação no boundary ACP (`OpenAgentOptions.onTraffic`) que capta o Tráfego send/recv e o roteia para **dois** consumidores: o arquivo (`TaskLogger.acp`) e a store (`acp_traffic`). Carimba `taskId` via o mapa `sessionId → taskId`. Observador puro — não altera o comportamento ACP.
 _Avoid_: confundir com `onUpdate` (é o seam do **texto** do Agente, que vira Stream)
+
+## Transport e Native UI (ADR-0007)
+
+Como a GUI (fora do processo) conversa com o motor. Distinto do **Emit seam** (que é interno ao processo): o Transport é a **serialização** desses eventos para outro processo.
+
+**Sidecar**:
+O processo do motor spawnado **pela** Native UI: `loopy --no-tui --emit-events <dir>`. A GUI é a pai; o motor é o filho. Um Run por vez.
+_Avoid_: backend, servidor, daemon (não escuta porta; é stdio)
+
+**Transport**:
+O protocolo **NDJSON duplex** entre motor e Native UI: uma linha JSON por mensagem, motor→UI pelo **stdout**, UI→motor pelo **stdin**. Sob `--emit-events`, o stdout é exclusivo do Transport (todo texto de log vai para stderr). Implementado em `src/tui/transport.ts`, publicado como subpath export.
+_Avoid_: IPC, canal, socket (não há socket); "API" (não é RPC nem HTTP)
+
+**Frame**:
+Uma linha do Transport, discriminada pelo campo `frame`. Três classes: **`event`** (wrapper de um `StoreEvent` — o mesmo do Emit seam), **`control`** (fatos do Run que não são StoreEvent: `run_started`, `run_finished`, `approval_requested`) e **`command`** (a única direção UI→motor: `approval_decision`). Parse é **fail-soft** (linha inválida vira valor de erro, nunca exceção — AD-5).
+_Avoid_: mensagem, payload, evento (solto — `event` é **uma** das três classes)
