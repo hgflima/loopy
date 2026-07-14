@@ -6,12 +6,13 @@ App macOS de menubar (`@hgflima/loopy-menubar`, privado) que **observa e dirige 
 NÃO é: parte do motor (não decide nada do loop — AD-1), nem dona do domínio (Task/Step/Status vêm do motor).
 
 ## Entry Points & Contracts
-Duas pontes **independentes** com o motor — confundi-las é o erro nº 1 aqui:
+**Três** superfícies distintas contra o motor/projeto — confundi-las é o erro nº 1 aqui:
 
 1. **Processo (runtime): sidecar NDJSON.** O Rust spawna o binário `loopy`, line-frama o stdout e emite `sidecar://line|stderr|exit` ao webview; o retorno é uma linha no stdin (hoje só `approval_decision`). Contrato de frames = ADR-0007 (`event` | `control` | `command`), implementado em `src/tui/transport.ts` no motor.
-2. **Tipos e lógica pura (build-time): subpath imports `loopy/tui/*`.** `store` (reduce/`StoreEvent`/selectors), `view` (`computeDagreLayout`, `COLORS`, `pulseFrame`), `transport` (`parseTransportLine`).
+2. **Tipos e lógica pura (build-time): subpath imports `loopy/…`.** Hoje são cinco: `loopy/tui/{store,view,transport}` + **`loopy/config`** (schema zod, `parseConfigSource`, `serializeConfig`, `initialConfigTemplate`) + **`loopy/backlog`** (`parseBacklog`) — mais `loopy/types`. É o que permite editar e validar o `loopy.yml` **sem reimplementar nada**.
+3. **Filesystem (C-0014): comandos Rust `read_project_files` / `write_loopy_yml`.** Não passa pelo sidecar nem é build-time: o Rust lê `loopy.yml`/`todo.md` do diretório-alvo (**arquivo ausente = `None`, não erro** — é assim que o app decide o empty-state) e grava o yml **com backup** em `<dir>/.loopy/backups/loopy.<epoch>.yml` (retenção 10). São comandos dedicados de propósito, **não** `tauri-plugin-fs`: mantém o capability mínimo.
 
-**`loopy/*` NÃO é o pacote publicado.** É um alias para `../../src/*` (o TypeScript do motor), declarado em **três** lugares — `vite.config.ts`, `vitest.config.ts` e `tsconfig.json`. O `package.json` do app lista `"@hgflima/loopy": "*"`, mas **nenhum arquivo importa esse specifier**: o pacote raiz não é workspace, então resolvê-lo pegaria o **build publicado stale** (sem `dist/tui`). Ao adicionar um subpath novo, atualize os **três** aliases ou algo quebra silenciosamente (e de formas diferentes em build, teste e typecheck).
+**`loopy/*` NÃO é o pacote publicado.** É um alias para `../../src/*` (o TypeScript do motor) em `vite.config.ts`, `vitest.config.ts` e `tsconfig.json` — os três são **wildcards** (`^loopy/(.*)`), então um subpath novo funciona sem tocá-los. O que precisa acompanhar é o **`exports` do `package.json` da raiz** — e ele **não acompanhou**: o app importa `loopy/types`, que **não está exportado** lá. Funciona aqui (o alias resolve o fonte), mas o pacote publicado não oferece esse subpath. O `package.json` do app lista `"@hgflima/loopy": "*"`, mas **nenhum arquivo importa esse specifier** — resolvê-lo pegaria o build publicado stale.
 
 - Versão: `tauri.conf.json` aponta para o `package.json` **da raiz** (single source). Travado por `src/version-single-source.test.ts`.
 
@@ -22,8 +23,9 @@ Duas pontes **independentes** com o motor — confundi-las é o erro nº 1 aqui:
 
 ## Anti-patterns
 - Não tratar a Native UI como "trocar o renderer do Ink". Ela é out-of-process; o acoplamento é o **Transport**, não o React.
-- Não mudar a shape de `StoreEvent`/frames no motor sem olhar aqui: `src/tui/{store,view,transport}.ts` são **API pública** (subpath exports com `dts`) e este app é o consumidor real.
-- Não duplicar o reducer nem os status de task no frontend — importe do motor.
+- Não mudar a shape de `StoreEvent`/frames/schema no motor sem olhar aqui: `src/tui/{store,view,transport}` e os barrels `config`/`backlog` são **API pública** (subpath exports com `dts`) e este app é o consumidor real.
+- Não duplicar no frontend o que o motor já exporta: **reducer, status de task, schema zod do yml, tipos de step, parser do backlog**. Duplicar é como app e motor divergem em silêncio.
+- Não importar `node:fs` (nem nada de Node) nos módulos do motor que o app consome: `config` e `backlog` são **browser-safe por contrato**; o I/O vive isolado em `load.ts`/`todo.ts`.
 - Não presumir cross-platform: `build:sidecar` tem o triple **`aarch64-apple-darwin` hardcoded** e depende de `bun` (não declarado em `engines`/devDependencies). > TODO(intent): Windows/Linux/x86_64 são fora de escopo do v1 ou dívida? (Há um caminho não-macOS no Rust que parece aspiracional.)
 
 ## Dependencies & Edges

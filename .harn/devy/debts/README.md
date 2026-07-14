@@ -71,3 +71,4 @@ histórico.
 | [D-0006](D-0006-cancelsignal-seam-never-wired.md) | `cancelSignal` é seam morto: o hard-stop nunca chega ao step `shell` | `src/steps/index.ts` · `src/steps/shell.ts` | média | aberto |
 | [D-0007](D-0007-approval-onfail-goto-renders-object-object.md) | `on_fail: { goto }` em step `approval` renderiza `[object Object]` na `reason` | `src/steps/approval.ts` | baixa | aberto |
 | [D-0008](D-0008-run-cost-undercounts-since-task-cost-became-a-sum.md) | Custo do Run subconta: Task virou soma (ADR-0006), Run/Change seguem *last-non-null* | `src/metrics/folds.ts` · `src/types.ts` | média | aberto |
+| [D-0009](D-0009-loopy-types-subpath-not-exported.md) | O app importa `loopy/types`, mas o subpath não existe no `exports` do pacote (alias wildcard esconde) | `package.json` · `tsup.config.ts` | baixa | aberto |

@@ -28,7 +28,7 @@ O loop externo sobre o backlog: um **pool** de tasks dirigido pelo **scheduler**
 
 ## Patterns & Pitfalls
 - **`../scheduler/` é a fatia pura do DAG** (sem node próprio: 285 linhas, um único consumidor — este módulo). API: `buildGraph` (erros como valores; **dep órfã é validada antes de ciclo**), `readySet`, `skipDescendants`, `topoLayers` (só no dry-run). Três armadilhas:
-  1. **`"blocked"` é o estado INICIAL de toda task** — `readySet` só promove nós `blocked`. O estado `"ready"` do enum é **dead code**: ninguém o seta.
+  1. **Há DOIS mapas de status, e eles discordam de propósito.** No mapa **do scheduler**, *toda* Task começa `"blocked"` e o `readySet` só promove nós `blocked` cujas deps estão todas `done`. Já o status **de exibição** (evento `task_registered` → TUI/GUI) nasce `"ready"` quando a Task não tem deps. Não unifique os dois sem entender: setar `"ready"` no mapa do scheduler faria a Task **nunca** ser promovida (o `readySet` a ignoraria) e o pool travaria.
   2. `readySet` exige que **toda dep esteja `done`**. Dep `skipped`/`escalated`/`paused` **nunca** libera o dependente — quem evita o deadlock é `skipDescendants`, que move os descendentes de `blocked` → `skipped`.
   3. **O scheduler não conhece `concurrency`**: o teto (`inFlight.size >= concurrency`) é aplicado aqui, no orquestrador.
 - **`stripDoneDeps`** roda antes do `buildGraph`: deps já concluídas são removidas; deps para ids **desconhecidos** são **mantidas de propósito** para virar erro "Dep órfã" fail-fast. É o que faz `--task` e runs parciais funcionarem.
