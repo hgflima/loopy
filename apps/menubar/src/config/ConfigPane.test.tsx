@@ -7,6 +7,8 @@
  * - T-009 SC5: selects only offer valid enum values
  * - metrics opt-in toggle enables/disables section
  * - error routing (R7) across all sections
+ * - T-011: agent presets (Claude/Codex/OpenCode/Em branco), probe/refresh button,
+ *   and probed model/effort selects in the registry
  *
  * Run: `npm test -w apps/menubar -- ConfigPane`
  */
@@ -14,13 +16,30 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, fireEvent, within } from "@testing-library/react";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
+
+// Mock useAgentCapabilities BEFORE importing ConfigPane (vitest hoists vi.mock).
+// Default: idle (no probe) — existing tests keep working unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockUseAgentCapabilities = vi.fn((): any => ({
+  status: "idle",
+  caps: undefined,
+  reason: undefined,
+  probe: vi.fn(),
+}));
+vi.mock("./useAgentCapabilities", () => ({
+  useAgentCapabilities: () => mockUseAgentCapabilities(),
+}));
+
 import { ConfigPane } from "./ConfigPane";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mockUseAgentCapabilities.mockClear();
+});
 
 /** Full draft with all sections populated for T-009. */
 function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
@@ -89,6 +108,13 @@ function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
     seedFromTemplate: vi.fn(),
     ...overrides,
   };
+}
+
+/** Draft with agents: undefined — used by preset tests. */
+function noAgentsDraft(): ConfigDraftAPI {
+  return makeDraft({
+    draft: { ...makeDraft().draft!, agents: undefined } as ConfigDraftAPI["draft"],
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -821,5 +847,226 @@ describe("ConfigPane — error routing across all sections (T-009, R7)", () => {
     const { getByTestId } = render(<ConfigPane configDraft={draft} />);
 
     expect(getByTestId("config-banner").textContent).toContain("Duplicated");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-011 — Agent presets (D27): "Add agent" offers Claude/Codex/OpenCode/Em branco
+// ---------------------------------------------------------------------------
+
+describe("ConfigPane — agent presets (T-011, D27)", () => {
+  it("shows a preset menu with Claude, Codex, OpenCode, and Em branco options", () => {
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const section = getByTestId("section-agents");
+    expect(within(section).getByText("Claude")).toBeTruthy();
+    expect(within(section).getByText("Codex")).toBeTruthy();
+    expect(within(section).getByText("OpenCode")).toBeTruthy();
+    expect(within(section).getByText("Em branco")).toBeTruthy();
+  });
+
+  it.each([
+    { label: "Claude", name: "my-claude", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+    { label: "Codex", name: "my-codex", command: ["npx", "-y", "@agentclientprotocol/codex-acp"] },
+    { label: "OpenCode", name: "my-opencode", command: ["opencode", "acp"] },
+    { label: "Em branco", name: "custom", command: [""] },
+  ])("$label preset fills command correctly", ({ label, name, command }) => {
+    const draft = noAgentsDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const section = getByTestId("section-agents");
+    fireEvent.change(within(section).getByLabelText("New agent name"), { target: { value: name } });
+    fireEvent.click(within(section).getByText(label));
+    expect(draft.patch).toHaveBeenCalledWith("agents", { [name]: { command } });
+  });
+
+  it("preset auto-generates a name when no name is typed", () => {
+    const draft = noAgentsDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const section = getByTestId("section-agents");
+    // Click the Claude preset without typing a name
+    fireEvent.click(within(section).getByText("Claude"));
+    expect(draft.patch).toHaveBeenCalledWith("agents", {
+      claude: { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+    });
+  });
+
+  it("preset avoids name collision by appending suffix", () => {
+    // "claude" already exists in the default draft
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const section = getByTestId("section-agents");
+    fireEvent.click(within(section).getByText("Claude"));
+    // Should use "claude-2" since "claude" is taken
+    expect(draft.patch).toHaveBeenCalledWith("agents", expect.objectContaining({
+      claude: expect.anything(), // existing
+      "claude-2": { command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+    }));
+  });
+
+  it("preserves the existing + Add agent button for backward compat", () => {
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const section = getByTestId("section-agents");
+    // The old "Add agent" flow (type name + click) still works
+    expect(within(section).getByText("+ Add agent")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-011 — Probe/refresh button per agent (D32)
+// ---------------------------------------------------------------------------
+
+describe("ConfigPane — probe/refresh button (T-011, D32)", () => {
+  it("shows a probe button per agent entry", () => {
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    expect(within(entry).getByLabelText(/sondar|refresh/i)).toBeTruthy();
+  });
+
+  it("probe button calls useAgentCapabilities.probe (ignoring cache)", () => {
+    const probeFn = vi.fn();
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "idle",
+      caps: undefined,
+      reason: undefined,
+      probe: probeFn,
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    fireEvent.click(within(entry).getByLabelText(/sondar|refresh/i));
+    expect(probeFn).toHaveBeenCalled();
+  });
+
+  it("shows probed result inline on success", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: { modes: ["build", "plan"], models: ["openai/gpt-4o"], efforts: [] },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    expect(entry.textContent).toContain("build");
+    expect(entry.textContent).toContain("plan");
+  });
+
+  it("shows probe failure reason inline", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "failed",
+      caps: undefined,
+      reason: "adapter not installed",
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    expect(entry.textContent).toContain("adapter not installed");
+  });
+
+  it("failure does NOT clear existing form values", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "failed",
+      caps: undefined,
+      reason: "timeout",
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    // Model and effort fields should still show their values
+    const modelInput = within(entry).getByLabelText("model") as HTMLInputElement;
+    expect(modelInput.value).toBe("opus");
+    const effortInput = within(entry).getByLabelText("effort") as HTMLInputElement;
+    expect(effortInput.value).toBe("high");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-011 — Probed model/effort selects in AgentEntry (D30/D31)
+// ---------------------------------------------------------------------------
+
+describe("ConfigPane — probed model/effort selects (T-011, D30/D31)", () => {
+  it("model field is a select when probe succeeds", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: { modes: ["build", "plan"], models: ["opus", "sonnet", "haiku"], efforts: ["low", "high"] },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    const modelField = within(entry).getByLabelText("model") as HTMLElement;
+    expect(modelField.tagName).toBe("SELECT");
+  });
+
+  it("effort field is a select when probe succeeds", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: { modes: ["build"], models: ["opus"], efforts: ["low", "high", "max"] },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    const effortField = within(entry).getByLabelText("effort") as HTMLElement;
+    expect(effortField.tagName).toBe("SELECT");
+  });
+
+  it("model/effort degrade to text fields when probe failed", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "failed",
+      caps: undefined,
+      reason: "timeout",
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    const modelField = within(entry).getByLabelText("model") as HTMLElement;
+    expect(modelField.tagName).toBe("INPUT");
+    const effortField = within(entry).getByLabelText("effort") as HTMLElement;
+    expect(effortField.tagName).toBe("INPUT");
+  });
+
+  it("model/effort degrade to text fields when no dir is provided", () => {
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} />);
+
+    const entry = getByTestId("agent-entry-claude");
+    const modelField = within(entry).getByLabelText("model") as HTMLElement;
+    expect(modelField.tagName).toBe("INPUT");
+  });
+
+  it("effort field disabled when agent announces efforts: []", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: { modes: ["build", "plan"], models: ["openai/gpt-4o"], efforts: [] },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+    const draft = makeDraft();
+    const { getByTestId } = render(<ConfigPane configDraft={draft} dir="/project" />);
+
+    const entry = getByTestId("agent-entry-claude");
+    const effortField = within(entry).getByLabelText("effort") as HTMLSelectElement;
+    expect(effortField.disabled).toBe(true);
   });
 });
