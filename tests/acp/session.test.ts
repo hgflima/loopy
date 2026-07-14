@@ -496,19 +496,19 @@ describe("buildSession / session pool (against the fake agent)", () => {
   // T-002: setModel / setEffort (best-effort, config option discovery)
   // -------------------------------------------------------------------------
 
-  /** Build a minimal `SessionConfigOption` for a given category (test helper). */
-  function selectOption(
+  /** Build a `SessionConfigOption` with selectable values (T-006). */
+  function selectOptionMulti(
     id: string,
     category: SessionConfigOptionCategory,
-    value: string,
+    values: readonly string[],
   ): SessionConfigOption {
     return {
       id,
       name: id,
       category,
       type: "select" as const,
-      currentValue: value,
-      options: [{ value, name: value }],
+      currentValue: values[0] ?? "",
+      options: values.map((v) => ({ value: v, name: v })),
     };
   }
 
@@ -521,8 +521,9 @@ describe("buildSession / session pool (against the fake agent)", () => {
     };
   }
 
-  /** Open a session with traffic capture and return both (test helper). */
-  async function startWithTraffic(scenario: FakeScenario) {
+  /** Open a session with warning + traffic capture (T-006 test helper). */
+  async function startWithCapture(scenario: FakeScenario) {
+    const warnings: string[] = [];
     const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
     handle = await openAgent({
       command: fakeCommand(scenario),
@@ -533,6 +534,7 @@ describe("buildSession / session pool (against the fake agent)", () => {
       ctx: handle.ctx,
       text: handle.text,
       cost: handle.cost,
+      onWarning: (msg) => warnings.push(msg),
       onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
     };
     const session = await buildSession(deps, PROJECT_ROOT).start();
@@ -540,7 +542,7 @@ describe("buildSession / session pool (against the fake agent)", () => {
       traffic
         .filter((t) => t.entry.direction === "send" && t.entry.method === "session/set_config_option")
         .map((t) => t.entry.payload as Record<string, unknown>);
-    return { session, configSends };
+    return { session, warnings, configSends };
   }
 
   /** Open a session with a logger spy (test helper). */
@@ -556,9 +558,9 @@ describe("buildSession / session pool (against the fake agent)", () => {
     return { session, logs };
   }
 
-  it("setModel calls set_config_option when model capability is announced", async () => {
-    const { session, configSends } = await startWithTraffic({
-      configOptions: [selectOption("model-selector", "model", "gpt-4")],
+  it("setModel calls set_config_option when model capability is announced and value is valid", async () => {
+    const { session, configSends } = await startWithCapture({
+      configOptions: [selectOptionMulti("model-selector", "model", ["gpt-4", "gpt-5-codex"])],
       defaultTurn: { text: ["ok"], stopReason: "end_turn" },
     });
 
@@ -571,9 +573,9 @@ describe("buildSession / session pool (against the fake agent)", () => {
     session.dispose();
   });
 
-  it("setEffort calls set_config_option when thought_level capability is announced", async () => {
-    const { session, configSends } = await startWithTraffic({
-      configOptions: [selectOption("thought-level", "thought_level", "high")],
+  it("setEffort calls set_config_option when thought_level capability is announced and value is valid", async () => {
+    const { session, configSends } = await startWithCapture({
+      configOptions: [selectOptionMulti("thought-level", "thought_level", ["low", "medium", "high"])],
       defaultTurn: { text: ["ok"], stopReason: "end_turn" },
     });
 
@@ -586,27 +588,36 @@ describe("buildSession / session pool (against the fake agent)", () => {
     session.dispose();
   });
 
-  it("setModel is a no-op when the adapter does not announce model capability", async () => {
-    const { session, logs } = await startWithLogger({
+  it("setModel emits onWarning when the adapter does not announce model capability", async () => {
+    const { session, warnings, configSends } = await startWithCapture({
       defaultTurn: { text: ["ok"], stopReason: "end_turn" },
     });
 
     await session.setModel("gpt-5-codex");
-    expect(logs.some((l) => l.includes("skipped") && l.includes("model"))).toBe(true);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("model");
+    expect(warnings[0]).toContain("gpt-5-codex");
+    expect(warnings[0]).toContain("ignorado");
+    // No set_config_option sent.
+    expect(configSends()).toHaveLength(0);
     session.dispose();
   });
 
-  it("setEffort is a no-op when the adapter does not announce thought_level capability", async () => {
-    const { session, logs } = await startWithLogger({});
+  it("setEffort emits onWarning when the adapter does not announce thought_level capability", async () => {
+    const { session, warnings, configSends } = await startWithCapture({});
 
     await session.setEffort("low");
-    expect(logs.some((l) => l.includes("skipped") && l.includes("thought_level"))).toBe(true);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("effort");
+    expect(warnings[0]).toContain("low");
+    expect(warnings[0]).toContain("ignorado");
+    expect(configSends()).toHaveLength(0);
     session.dispose();
   });
 
   it("setModel swallows adapter errors (AD-5 — never throws)", async () => {
     const { session, logs } = await startWithLogger({
-      configOptions: [selectOption("model-selector", "model", "gpt-4")],
+      configOptions: [selectOptionMulti("model-selector", "model", ["gpt-4", "bad-model"])],
       failSetConfigOption: true,
     });
 
@@ -616,8 +627,8 @@ describe("buildSession / session pool (against the fake agent)", () => {
   });
 
   it("setModel with effort embedded in ModelId works naturally (e.g. gpt-5-codex[high])", async () => {
-    const { session, configSends } = await startWithTraffic({
-      configOptions: [selectOption("model-selector", "model", "gpt-5-codex[high]")],
+    const { session, configSends } = await startWithCapture({
+      configOptions: [selectOptionMulti("model-selector", "model", ["gpt-5-codex[high]"])],
     });
 
     await session.setModel("gpt-5-codex[high]");
@@ -626,6 +637,149 @@ describe("buildSession / session pool (against the fake agent)", () => {
     expect(sends).toHaveLength(1);
     // Value passed raw — the engine does NOT parse the embedded effort (AD-1).
     expect(sends[0]!.value).toBe("gpt-5-codex[high]");
+    session.dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // T-006: fail-closed mode validation + value validation + warnings
+  // -------------------------------------------------------------------------
+
+  it("setMode throws when modeId is not in the announced list (fail-closed)", async () => {
+    const { session } = await startWithCapture({
+      modes: {
+        currentModeId: "default",
+        availableModes: [
+          { id: "default", name: "Default" },
+          { id: "plan", name: "Plan" },
+        ],
+      },
+    });
+
+    await expect(session.setMode("acceptEdits")).rejects.toThrow(/aceita: default, plan/);
+    session.dispose();
+  });
+
+  it("setMode throws for OpenCode-style: modes=null but configOptions has mode category (fail-closed D33)", async () => {
+    // OpenCode: session.modes is absent/null, but configOptions announces mode.
+    // Before T-006, this escaped validation because availableModeIds was [].
+    const { session } = await startWithCapture({
+      // No `modes` — simulates OpenCode's null modes.
+      configOptions: [
+        selectOptionMulti("mode", "mode", ["build", "plan"]),
+      ],
+    });
+
+    // capabilities.modes should be ["build", "plan"] from configOptions.
+    await expect(session.setMode("acceptEdits")).rejects.toThrow(/aceita: build, plan/);
+    // Valid mode works fine.
+    await session.setMode("plan");
+    session.dispose();
+  });
+
+  it("setMode sends raw + warns when adapter announces no modes at all", async () => {
+    // Adapter with neither modes nor configOptions mode category.
+    const { session, warnings } = await startWithCapture({});
+
+    // Should NOT throw — passes raw.
+    await session.setMode("whatever");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("enviado cru");
+    session.dispose();
+  });
+
+  it("setEffort rejects value not in announced list and emits onWarning (D18)", async () => {
+    const { session, warnings, configSends } = await startWithCapture({
+      configOptions: [
+        selectOptionMulti("thought-level", "thought_level", ["low", "medium", "high", "xhigh"]),
+      ],
+    });
+
+    // 'max' is Claude's effort, not Codex's — must be rejected, not clamped (D18).
+    await session.setEffort("max");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("max");
+    expect(warnings[0]).toContain("aceita: low, medium, high, xhigh");
+    expect(warnings[0]).toContain("ignorado");
+    // Must NOT have sent set_config_option.
+    expect(configSends()).toHaveLength(0);
+
+    // Valid value goes through.
+    await session.setEffort("high");
+    expect(configSends()).toHaveLength(1);
+    expect(configSends()[0]!.value).toBe("high");
+
+    session.dispose();
+  });
+
+  it("setModel rejects value not in announced list and emits onWarning (D18)", async () => {
+    const { session, warnings, configSends } = await startWithCapture({
+      configOptions: [
+        selectOptionMulti("model-selector", "model", ["gpt-4", "gpt-5-codex"]),
+      ],
+    });
+
+    await session.setModel("claude-opus");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("claude-opus");
+    expect(warnings[0]).toContain("aceita: gpt-4, gpt-5-codex");
+    expect(configSends()).toHaveLength(0);
+
+    // Valid model works.
+    await session.setModel("gpt-5-codex");
+    expect(configSends()).toHaveLength(1);
+    session.dispose();
+  });
+
+  it("adapter without configOptions and without modes degrades without breaking", async () => {
+    // Simulates an adapter that announces nothing at all.
+    const { session, warnings } = await startWithCapture({});
+
+    // Mode: sends raw + warning.
+    await session.setMode("whatever");
+    expect(warnings).toHaveLength(1);
+
+    // Model: category absent => warning.
+    await session.setModel("some-model");
+    expect(warnings).toHaveLength(2);
+    expect(warnings[1]).toContain("model");
+
+    // Effort: category absent => warning.
+    await session.setEffort("high");
+    expect(warnings).toHaveLength(3);
+    expect(warnings[2]).toContain("effort");
+
+    session.dispose();
+  });
+
+  it("mode: acceptEdits on claude continues working (regression guard)", async () => {
+    // Claude announces acceptEdits — must not throw.
+    const { session, warnings } = await startWithCapture({
+      modes: {
+        currentModeId: "default",
+        availableModes: [
+          { id: "default", name: "Default" },
+          { id: "acceptEdits", name: "Accept edits" },
+          { id: "plan", name: "Plan" },
+        ],
+      },
+    });
+
+    await session.setMode("acceptEdits");
+    expect(warnings).toHaveLength(0);
+    session.dispose();
+  });
+
+  it("capabilities are exposed on the session", async () => {
+    const { session } = await startWithCapture({
+      configOptions: [
+        selectOptionMulti("mode", "mode", ["build", "plan"]),
+        selectOptionMulti("model-selector", "model", ["gpt-4"]),
+      ],
+    });
+
+    expect(session.capabilities.modes).toEqual(["build", "plan"]);
+    expect(session.capabilities.models).toEqual(["gpt-4"]);
+    expect(session.capabilities.efforts).toEqual([]);
     session.dispose();
   });
 
