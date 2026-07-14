@@ -23,7 +23,7 @@ export function configToStore(
   const taskStates: TaskState[] = tasks.map((t) => ({
     id: t.id,
     title: t.title,
-    status: t.deps.length > 0 ? ("blocked" as const) : ("pending" as const),
+    status: t.deps.length > 0 ? ("blocked" as const) : ("ready" as const),
     description: t.body,
     deps: t.deps,
     steps: [],

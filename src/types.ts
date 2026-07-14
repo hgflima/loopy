@@ -430,8 +430,22 @@ export interface PipelineOutcome {
 // Resume — step-level checkpoint state (C-0002)
 // ---------------------------------------------------------------------------
 
-/** Lifecycle status of a task's checkpoint. */
-export type TaskStatus = "running" | "paused" | "aborted";
+/**
+ * Lifecycle status of a task's **checkpoint** — the persistence vocabulary,
+ * narrower than the run-level status (`SchedulerTaskStatus` / the TUI store's
+ * `TaskStatus`). Only what resume needs to decide:
+ *
+ * - `running` — interrupted mid-pipeline (crash/kill); resumable.
+ * - `paused`  — escalation with `pause`; resumable.
+ * - `aborted` — escalation with `abort_loop`; **not** resumable without
+ *   `allowAborted`. Narrower than the run-level `escalated`, which also covers
+ *   `skip_task` (that one abandons the checkpoint instead of writing a status).
+ *
+ * Do not conflate with the TUI store's `TaskStatus` — different level, different
+ * values. This is what lands in `.loopy/state.json`; renaming a value is a
+ * breaking change to on-disk state.
+ */
+export type CheckpointStatus = "running" | "paused" | "aborted";
 
 /** Persisted progress of a single task within a run (PC-based, C-0004). */
 export interface TaskCheckpoint {
@@ -442,7 +456,7 @@ export interface TaskCheckpoint {
   readonly visits: Readonly<Record<string, number>>;
   /** Current checks report carry (feedback from fix-loop, OQ-10). */
   readonly checksReport: string;
-  readonly status: TaskStatus;
+  readonly status: CheckpointStatus;
 }
 
 /** Top-level resume state persisted to `.loopy/state.json`. */
@@ -461,7 +475,7 @@ export interface CheckpointPort {
     visits: Readonly<Record<string, number>>,
     checksReport: string,
   ): void;
-  setStatus(taskId: string, status: TaskStatus): void;
+  setStatus(taskId: string, status: CheckpointStatus): void;
   clearTask(taskId: string): void;
   pruneOrphans(knownTaskIds: readonly string[]): void;
 }

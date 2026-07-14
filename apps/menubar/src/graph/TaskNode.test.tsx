@@ -34,7 +34,7 @@ function renderNode(
   }> = {},
 ) {
   const data = {
-    status: "pending" as TaskStatus,
+    status: "ready" as TaskStatus,
     title: "Some task title",
     tick: 0,
     selected: false,
@@ -146,7 +146,7 @@ describe("TaskNode — selection (aria-pressed)", () => {
 
 describe("TaskNode — tone ring from nodeStatusMeta", () => {
   it.each<[TaskStatus, string]>([
-    ["pending", "deps-node--tone-neutral"],
+    ["ready", "deps-node--tone-neutral"],
     ["skipped", "deps-node--tone-neutral"],
     ["blocked", "deps-node--tone-neutral"],
     ["paused", "deps-node--tone-blocked"],
@@ -159,7 +159,7 @@ describe("TaskNode — tone ring from nodeStatusMeta", () => {
   });
 
   // Quem espera acende de âmbar por estar na frente de onda — não por "ter dep".
-  it.each<TaskStatus>(["blocked", "pending"])(
+  it.each<TaskStatus>(["blocked", "ready"])(
     "status=%s na frente de onda → âmbar, com o dot rotulado Next",
     (status) => {
       const { getByTestId, container } = renderNode("T-001", { status, onWavefront: true });

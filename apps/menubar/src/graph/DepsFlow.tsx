@@ -141,7 +141,7 @@ export function DepsFlow({ tasks, edges, tick, active, concurrency, selectedTask
     () =>
       geometry.nodes.map((n) => {
         const t = taskById.get(n.id);
-        const status = statusById.get(n.id) ?? "pending";
+        const status = statusById.get(n.id) ?? "ready";
         const measured = measuredRef.current.get(n.id);
         return {
           id: n.id,

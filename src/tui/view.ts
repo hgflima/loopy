@@ -24,7 +24,7 @@ export const SYMBOLS: {
   readonly check: Readonly<Record<CheckStatus, string>>;
 } = {
   task: {
-    pending: "•", blocked: "◦", running: "▶", done: "✔",
+    ready: "•", blocked: "◦", running: "▶", done: "✔",
     escalated: "✖", skipped: "⊘", paused: "⏸",
   },
   step: { pending: "·", running: "→", ok: "✓", failed: "✗" },
@@ -38,7 +38,7 @@ export const COLORS: {
   readonly check: Readonly<Record<CheckStatus, string>>;
 } = {
   task: {
-    pending: "yellow", blocked: "yellow", running: "cyan", done: "green",
+    ready: "yellow", blocked: "yellow", running: "cyan", done: "green",
     escalated: "red", skipped: "gray", paused: "magenta",
   },
   step: { pending: "gray", running: "cyan", ok: "green", failed: "red" },
@@ -352,7 +352,7 @@ export function computeDagreLayout(
 
   // Add nodes — order-first for dagre rank stability, then any edge-only ids
   const addNode = (id: string) => {
-    const w = nodeLabel(id, statusById.get(id) ?? "pending").length;
+    const w = nodeLabel(id, statusById.get(id) ?? "ready").length;
     g.setNode(id, { width: w, height: 1 });
   };
   for (const id of order) if (nodeIds.has(id)) addNode(id);
@@ -577,7 +577,7 @@ export function renderGraph(
   // Paint node labels (colored by status, pulse for running)
   for (const node of geometry.nodes) {
     if (node.row < 0 || node.row >= rows) continue;
-    const status = statusById.get(node.id) ?? "pending";
+    const status = statusById.get(node.id) ?? "ready";
     const label = nodeLabel(node.id, status);
     const color = COLORS.task[status];
     const isRunning = status === "running";

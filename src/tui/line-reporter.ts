@@ -93,7 +93,7 @@ export function createLineReporter(options: LineReporterOptions): LineReporter {
 
       switch (event.type) {
         case "task_registered":
-          print(`${SYMBOLS.task.pending} ${event.taskId} — ${event.title}`);
+          print(`${SYMBOLS.task.ready} ${event.taskId} — ${event.title}`);
           return;
 
         case "task_started":

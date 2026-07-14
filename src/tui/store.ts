@@ -27,10 +27,10 @@ import type { StepType } from "../types";
 // State shape
 // ---------------------------------------------------------------------------
 
-/** Lifecycle of a backlog task in the run. */
+/** Lifecycle of a backlog task in the run. Mirrors `SchedulerTaskStatus`. */
 export type TaskStatus =
-  /** Registered from the backlog, not yet started. */
-  | "pending"
+  /** All deps are `done` (or it has none): startable, not yet started. */
+  | "ready"
   /** Waiting for one or more dependencies to reach `done`. */
   | "blocked"
   /** Its pipeline is in progress. */
@@ -154,8 +154,8 @@ export type StoreEvent =
       readonly type: "task_registered";
       readonly taskId: string;
       readonly title: string;
-      /** Initial status; defaults to `"pending"` when omitted. */
-      readonly status?: "pending" | "blocked";
+      /** Initial status; defaults to `"ready"` when omitted. */
+      readonly status?: "ready" | "blocked";
       /** Task body without the `Deps:` line (C-0010 T-003). */
       readonly description?: string;
       /** Task dependency ids (C-0010 T-003). */
@@ -344,7 +344,7 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
           {
             id: event.taskId,
             title: event.title,
-            status: event.status ?? "pending",
+            status: event.status ?? "ready",
             ...(event.description !== undefined && { description: event.description }),
             ...(event.deps !== undefined && { deps: event.deps }),
             steps: [],
@@ -483,12 +483,12 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
 
 /**
  * Tasks whose dependencies (per `edges`) are **all** `done` and that are either
- * `pending` (no deps) or `blocked` (deps just cleared). A task with no inbound
- * edges in `state.edges` is ready as soon as it is `pending`.
+ * already `ready` (no deps) or `blocked` (deps just cleared). A task with no
+ * inbound edges in `state.edges` is startable as soon as it is `ready`.
  */
 export function readyTasks(state: StoreState): readonly TaskState[] {
   return state.tasks.filter((t) => {
-    if (t.status === "pending") return true;
+    if (t.status === "ready") return true;
     if (t.status !== "blocked") return false;
     // Blocked → ready only when every dep is done.
     return state.edges

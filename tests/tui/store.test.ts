@@ -47,7 +47,7 @@ describe("reduce · task registration", () => {
     );
 
     expect(state.tasks.map((t) => t.id)).toEqual(["T-001", "T-002"]);
-    expect(findTask(state, "T-001").status).toBe("pending");
+    expect(findTask(state, "T-001").status).toBe("ready");
     expect(findTask(state, "T-001").title).toBe("Primeira");
     expect(findTask(state, "T-001").steps).toEqual([]);
     expect(findTask(state, "T-001").stream).toBe("");
@@ -574,7 +574,7 @@ describe("reduce · new task statuses", () => {
       taskId: "T-001",
       title: "raiz",
     });
-    expect(findTask(state, "T-001").status).toBe("pending");
+    expect(findTask(state, "T-001").status).toBe("ready");
   });
 
   it("marks a task as skipped via task_finished", () => {

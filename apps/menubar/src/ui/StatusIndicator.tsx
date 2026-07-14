@@ -31,7 +31,7 @@ interface StatusMeta {
 
 /** Task status → tone + label. Exhaustive over {@link TaskStatus}. */
 export const TASK_STATUS_META: Readonly<Record<TaskStatus, StatusMeta>> = {
-  pending: { label: "Pending", tone: "neutral", hollow: true },
+  ready: { label: "Ready", tone: "neutral", hollow: true },
   blocked: { label: "Blocked", tone: "blocked", hollow: true },
   running: { label: "Running", tone: "running", pulse: true },
   done: { label: "Done", tone: "done" },

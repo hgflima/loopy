@@ -110,7 +110,7 @@ const { CELL_PX_X, CELL_PX_Y, CARD_W, CARD_H, boxesOverlap } = await import("./s
 // Helpers
 // ---------------------------------------------------------------------------
 
-function task(id: string, status: TaskStatus = "pending"): TaskState {
+function task(id: string, status: TaskStatus = "ready"): TaskState {
   return { id, title: id, status, steps: [], stream: "" };
 }
 
@@ -217,7 +217,7 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
   // A→B feeds INTO running → cyan + animated (upstream)
   // B→C entra na frente de onda (C só espera por B) → amber + static
   it("A→B (feeds running) = cyan+animated; B→C (entra na frente) = amber+static", () => {
-    const tasks = [task("A", "done"), task("B", "running"), task("C", "pending")];
+    const tasks = [task("A", "done"), task("B", "running"), task("C", "ready")];
     const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
@@ -236,7 +236,7 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
   // A regressão da tela: a aresta que SAI da running mas cujo destino ainda
   // espera outra dep não é "a próxima" — e portanto fica quieta.
   it("aresta que sai da running para quem ainda espera outra dep = --border", () => {
-    const tasks = [task("A", "running"), task("B", "pending"), task("C", "blocked")];
+    const tasks = [task("A", "running"), task("B", "ready"), task("C", "blocked")];
     // C depende de A (running) e de B (nem começou) → C não é a próxima.
     const edges: [string, string][] = [["A", "C"], ["B", "C"]];
 
@@ -251,7 +251,7 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
   it("edge cujo destino não é a frente nem roda = --border, no class, no animated", () => {
     const tasks = [
       task("A", "done"),
-      task("Z", "pending"),
+      task("Z", "ready"),
       task("B", "blocked"),
       task("C", "running"),
     ];
@@ -268,7 +268,7 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
 
   // D2: tie — both A and B are running, edge A→B resolves to cyan+animated
   it("tie (both ends running) resolves to cyan + animated (D2)", () => {
-    const tasks = [task("A", "running"), task("B", "running"), task("C", "pending")];
+    const tasks = [task("A", "running"), task("B", "running"), task("C", "ready")];
     const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
@@ -283,7 +283,7 @@ describe("DepsFlow — edge direction and flow coloring (D1/D2/D3)", () => {
   // aceso, do mesmo jeito que o card dela (a frente de onda não depende de haver
   // uma running).
   it("sem nenhuma running: nada de ciano; o caminho até a próxima segue âmbar", () => {
-    const tasks = [task("A", "done"), task("B", "pending"), task("C", "pending")];
+    const tasks = [task("A", "done"), task("B", "ready"), task("C", "ready")];
     const edges: [string, string][] = [["A", "B"], ["B", "C"]];
 
     render(<DepsFlow tasks={tasks} edges={edges} tick={0} />);
@@ -333,7 +333,7 @@ describe("DepsFlow — edges entre tasks concluídas (verde)", () => {
   it("done→task que ainda não rodou (e não é a próxima) fica cinza (trecho não andado)", () => {
     // B ainda espera Z além de A → não é a frente de onda; a aresta A→B não é
     // verde (o trecho não foi andado) nem âmbar (não leva à próxima).
-    const tasks = [task("A", "done"), task("Z", "pending"), task("B", "blocked")];
+    const tasks = [task("A", "done"), task("Z", "ready"), task("B", "blocked")];
 
     render(
       <DepsFlow tasks={tasks} edges={[["A", "B"], ["Z", "B"]]} tick={0} />,

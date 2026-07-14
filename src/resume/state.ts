@@ -12,7 +12,7 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { RunState, StepConfig, TaskCheckpoint, TaskStatus } from "../types";
+import type { CheckpointStatus, RunState, StepConfig, TaskCheckpoint } from "../types";
 
 // ---------------------------------------------------------------------------
 // Fingerprint
@@ -87,7 +87,7 @@ export function saveProgressIn(
 export function setStatusIn(
   state: RunState,
   taskId: string,
-  status: TaskStatus,
+  status: CheckpointStatus,
   pipelineHash: string,
 ): RunState {
   const prev = state.tasks[taskId];

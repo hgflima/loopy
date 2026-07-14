@@ -14,7 +14,7 @@ import type { TaskStatus } from "loopy/tui/store";
 import { TASK_STATUS_META, type Tone } from "../ui";
 
 /** Statuses de uma task que ainda não começou e espera a sua vez. */
-const AWAITING: ReadonlySet<TaskStatus> = new Set<TaskStatus>(["pending", "blocked"]);
+const AWAITING: ReadonlySet<TaskStatus> = new Set<TaskStatus>(["ready", "blocked"]);
 
 /** Uma dep está "vencida" quando já terminou ou está terminando agora. */
 function depCleared(status: TaskStatus | undefined): boolean {

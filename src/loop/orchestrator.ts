@@ -1392,7 +1392,7 @@ export async function runLoop(
       type: "task_registered",
       taskId: t.id,
       title: t.title,
-      status: t.deps.length > 0 ? "blocked" : "pending",
+      status: t.deps.length > 0 ? "blocked" : "ready",
       ...(description !== undefined && { description }),
       ...(t.deps.length > 0 && { deps: t.deps }),
     });

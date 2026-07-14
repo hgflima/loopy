@@ -106,7 +106,7 @@ describe("configToStore", () => {
     ];
     const state = configToStore(cfg, tasks);
 
-    expect(state.tasks[0]!.status).toBe("pending");
+    expect(state.tasks[0]!.status).toBe("ready");
     expect(state.tasks[1]!.status).toBe("blocked");
   });
 

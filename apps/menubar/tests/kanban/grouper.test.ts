@@ -67,7 +67,7 @@ describe("groupByStep (kanban grouper)", () => {
   });
 
   describe("card placement", () => {
-    it("pending task → Backlog", () => {
+    it("ready task → Backlog", () => {
       const state = buildState([
         PIPELINE,
         { type: "task_registered", taskId: "T-001", title: "Setup" },
@@ -77,7 +77,7 @@ describe("groupByStep (kanban grouper)", () => {
 
       expect(backlog.cards).toHaveLength(1);
       expect(backlog.cards[0]!.taskId).toBe("T-001");
-      expect(backlog.cards[0]!.status).toBe("pending");
+      expect(backlog.cards[0]!.status).toBe("ready");
     });
 
     it("blocked task → Backlog", () => {

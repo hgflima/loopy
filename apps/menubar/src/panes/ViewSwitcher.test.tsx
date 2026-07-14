@@ -60,7 +60,7 @@ function makeStore(taskIds: string[] = ["T-001"]): StoreState {
     tasks: taskIds.map((id) => ({
       id,
       title: `Task ${id}`,
-      status: "pending" as const,
+      status: "ready" as const,
       steps: [],
       stream: "",
     })),

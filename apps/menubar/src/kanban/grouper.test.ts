@@ -11,7 +11,7 @@ function task(
   title: string,
   overrides: Partial<TaskState> = {},
 ): TaskState {
-  return { id, title, status: "pending", steps: [], stream: "", ...overrides };
+  return { id, title, status: "ready", steps: [], stream: "", ...overrides };
 }
 
 function store(
@@ -56,7 +56,7 @@ describe("groupByStep", () => {
 
   it("places pending tasks in Backlog", () => {
     const s = store(
-      [task("T-001", "A", { status: "pending" })],
+      [task("T-001", "A", { status: "ready" })],
       [{ id: "build", type: "shell" }],
     );
     const cols = groupByStep(s);

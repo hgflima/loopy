@@ -45,7 +45,7 @@ vi.mock("./config/configToStore", () => ({
     tasks: (tasks as Array<{ id: string; title: string; deps: string[] }>).map((t) => ({
       id: t.id,
       title: t.title,
-      status: t.deps.length > 0 ? "blocked" : "pending",
+      status: t.deps.length > 0 ? "blocked" : "ready",
       steps: [],
       stream: "",
       deps: t.deps,
@@ -334,7 +334,7 @@ describe("App — graph selection opens CardDetail (T-007)", () => {
   });
 
   it("selecting a task via onSelectTask opens CardDetail with the correct task", () => {
-    const tasks = [task("T-001", "running", "First task"), task("T-002", "pending", "Second task")];
+    const tasks = [task("T-001", "running", "First task"), task("T-002", "ready", "Second task")];
     const { queryByTestId, rerender } = render(
       <App state={makeBridgeState({ tasks })} onStartRun={vi.fn()} />,
     );

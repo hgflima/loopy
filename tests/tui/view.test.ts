@@ -21,7 +21,7 @@ import type { CheckState, TaskStatus } from "../../src/tui/store";
 
 /** All-pending status map for the given ids. */
 function pendingMap(...ids: string[]): ReadonlyMap<string, TaskStatus> {
-  return new Map(ids.map((id) => [id, "pending" as TaskStatus]));
+  return new Map(ids.map((id) => [id, "ready" as TaskStatus]));
 }
 
 /** Lookup map from a geometry's node list. */
@@ -138,7 +138,7 @@ describe("prefixAgentLines", () => {
 describe("SYMBOLS / COLORS", () => {
   it("covers every task status with a symbol and a color", () => {
     for (const status of [
-      "pending", "blocked", "running", "done",
+      "ready", "blocked", "running", "done",
       "escalated", "skipped", "paused",
     ] as const) {
       expect(SYMBOLS.task[status]).toBeTruthy();
@@ -147,7 +147,7 @@ describe("SYMBOLS / COLORS", () => {
   });
 
   it("maps amarelo=aguardando (pending/blocked yellow)", () => {
-    expect(COLORS.task.pending).toBe("yellow");
+    expect(COLORS.task.ready).toBe("yellow");
     expect(COLORS.task.blocked).toBe("yellow");
   });
 
@@ -167,7 +167,7 @@ describe("SYMBOLS / COLORS", () => {
 
   it("keeps SYMBOLS.task unchanged", () => {
     expect(SYMBOLS.task).toEqual({
-      pending: "•", blocked: "◦", running: "▶", done: "✔",
+      ready: "•", blocked: "◦", running: "▶", done: "✔",
       escalated: "✖", skipped: "⊘", paused: "⏸",
     });
   });
@@ -204,7 +204,7 @@ describe("pulseFrame", () => {
 
 describe("nodeLabel", () => {
   it("formats glyph + space + id", () => {
-    expect(nodeLabel("T-001", "pending")).toBe("• T-001");
+    expect(nodeLabel("T-001", "ready")).toBe("• T-001");
     expect(nodeLabel("A", "running")).toBe("▶ A");
     expect(nodeLabel("X", "done")).toBe("✔ X");
   });
@@ -230,7 +230,7 @@ describe("layoutGraph", () => {
     expect(a.id).toBe("A");
     expect(a.col).toBe(0);
     expect(a.row).toBe(0);
-    expect(a.width).toBe(nodeLabel("A", "pending").length);
+    expect(a.width).toBe(nodeLabel("A", "ready").length);
   });
 
   it("places linear chain A→B→C in successive layers (cols increase)", () => {
@@ -409,18 +409,18 @@ describe("renderGraph", () => {
   }
 
   it("produces rows matching geometry height (or less when clipped)", () => {
-    const { geo, statuses } = twoNodeSetup("pending", "done");
+    const { geo, statuses } = twoNodeSetup("ready", "done");
     const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
     expect(rows.length).toBe(geo.height);
   });
 
   it("colors nodes by task status", () => {
-    const { geo, statuses } = twoNodeSetup("pending", "done");
+    const { geo, statuses } = twoNodeSetup("ready", "done");
     const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
 
-    const aParts = findSpans(rows, SYMBOLS.task.pending);
+    const aParts = findSpans(rows, SYMBOLS.task.ready);
     expect(aParts.length).toBeGreaterThan(0);
-    expect(aParts[0]!.color).toBe(COLORS.task.pending);
+    expect(aParts[0]!.color).toBe(COLORS.task.ready);
 
     const bParts = findSpans(rows, SYMBOLS.task.done);
     expect(bParts.length).toBeGreaterThan(0);
@@ -430,7 +430,7 @@ describe("renderGraph", () => {
   it("applies bold on even tick for running nodes (pulse on)", () => {
     const statuses = new Map<string, TaskStatus>([
       ["A", "running"],
-      ["B", "pending"],
+      ["B", "ready"],
     ]);
     const geo = layoutGraph([["A", "B"]], statuses, ["A", "B"]);
     const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
@@ -444,7 +444,7 @@ describe("renderGraph", () => {
   it("applies dim on odd tick for running nodes (pulse off)", () => {
     const statuses = new Map<string, TaskStatus>([
       ["A", "running"],
-      ["B", "pending"],
+      ["B", "ready"],
     ]);
     const geo = layoutGraph([["A", "B"]], statuses, ["A", "B"]);
     const rows = renderGraph(geo, statuses, 1, { width: 80, height: 24 });
@@ -456,7 +456,7 @@ describe("renderGraph", () => {
   });
 
   it("renders edges as dim spans", () => {
-    const { geo, statuses } = twoNodeSetup("pending", "pending");
+    const { geo, statuses } = twoNodeSetup("ready", "ready");
     const rows = renderGraph(geo, statuses, 0, { width: 80, height: 24 });
 
     // At least one dim span should exist (the edge)
@@ -465,7 +465,7 @@ describe("renderGraph", () => {
   });
 
   it("clips output to panel size", () => {
-    const { geo, statuses } = twoNodeSetup("pending", "pending");
+    const { geo, statuses } = twoNodeSetup("ready", "ready");
     const tiny = { width: 5, height: 1 };
     const rows = renderGraph(geo, statuses, 0, tiny);
     expect(rows.length).toBeLessThanOrEqual(tiny.height);
@@ -476,7 +476,7 @@ describe("renderGraph", () => {
   });
 
   it("returns empty array when panel has zero size", () => {
-    const { geo, statuses } = twoNodeSetup("pending", "pending");
+    const { geo, statuses } = twoNodeSetup("ready", "ready");
     expect(renderGraph(geo, statuses, 0, { width: 0, height: 0 })).toEqual([]);
   });
 
@@ -583,7 +583,7 @@ describe("computeDagreLayout", () => {
 
   it("is pure — no side effects on inputs", () => {
     const edges: [string, string][] = [["A", "B"]];
-    const statuses = new Map<string, TaskStatus>([["A", "pending"], ["B", "done"]]);
+    const statuses = new Map<string, TaskStatus>([["A", "ready"], ["B", "done"]]);
     const order = ["A", "B"];
 
     const edgesCopy = [...edges];

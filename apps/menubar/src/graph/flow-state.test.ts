@@ -62,7 +62,7 @@ describe("wavefront", () => {
   });
 
   it("task sem deps é frente de onda enquanto pendente", () => {
-    const front = wavefront(statuses({ A: "pending", B: "pending" }), []);
+    const front = wavefront(statuses({ A: "ready", B: "ready" }), []);
     expect([...front].sort()).toEqual(["A", "B"]);
   });
 
@@ -89,10 +89,10 @@ describe("wavefront", () => {
   // é o que impede um backlog linear de acender inteiro.
   it("backlog sem deps: o teto corta a frente às primeiras N do backlog", () => {
     const backlog = statuses({
-      "T-001": "pending",
-      "T-002": "pending",
-      "T-003": "pending",
-      "T-004": "pending",
+      "T-001": "ready",
+      "T-002": "ready",
+      "T-003": "ready",
+      "T-004": "ready",
     });
 
     expect([...wavefront(backlog, [], 1)]).toEqual(["T-001"]);
@@ -104,8 +104,8 @@ describe("wavefront", () => {
       statuses({
         "T-001": "done",
         "T-002": "running",
-        "T-003": "pending",
-        "T-004": "pending",
+        "T-003": "ready",
+        "T-004": "ready",
       }),
       [],
       2,
@@ -128,7 +128,7 @@ describe("wavefront", () => {
   });
 
   it("sem teto (omitido) não corta — melhor acender demais que apagar a próxima", () => {
-    const front = wavefront(statuses({ A: "pending", B: "pending", C: "pending" }), []);
+    const front = wavefront(statuses({ A: "ready", B: "ready", C: "ready" }), []);
     expect(front.size).toBe(3);
   });
 });
@@ -139,7 +139,7 @@ describe("wavefront", () => {
 
 describe("nodeStatusMeta", () => {
   it("espera na frente de onda → âmbar, rotulada Next", () => {
-    for (const status of ["blocked", "pending"] as const) {
+    for (const status of ["blocked", "ready"] as const) {
       expect(nodeStatusMeta(status, true)).toEqual({
         tone: "blocked",
         label: "Next",
@@ -154,9 +154,9 @@ describe("nodeStatusMeta", () => {
       label: "Blocked",
       hollow: true,
     });
-    expect(nodeStatusMeta("pending", false)).toEqual({
+    expect(nodeStatusMeta("ready", false)).toEqual({
       tone: "neutral",
-      label: "Pending",
+      label: "Ready",
       hollow: true,
     });
   });
@@ -204,7 +204,7 @@ describe("edgeFlow", () => {
   });
 
   it("longe de tudo → null (o grafo fica quieto)", () => {
-    const s = statuses({ A: "pending", B: "blocked" });
+    const s = statuses({ A: "ready", B: "blocked" });
     expect(edgeFlow("A", "B", s, new Set())).toBeNull();
   });
 

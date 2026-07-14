@@ -97,7 +97,7 @@ function runningState(
       makeTask(`T-R${i}`, "running"),
     ),
     ...Array.from({ length: pending }, (_, i) =>
-      makeTask(`T-P${i}`, "pending"),
+      makeTask(`T-P${i}`, "ready"),
     ),
   ];
   const pendingApprovals = Array.from({ length: warnings }, (_, i) => ({

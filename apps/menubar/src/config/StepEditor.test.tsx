@@ -50,7 +50,7 @@ function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
   };
 }
 
-function task(id: string, title: string, status: TaskState["status"] = "pending"): TaskState {
+function task(id: string, title: string, status: TaskState["status"] = "ready"): TaskState {
   return { id, title, status, steps: [], stream: "" };
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { TaskState } from "loopy/tui/store";
+import type { StepState, TaskState } from "loopy/tui/store";
 import { failedStepId } from "./failed-step";
 
 // ---------------------------------------------------------------------------
@@ -17,7 +17,7 @@ function task(
     steps: steps.map((s) => ({
       id: s.id,
       type: "agent" as const,
-      status: s.status as "pending",
+      status: s.status as StepState["status"],
       checks: [],
     })),
     stream: "",
@@ -55,7 +55,7 @@ describe("failedStepId", () => {
   });
 
   it("returns undefined for a pending task with no steps", () => {
-    const t = task("pending");
+    const t = task("ready");
     expect(failedStepId(t)).toBeUndefined();
   });
 

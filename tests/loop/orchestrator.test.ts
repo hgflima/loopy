@@ -1187,7 +1187,7 @@ describe("emit seam (C-0007 T-004)", () => {
       type: "task_registered",
       taskId: "A",
       title: "Task A",
-      status: "pending",
+      status: "ready",
     });
     // task_started
     expect(events[3]).toEqual({ type: "task_started", taskId: "A" });
@@ -1242,8 +1242,8 @@ describe("emit seam (C-0007 T-004)", () => {
       Extract<StoreEvent, { type: "task_registered" }>
     >;
     expect(registrations).toEqual([
-      { type: "task_registered", taskId: "A", title: "Task A", status: "pending" },
-      { type: "task_registered", taskId: "B", title: "Task B", status: "pending" },
+      { type: "task_registered", taskId: "A", title: "Task A", status: "ready" },
+      { type: "task_registered", taskId: "B", title: "Task B", status: "ready" },
       { type: "task_registered", taskId: "C", title: "Task C", status: "blocked", deps: ["A"] },
     ]);
 

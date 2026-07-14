@@ -171,7 +171,7 @@ export function CardDetail({
           <section className="card-detail__deps">
             {deps.map((depId) => {
               const depTask = tasks.find((t) => t.id === depId);
-              const status: TaskStatus = depTask?.status ?? "pending";
+              const status: TaskStatus = depTask?.status ?? "ready";
               return (
                 <span key={depId} className="card-detail__dep-chip">
                   <TaskStatusDot status={status} />

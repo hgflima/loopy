@@ -17,7 +17,7 @@ Uma execução completa do motor, do início ao esvaziamento do backlog (ou para
 _Avoid_: execução, sessão, invocação. (Reserve "Run" para a execução inteira; o campo `run:` de um Step é config, não este conceito.)
 
 **Loop externo**:
-O laço que itera as Tasks do Backlog em ordem, aplicando o Pipeline a cada uma. Seu contador é a Iteração.
+O laço que consome as Tasks do Backlog, aplicando o Pipeline a cada uma. Desde o ADR-0004 **não** itera "em ordem": quem escolhe as próximas é o **Scheduler** (o *ready set* sob Concorrência), usando a ordem do Backlog só como desempate. Seu contador de runtime é `max_iterations` ("Tasks iniciadas") — **não** a var `${iteration}`, que é índice estável e não contador (ver _Iteração_).
 _Avoid_: loop principal, outer loop
 
 **Loop interno**:
@@ -194,6 +194,19 @@ _Avoid_: execução (ambíguo com Run), iteração (é o contador do Loop extern
 A política aplicada quando a Ação em falha de um Step é `escalate` (ou quando `max_step_visits` é excedido): `pause`, `skip_task` ou `abort_loop`, tipicamente preservando o Worktree. `escalate` é o sinal que o Step levanta; Escalonamento é o que a política faz com ele.
 _Avoid_: falha, erro (para a política)
 
+**Status de checkpoint** (`CheckpointStatus`, persistido em `.loopy/state.json`):
+O vocabulário **da persistência** — deliberadamente mais estreito que o status de Run (Ready/Blocked/Running/Done/Escalated/Skipped/Paused), porque só codifica o que o resume precisa decidir: `running` (interrompida no meio — crash/kill; retomável), `paused` (Escalonamento `pause`; retomável) e **`aborted`** (Escalonamento `abort_loop`; **não** retomável sem `allowAborted`).
+
+**`aborted` não é sinônimo de Escalated.** Escalated (nível de Run) cobre `abort_loop` **e** `skip_task`; `aborted` (nível de checkpoint) cobre **só** `abort_loop` — `skip_task` **abandona** o checkpoint em vez de gravar status. É essa distinção que decide se o resume retoma, então não a colapse. Mapa canônico:
+
+| Escalonamento | status de Run | checkpoint |
+| --- | --- | --- |
+| `pause` | `paused` | `paused` |
+| `abort_loop` | `escalated` | `aborted` |
+| `skip_task` | `escalated` | *(abandonado)* |
+
+_Avoid_: renomear `aborted` (o valor está gravado no disco dos projetos-alvo — trocá-lo é breaking change de estado persistido); e não chame o tipo de `TaskStatus` (esse nome é o status de Run, na store).
+
 **Program counter** (PC):
 O índice corrente no Pipeline durante a execução de uma Task. O motor mantém um `Map<id, índice>` e avança o PC conforme o resultado de cada Step: sucesso sem `on_success` → `PC += 1`; Desvio → `PC = stepIndex[goto]`; `PC` além do último Step → terminal sucesso; falha com `escalate` → terminal escalate. Substituiu o `for...of` linear (ADR-0002).
 _Avoid_: cursor, ponteiro
@@ -224,8 +237,8 @@ Componente puro (AD-6) que, dado o Grafo e o mapa de status, computa o **conjunt
 _Avoid_: orquestrador (é o módulo do Loop externo), planner (é o do `--dry-run`)
 
 **Ready / Pronta**:
-Task cujas Deps estão **todas** `done`. Desempate entre Prontas = ordem do Backlog.
-_Avoid_: disponível, livre
+Task cujas Deps estão **todas** `done` (ou que não tem Deps): startável, ainda não iniciada. Desempate entre Prontas = ordem do Backlog. É `"ready"` em **todo** o código — no `SchedulerTaskStatus`, na store da TUI e na GUI.
+_Avoid_: disponível, livre, **`pending`/pendente** — "pendente" é a Task sem `- [x]` no Backlog (o `pending_marker`), o que inclui Blocked e Running; usar a palavra para o status estreitaria o sentido e colidiria com o checkbox. (Era `"pending"` na store até o alinhamento; não regrida.)
 
 **Blocked / Bloqueada**:
 Task com ≥1 Dep não-`done` **e ainda alcançável** (nenhuma Dep falhou). Vira Ready quando a última Dep chega a `done`.
@@ -306,24 +319,24 @@ _Avoid_: usar "change" como conceito do motor — é puramente derivado do path
 O dashboard ao vivo do Run e o seam aditivo que o alimenta. A apresentação é **pura** em `view.ts` (AD-6) e o motor apenas **observa**: emitir um evento jamais altera o loop (AD-1) — `RunLoopResult` é byte-idêntico com e sem os seams. Não confundir estes termos com o cluster de verificação (Check/Verify/Tentativa/Visita) nem com Iteração.
 
 **Dashboard**:
-O layout **fixo** da TUI de execução: quatro Painéis simultâneos (Grafo, Tasks, Stream, Logs), todos vivos, sem foco nem navegação por teclado (a única entrada é o Gate de Aprovação). Distinto do **fallback de linha** (append-only, usado em no-TTY/`--no-tui`).
+O layout **fixo** da TUI de execução: três Painéis simultâneos (Grafo, Tasks, Stream), todos vivos, sem foco nem navegação por teclado (a única entrada é o Gate de Aprovação). Distinto do **fallback de linha** (append-only, usado em no-TTY/`--no-tui`) e da **Native UI** (a GUI, outro renderer do mesmo estado).
 _Avoid_: tela, UI (genérico); "painel" (é o conjunto, não uma região)
 
 **Painel** (_pane_):
-Uma região do Dashboard com um recorte do estado do Run. Exatamente quatro: **Painel de Grafo** (o Grafo de tasks), **Painel de Tasks** (uma linha por Task, glyph+cor por status, step/try/checks quando `running`), **Painel de Stream** (o Stream das Tasks `running`, ~3 mais recentes + contador `+K`) e **Painel de Logs** (tail do Tráfego ACP).
-_Avoid_: janela, aba; "view" (colide com `view.ts`)
+Uma região do Dashboard com um recorte do estado do Run. Exatamente três: **Painel de Grafo** (o Grafo de tasks), **Painel de Tasks** (uma linha por Task, glyph+cor por status, step/try/checks quando `running`) e **Painel de Stream** (o Stream das Tasks `running`, ~3 mais recentes + contador `+K`; preenche a coluna direita inteira). **Não existe Painel de Logs** — o Tráfego ACP não tem view no Dashboard (ver _Tráfego ACP_).
+_Avoid_: janela, aba; "view" (colide com `view.ts`); Painel de Logs / painel ACP (foi removido — não ressuscite o termo)
 
 **Painel de Grafo**:
 A renderização do **Grafo de tasks** (ADR-0004) com layout computado por **dagre** (camadas Sugiyama, `rankdir:LR`): Tasks na mesma camada = candidatas a rodar em paralelo; arestas de dependência via os waypoints do dagre; cada nó colorido por `TaskStatus`; a Task `running` pulsa. Materialização visual do que era só dado em `StoreState.edges`.
 _Avoid_: DAG na tela, diagrama
 
 **GraphGeometry**:
-A saída **pura e renderer-agnóstica** de `layoutGraph`: posição de cada nó (em célula) + os segmentos das arestas (dos `points[]` do dagre), em coordenadas inteiras de célula. É o **artefato durável** que `view.ts` rasteriza para ASCII hoje e que a Native UI reaproveita para desenhar no framebuffer — **toda** a matemática de layout mora aqui.
-_Avoid_: layout (sozinho), coordenadas
+A saída **pura e renderer-agnóstica** de **`computeDagreLayout`** (`layoutGraph` é só um wrapper fino sobre ela): posição de cada nó (em célula) + os segmentos das arestas (dos `points[]` do dagre), em coordenadas inteiras de célula. **Toda** a matemática de layout mora aqui — e a promessa se cumpriu: o renderer Ink a rasteriza para ASCII, e a **Native UI** importa a *mesma* função (subpath export `loopy/tui/view`) e escala célula→pixel para posicionar os nós do React Flow. Um layout, dois renderers.
+_Avoid_: layout (sozinho), coordenadas; `layoutGraph` (é o wrapper — a fonte é `computeDagreLayout`)
 
-**Native UI**:
-A TUI **futura** sobre **OpenTUI** (fora do escopo desta change) que troca o renderer Ink por um framebuffer nativo, reaproveitando `view.ts` + `store` sem carregar Ink. É o motivo de a geometria e o estilo viverem puros em `view.ts` (AD-6).
-_Avoid_: GUI; "TUI nativa" solto (é especificamente OpenTUI)
+**Native UI** (redefinida no C-0009 — ADR-0007):
+O app **GUI de menubar do macOS** (`apps/menubar/`: Tauri v2 + React + React Flow) que roda o motor como subprocesso (`--no-tui --emit-events`) e renderiza o mesmo estado fora do terminal. É o **segundo renderer** do `store` + `computeDagreLayout` (consumidos via subpath export), **não** um substituto do Dashboard Ink — os dois coexistem.
+_Avoid_: **OpenTUI, framebuffer, "TUI nativa"** — a definição anterior (uma TUI futura sobre OpenTUI) está **morta**: OpenTUI nunca entrou no código. A Native UI é uma GUI de janela, então **"GUI" é o termo correto** aqui.
 
 **Pulso** (_pulse_):
 A animação da Task `running`: alternância temporizada da ênfase do glyph no Painel de Grafo/Tasks. Pura em `view.ts` (`pulseFrame(tick)`); o relógio (`setInterval`) vive só no `.tsx`. **Só o Dashboard pulsa** (o fallback de linha, não).
@@ -334,8 +347,8 @@ O texto **legível** do que executa agora: `agent_message_chunk` do Agente (via 
 _Avoid_: output, log; não confundir com Tráfego ACP
 
 **Tráfego ACP** (_ACP traffic_):
-As mensagens JSON-RPC **send/recv** entre motor e Agente (`AcpTrafficEntry { direction, method?, payload }`), exibidas no Painel de Logs. O "por baixo do capô" do protocolo. Novo evento de store **`acp_traffic`**; buffer **bounded** (~200 linhas); captura gated por `--verbose`/`capture_acp_traffic`.
-_Avoid_: mensagens, protocolo; não confundir com Stream
+As mensagens JSON-RPC **send/recv** entre motor e Agente (`AcpTrafficEntry { direction, method?, payload }`). O "por baixo do capô" do protocolo. Evento de store **`acp_traffic`**, acumulado em `StoreState.acpLog` (ring **bounded**, ~200 linhas); captura gated por `--verbose`/`capture_acp_traffic`. **Sem view**: seus consumidores reais são o log de arquivo (`TaskLogger.acp`) e o fallback de linha sob `--verbose` — o `acpLog` vive na store à espera de um consumidor visual.
+_Avoid_: mensagens, protocolo; não confundir com Stream. Não o associe a um "Painel de Logs" (não existe).
 
 **Emit seam** (_porta de progresso_):
 O ponto onde o motor **emite** `StoreEvent`s de progresso. Materializado em **`OrchestratorDeps.emit(event)`** (transições de que o orquestrador é dono: `edges_set`, `task_*`, `step_*`) e **`StepContext.emit?(event)`** (eventos intra-Step: `attempt_started`, `check_started`/`check_finished`, `stream_chunk` do shell). **Aditivo**, no-op por omissão, **puro efeito de observação** — não altera o loop (AD-1) e roda fora da Seção crítica do parent.
