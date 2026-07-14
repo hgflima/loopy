@@ -57,7 +57,7 @@
     "prepublishOnly": "npm run build",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p apps/menubar/tsconfig.json",
-    "menubar": "npm run dev -w apps/menubar",
+    "menubar": "npm run build -w apps/menubar",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
