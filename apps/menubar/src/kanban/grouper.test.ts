@@ -24,6 +24,7 @@ function store(
     acpLog: [],
     activeAgents: new Set<string>(),
     pipeline: pipeline as StoreState["pipeline"],
+    warnings: [],
   };
 }
 
@@ -142,6 +143,44 @@ describe("groupByStep", () => {
     expect(groupByStep(s2).map((c) => c.id)).toEqual([
       "backlog", "test", "build", "fim",
     ]);
+  });
+
+  it("warned card when a step has warned=true", () => {
+    const s = store(
+      [
+        task("T-001", "A", {
+          status: "running",
+          currentStepId: "build",
+          steps: [
+            { id: "build", status: "running", type: "agent", checks: [], warned: true },
+          ] as unknown as TaskState["steps"],
+        }),
+      ],
+      [{ id: "build", type: "agent" }],
+    );
+    const card = groupByStep(s)
+      .find((c) => c.id === "build")!
+      .cards[0]!;
+    expect(card.warned).toBe(true);
+  });
+
+  it("no warned flag when no steps have warned", () => {
+    const s = store(
+      [
+        task("T-001", "A", {
+          status: "running",
+          currentStepId: "build",
+          steps: [
+            { id: "build", status: "running", type: "agent", checks: [] },
+          ] as unknown as TaskState["steps"],
+        }),
+      ],
+      [{ id: "build", type: "agent" }],
+    );
+    const card = groupByStep(s)
+      .find((c) => c.id === "build")!
+      .cards[0]!;
+    expect(card.warned).toBeUndefined();
   });
 
   it("step removed from pipeline loses its column", () => {

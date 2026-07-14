@@ -265,6 +265,11 @@ export function KanbanBoard({
                         @{card.failedAtStepId}
                       </span>
                     )}
+                    {card.warned && (
+                      <span className="kanban-card-warned t-data" title="Warning">
+                        ⚠
+                      </span>
+                    )}
                   </article>
                 );
               })}

@@ -71,6 +71,7 @@ function emptyStore(tasks: ReturnType<typeof makeTask>[] = []) {
     acpLog: [] as const,
     activeAgents: new Set<string>(),
     pipeline: [] as const,
+    warnings: [] as const,
   };
 }
 

@@ -40,6 +40,7 @@ function makeStore(tasks: TaskState[]): StoreState {
     acpLog: [],
     activeAgents: new Set(),
     pipeline: [],
+    warnings: [],
   };
 }
 

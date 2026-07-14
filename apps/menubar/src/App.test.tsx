@@ -57,6 +57,7 @@ vi.mock("./config/configToStore", () => ({
       { id: "impl", type: "agent" },
       { id: "checks", type: "checks" },
     ],
+    warnings: [],
   }),
 }));
 
@@ -108,6 +109,7 @@ function makeBridgeState(overrides?: {
       acpLog: [],
       activeAgents: new Set(),
       pipeline: [],
+      warnings: [],
     },
     ui: {
       runStatus: overrides?.runStatus ?? "running",
