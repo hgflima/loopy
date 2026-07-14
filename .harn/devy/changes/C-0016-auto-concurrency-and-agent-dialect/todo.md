@@ -312,7 +312,7 @@
     Files: src/index.ts, src/loop/orchestrator.ts, tests/integration/eager-capability-validation.test.ts, tests/cli/dry-run.test.ts
     Scope: M
 
-- [ ] T-010: GUI — ponte de sondagem + `StepEditor` com selects sondados (D26/D30/D31)
+- [x] T-010: GUI — ponte de sondagem + `StepEditor` com selects sondados (D26/D30/D31)
     A ponte: a GUI precisa **rodar o `probe-agent`**. Reusar o mesmo caminho do sidecar (`externalBin`
     do Tauri) com args `probe-agent <nome> --json -c <path>`, coletando stdout — **um comando Tauri
     novo** (`probe_agent`) ou a mesma mecânica de spawn do motor, o que for menor. ⚠️ Se tocar
