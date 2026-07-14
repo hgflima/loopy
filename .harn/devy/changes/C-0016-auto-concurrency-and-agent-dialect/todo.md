@@ -365,7 +365,7 @@
 
 ## Fase 5 — `ConfigPane` completo (T-011)
 
-- [ ] T-011: `ConfigPane` — presets de `command` + botão sondar/refresh (D27/D32)
+- [x] T-011: `ConfigPane` — presets de `command` + botão sondar/refresh (D27/D32)
     `apps/menubar/src/config/ConfigPane.tsx`, seção do Registry (`AgentEntry`, `:100-145`):
     - **"Adicionar agente"** oferece **Claude / Codex / OpenCode / Em branco**, preenchendo o
       `command`. Existe por causa do **OpenCode**: `["opencode", "acp"]` é **subcomando do binário**,
