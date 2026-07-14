@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { writeCache } from "../../src/acp/capabilities-cache";
+import type { AgentCapabilities } from "../../src/acp/capabilities";
 import { run } from "../../src/index";
 import { loadConfig } from "../../src/config/load";
 import {
@@ -584,5 +586,103 @@ describe("dry-run — concurrency auto (T-002)", () => {
     // Must print just the number, no "(auto" annotation
     expect(cap.stdout()).toContain("concorrência efetiva: 3");
     expect(cap.stdout()).not.toContain("(auto");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T-009 (D37): dry-run validates via cache
+// ---------------------------------------------------------------------------
+
+/** Build a temp project and seed the capability cache. */
+function dagFixtureWithCache(
+  todoLines: string[],
+  caps: AgentCapabilities | null,
+) {
+  const dir = dagFixture(todoLines);
+  if (caps) {
+    // The fixture uses `acp.command` → agent "default" with command from the yml.
+    const config = loadConfig(join(dir, "loopy.yml"));
+    const agentDef = config.resolvedAgents.byName["default"]!;
+    writeCache(dir, agentDef.command, caps);
+  }
+  return dir;
+}
+
+describe("dry-run — capability validation from cache (T-009 D37)", () => {
+  it("with valid cache → reports ✓ per step and exits 0", async () => {
+    const caps: AgentCapabilities = {
+      modes: ["acceptEdits", "plan"],
+      models: [],
+      efforts: [],
+    };
+    const dir = dagFixtureWithCache(DAG_TODO, caps);
+    const cap = capture();
+    const code = await run([dir, "--dry-run"], cap.io);
+
+    expect(code).toBe(0);
+    const out = cap.stdout();
+    expect(out).toContain("capabilities (cache):");
+    expect(out).toContain("✓");
+    expect(out).toContain("mode 'acceptEdits' ok");
+    expect(out).toContain("mode 'plan' ok");
+  });
+
+  it("with cache that reproves a mode → reports ✗ and exits ≠ 0", async () => {
+    // Only 'acceptEdits' accepted — 'plan' (used by audit step) will fail.
+    const caps: AgentCapabilities = {
+      modes: ["acceptEdits"],
+      models: [],
+      efforts: [],
+    };
+    const dir = dagFixtureWithCache(DAG_TODO, caps);
+    const cap = capture();
+    const code = await run([dir, "--dry-run"], cap.io);
+
+    expect(code).not.toBe(0);
+    const out = cap.stdout();
+    expect(out).toContain("✗");
+    expect(out).toContain("mode 'plan'");
+    expect(out).toContain("aceita: acceptEdits");
+  });
+
+  it("without cache → 'não verificadas' and exits 0", async () => {
+    const dir = dagFixtureWithCache(DAG_TODO, null);
+    const cap = capture();
+    const code = await run([dir, "--dry-run"], cap.io);
+
+    expect(code).toBe(0);
+    const out = cap.stdout();
+    expect(out).toContain("capabilities: não verificadas");
+    expect(out).toContain("loopy probe-agent");
+  });
+
+  it("without cache → never pretends to have checked", async () => {
+    const dir = dagFixtureWithCache(DAG_TODO, null);
+    const cap = capture();
+    await run([dir, "--dry-run"], cap.io);
+    const out = cap.stdout();
+
+    // Must NOT contain ✓ or ✗ — only the "não verificadas" line.
+    expect(out).not.toContain("✓");
+    expect(out).not.toContain("✗");
+  });
+
+  it("does not spawn any process — dry-run stays zero-process (D23)", async () => {
+    const caps: AgentCapabilities = {
+      modes: ["acceptEdits", "plan"],
+      models: [],
+      efforts: [],
+    };
+    const dir = dagFixtureWithCache(DAG_TODO, caps);
+    const configFp = fingerprint(join(dir, "loopy.yml"));
+    const todoFp = fingerprint(join(dir, "tasks/todo.md"));
+
+    await run([dir, "--dry-run"], capture().io);
+
+    // Prove no writes happened (same as the existing SC8 test).
+    expect(fingerprint(join(dir, "loopy.yml"))).toEqual(configFp);
+    expect(fingerprint(join(dir, "tasks/todo.md"))).toEqual(todoFp);
+    expect(existsSync(join(dir, ".worktrees"))).toBe(false);
+    expect(existsSync(join(dir, ".git"))).toBe(false);
   });
 });
