@@ -11,6 +11,7 @@
  * é derivado das arestas + status, nunca do status sozinho.
  */
 import type { TaskStatus } from "loopy/tui/store";
+import { resolveConcurrency } from "loopy/scheduler";
 import { TASK_STATUS_META, type Tone } from "../ui";
 
 /** Statuses de uma task que ainda não começou e espera a sua vez. */
@@ -116,4 +117,36 @@ export function edgeFlow(
   if (front.has(to)) return "next";
   if (source === "done" && target === "done") return "done";
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// resolveWavefrontLimit — resolve `concurrency` para o `limit` de `wavefront`
+// ---------------------------------------------------------------------------
+
+/** Default cap for `"auto"` when `maxConcurrency` is not specified (D6). */
+const DEFAULT_MAX_CONCURRENCY = 4;
+
+/**
+ * Resolve `concurrency` (que pode ser `number | "auto" | undefined`) para o
+ * `limit: number` que `wavefront` espera.
+ *
+ * - `number` → usado como está (D17 — o operador escolheu, o motor obedece).
+ * - `"auto"` → delega para `resolveConcurrency` do motor, montando um
+ *   `TaskGraph` a partir dos `nodes`/`edges` que o grafo já tem em mãos.
+ * - `undefined` → `Infinity` (o fallback seguro de hoje: não corta).
+ */
+export function resolveWavefrontLimit(
+  concurrency: number | "auto" | undefined,
+  maxConcurrency: number | undefined,
+  nodes: readonly string[],
+  edges: readonly (readonly [string, string])[],
+): number {
+  if (concurrency === undefined) return Infinity;
+  if (typeof concurrency === "number") return concurrency;
+  // "auto" — delegate to the engine's resolveConcurrency
+  return resolveConcurrency({
+    declared: "auto",
+    maxConcurrency: maxConcurrency ?? DEFAULT_MAX_CONCURRENCY,
+    graph: { nodes, edges },
+  }).value;
 }

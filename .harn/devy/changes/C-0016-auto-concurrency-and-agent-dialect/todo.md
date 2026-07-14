@@ -198,7 +198,7 @@
 
 ## Fase 3 — As superfícies (T-003 ∥ T-004 ∥ T-008)
 
-- [ ] T-003: `ConfigPane` — toggle `auto` + campo `max_concurrency` (D7/D11)
+- [x] T-003: `ConfigPane` — toggle `auto` + campo `max_concurrency` (D7/D11)
     `apps/menubar/src/config/ConfigPane.tsx`, seção `concurrency` (`:330-343`): o `NumberField` de
     hoje é `number`-only e **não** representa `"auto"`. Adicionar um `ToggleField` **"auto (derivar
     do DAG)"**: ligado ⇒ o `NumberField` de `concurrency` **some** (o valor no draft é a string
@@ -220,7 +220,7 @@
     Files: apps/menubar/src/config/ConfigPane.tsx, apps/menubar/src/config/ConfigPane.test.tsx
     Scope: S
 
-- [ ] T-004: `DepsFlow` — a frente de onda resolve o `auto` com a MESMA função do motor (D7/D12)
+- [x] T-004: `DepsFlow` — a frente de onda resolve o `auto` com a MESMA função do motor (D7/D12)
     **O bug latente**: `wavefront(statusById, edges, limit)` (`flow-state.ts:37`, corte em `:51`)
     recebe hoje o `concurrency` **cru do draft** (`App.tsx:422` → `ViewSwitcher` → `DepsFlow.tsx:88`).
     Com `concurrency: "auto"`, `front.size >= "auto"` é **sempre `false`** ⇒ o corte **desaparece em
