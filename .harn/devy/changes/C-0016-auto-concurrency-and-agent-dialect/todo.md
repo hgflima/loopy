@@ -280,7 +280,7 @@
 
 ## Fase 4 — Fail-fast e a GUI que sabe (T-009 ∥ T-010 ∥ T-012)
 
-- [ ] T-009: validação **eager** no início do Run + dry-run que valida pelo cache (D36/D37/D23)
+- [x] T-009: validação **eager** no início do Run + dry-run que valida pelo cache (D36/D37/D23)
     **Sem isto, a validação do T-006 chega tarde demais para ser útil** (estouraria na 3ª task, meia
     hora depois). `src/index.ts`, `defaultRunLive` (`:335-512`): logo após o
     `createAgentProcessPool` (`:405-447`) — que já é eager e fail-fast (`pool.ts:81`) — para **cada
@@ -312,7 +312,7 @@
     Files: src/index.ts, src/loop/orchestrator.ts, tests/integration/eager-capability-validation.test.ts, tests/cli/dry-run.test.ts
     Scope: M
 
-- [ ] T-010: GUI — ponte de sondagem + `StepEditor` com selects sondados (D26/D30/D31)
+- [x] T-010: GUI — ponte de sondagem + `StepEditor` com selects sondados (D26/D30/D31)
     A ponte: a GUI precisa **rodar o `probe-agent`**. Reusar o mesmo caminho do sidecar (`externalBin`
     do Tauri) com args `probe-agent <nome> --json -c <path>`, coletando stdout — **um comando Tauri
     novo** (`probe_agent`) ou a mesma mecânica de spawn do motor, o que for menor. ⚠️ Se tocar

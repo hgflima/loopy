@@ -28,7 +28,7 @@ import { Command, CommanderError, InvalidArgumentError } from "commander";
 import pkg from "../package.json" with { type: "json" };
 import { openAgent, type AgentHandle } from "./acp/agent";
 import type { AgentCapabilities } from "./acp/capabilities";
-import { writeCache } from "./acp/capabilities-cache";
+import { readCache, writeCache } from "./acp/capabilities-cache";
 import { buildSession } from "./acp/session";
 import { acpTrafficSummary, agentChunkText, usageUpdateUsed } from "./acp/client";
 import {
@@ -65,6 +65,7 @@ import {
   deriveChange,
   formatDryRunPlan,
   planDryRun,
+  resolveAgentBinding,
   runLoop,
   worktreePathFor,
   type OrchestratorDeps,
@@ -92,8 +93,10 @@ import type {
   ChecksRunnerPort,
   LoggerPort,
   LoopyConfig,
+  ResolvedAgents,
   RunFlags,
   RunState,
+  StepConfig,
   Task,
 } from "./types";
 
@@ -244,6 +247,146 @@ function toFlags(opts: Record<string, unknown>): RunFlags {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Capability validation (pure — shared by eager + dry-run, T-009 D36/D37)
+// ---------------------------------------------------------------------------
+
+type CheckStatus = "pass" | "fail" | "unknown";
+
+/** A single capability check result against an agent's announced capabilities. */
+export interface CapabilityCheck {
+  readonly stepId: string;
+  readonly agentName: string;
+  readonly field: "mode" | "model" | "effort";
+  readonly value: string;
+  readonly accepted: readonly string[];
+  readonly status: CheckStatus;
+}
+
+/** Result of validating pipeline steps against agent capabilities. */
+export interface CapabilityValidation {
+  /** Mode mismatches — fatal, abort the Run. */
+  readonly errors: readonly CapabilityCheck[];
+  /** Model/effort mismatches — warn only, do not abort. */
+  readonly warnings: readonly CapabilityCheck[];
+}
+
+/**
+ * Walk every `agent` step and classify each mode/model/effort against the
+ * capabilities map. Pure (AD-6) — no I/O.
+ *
+ * - `mode`: always checked (unknown when agent doesn't announce).
+ * - `model`/`effort`: checked only when the agent announces that category.
+ */
+function checkPipelineCapabilities(
+  pipeline: readonly StepConfig[],
+  resolvedAgents: ResolvedAgents,
+  capsByAgent: ReadonlyMap<string, AgentCapabilities>,
+): CapabilityCheck[] {
+  const results: CapabilityCheck[] = [];
+  for (const step of pipeline) {
+    if (step.type !== "agent") continue;
+    const binding = resolveAgentBinding(step, resolvedAgents);
+    const caps = capsByAgent.get(binding.agentName);
+    if (!caps) continue;
+
+    const classify = (
+      field: CapabilityCheck["field"],
+      value: string | undefined,
+      accepted: readonly string[],
+    ): void => {
+      if (!value) return;
+      const status: CheckStatus =
+        accepted.length === 0 ? "unknown" : accepted.includes(value) ? "pass" : "fail";
+      results.push({ stepId: step.id, agentName: binding.agentName, field, value, accepted, status });
+    };
+
+    classify("mode", step.mode, caps.modes);
+    if (caps.models.length > 0) classify("model", binding.model, caps.models);
+    if (caps.efforts.length > 0) classify("effort", binding.effort, caps.efforts);
+  }
+  return results;
+}
+
+/**
+ * Validate every `agent` step's mode/model/effort. Pure (AD-6).
+ * Mode mismatch → error (abort). Model/effort mismatch → warning (best-effort).
+ */
+export function validatePipelineCapabilities(
+  pipeline: readonly StepConfig[],
+  resolvedAgents: ResolvedAgents,
+  capsByAgent: ReadonlyMap<string, AgentCapabilities>,
+): CapabilityValidation {
+  const all = checkPipelineCapabilities(pipeline, resolvedAgents, capsByAgent);
+  return {
+    errors: all.filter((c) => c.field === "mode" && c.status === "fail"),
+    warnings: all.filter((c) => c.field !== "mode" && c.status === "fail"),
+  };
+}
+
+/** Format a diagnostic for the eager path (warning/error messages). */
+function formatDiagnosticLine(d: CapabilityCheck): string {
+  return `${d.stepId}: ${d.field} '${d.value}' não é aceito por '${d.agentName}' (aceita: ${d.accepted.join(", ")})`;
+}
+
+/** Format a single capability check as a ✓/✗/? display line for dry-run. */
+function formatCheckLine(c: CapabilityCheck): string {
+  const icon = c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "?";
+  const prefix = `  ${icon} ${c.stepId}: ${c.field} '${c.value}'`;
+
+  if (c.status === "pass") return `${prefix} ok (${c.agentName})`;
+  if (c.status === "unknown") return `${prefix} — ${c.agentName} não anuncia ${c.field}s`;
+
+  if (c.field === "mode") {
+    return `${prefix} não é aceito por '${c.agentName}' (aceita: ${c.accepted.join(", ")})`;
+  }
+  const items =
+    c.field === "model" && c.accepted.length > 5
+      ? `${c.accepted.slice(0, 5).join(", ")}, …`
+      : c.accepted.join(", ");
+  return `${prefix} não encontrado em '${c.agentName}' (disponíveis: ${items})`;
+}
+
+/** Build ✓/✗ report for `--dry-run` using cached capabilities. */
+function formatCapabilityReport(
+  pipeline: readonly StepConfig[],
+  resolvedAgents: ResolvedAgents,
+  capsByAgent: ReadonlyMap<string, AgentCapabilities>,
+): { lines: string[]; hasErrors: boolean } {
+  const all = checkPipelineCapabilities(pipeline, resolvedAgents, capsByAgent);
+  return {
+    lines: all.map(formatCheckLine),
+    hasErrors: all.some((c) => c.field === "mode" && c.status === "fail"),
+  };
+}
+
+/**
+ * Load cached capabilities for all referenced agents. Returns `null` when the
+ * cache file is absent or has no entries for referenced agents.
+ */
+function loadCachedCapabilities(
+  config: LoopyConfig,
+  cacheRoot: string,
+): Map<string, AgentCapabilities> | null {
+  const cache = readCache(cacheRoot);
+  if (Object.keys(cache).length === 0) return null;
+
+  const refs = referencedAgents(config.pipeline, config.resolvedAgents.default);
+  const result = new Map<string, AgentCapabilities>();
+
+  for (const name of refs) {
+    const def = config.resolvedAgents.byName[name];
+    if (!def) continue;
+    const key = def.command.join(" ");
+    const entry = cache[key];
+    if (entry) {
+      result.set(name, entry.capabilities);
+    }
+  }
+
+  return result.size > 0 ? result : null;
+}
+
 /** Print the resolved pipeline for the pending tasks. No side effects. */
 function printDryRun(
   config: LoopyConfig,
@@ -271,7 +414,29 @@ function printDryRun(
   }
 
   io.out(`${formatDryRunPlan(plan)}\n`);
-  return 0;
+
+  // --- T-009 (D37): dry-run validates via cache — zero process, by contract. ---
+  const cacheRoot = dirname(paths.configPath);
+  const cached = loadCachedCapabilities(config, cacheRoot);
+
+  if (!cached) {
+    io.out("\ncapabilities: não verificadas (rode 'loopy probe-agent')\n");
+    return 0;
+  }
+
+  const report = formatCapabilityReport(
+    config.pipeline,
+    config.resolvedAgents,
+    cached,
+  );
+
+  if (report.lines.length > 0) {
+    io.out(`\ncapabilities (cache):\n${report.lines.join("\n")}\n`);
+  }
+
+  // Mode mismatch against cache → exit ≠ 0 (cache may be stale — the eager
+  // validation against the live adapter is the authority).
+  return report.hasErrors ? 1 : 0;
 }
 
 /** `.gitignore` lines for a first-run init, derived from config (AD-1). */
@@ -461,6 +626,43 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
       ui.dispatch({ type: "warning", message });
     },
   );
+
+  // --- T-009 (D36): eager capability validation — before any worktree. ---
+  // Open a disposable session per referenced agent on workspace.root, read
+  // capabilities, cache them (T-008, free), close, then validate ALL agent
+  // steps. Mode mismatch → abort; effort/model mismatch → warning.
+  const capsByAgent = new Map<string, AgentCapabilities>();
+  for (const name of refs) {
+    const session = await pool.session(name, root);
+    capsByAgent.set(name, session.capabilities);
+
+    const def = config.resolvedAgents.byName[name]!;
+    writeCache(dirname(args.configPath), def.command, session.capabilities);
+
+    pool.closeSession(name, root);
+  }
+
+  const validation = validatePipelineCapabilities(
+    config.pipeline,
+    config.resolvedAgents,
+    capsByAgent,
+  );
+
+  // Emit warnings for best-effort fields (model/effort).
+  for (const w of validation.warnings) {
+    const msg = `[capabilities] warning: ${formatDiagnosticLine(w)}`;
+    ui.dispatch({ type: "warning", message: msg });
+    logger.debug(msg);
+  }
+
+  // Mode errors are fatal — abort the Run with a grouped message.
+  if (validation.errors.length > 0) {
+    const lines = validation.errors.map((e) => `  ✗ ${formatDiagnosticLine(e)}`);
+    throw new Error(
+      `validação eager de capabilities falhou:\n${lines.join("\n")}`,
+    );
+  }
+
   const git = createGit({ root });
   const checks: ChecksRunnerPort = {
     run: (list, opts) => runChecks(list, { cwd: resolvePath(root, opts.cwd) }),

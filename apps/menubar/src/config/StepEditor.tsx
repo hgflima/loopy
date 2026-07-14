@@ -18,6 +18,7 @@ import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
 import { migrateStepType } from "./pipeline-edit";
 import { renameStepId } from "./rename";
+import { useAgentCapabilities } from "./useAgentCapabilities";
 import {
   TextField,
   NumberField,
@@ -42,6 +43,8 @@ export interface StepEditorProps {
   onClose: () => void;
   /** Remove this step from the pipeline (idle only, T-012). */
   onRemoveStep?: (stepId: string) => void;
+  /** Project directory — needed for the probe bridge (T-010). */
+  dir?: string;
 }
 
 const STEP_TYPES: readonly StepType[] = ["agent", "shell", "checks", "approval"];
@@ -56,6 +59,7 @@ export function StepEditor({
   stepIds,
   onClose,
   onRemoveStep,
+  dir,
 }: StepEditorProps) {
   const { draft, errors, patch } = configDraft;
   const step = draft?.pipeline[stepIndex] as StepConfig | undefined;
@@ -259,6 +263,9 @@ export function StepEditor({
             step={step}
             patchStep={patchStep}
             fieldError={fieldError}
+            agents={draft?.agents}
+            defaultAgentName={draft?.acp?.default_agent}
+            dir={dir}
           />
         )}
         {step.type === "shell" && (
@@ -314,7 +321,98 @@ interface FieldSectionProps<S> {
   fieldError: (field: string) => string | undefined;
 }
 
-function AgentFields({ step, patchStep, fieldError }: FieldSectionProps<AgentStep>) {
+// ---------------------------------------------------------------------------
+// Agent fields — probed selects for agent/mode/model/effort (T-010)
+// ---------------------------------------------------------------------------
+
+interface AgentFieldsProps extends FieldSectionProps<AgentStep> {
+  agents?: Readonly<Record<string, { command: readonly string[]; model?: string; effort?: string; display_name?: string }>>;
+  defaultAgentName?: string;
+  dir?: string;
+}
+
+/**
+ * Ensure the current value is present in the options list.
+ * If not, prepend it — preserving unknown values that were already in the yml (D31).
+ */
+function ensureOption(
+  options: readonly string[],
+  currentValue: string | undefined,
+): readonly string[] {
+  if (!currentValue || currentValue === "" || options.includes(currentValue)) {
+    return options;
+  }
+  return [currentValue, ...options];
+}
+
+/** Hint for the text-field fallback when the probe isn't "ok" yet. */
+function probeFallbackHint(
+  probeStatus: string,
+  probeReason: string | undefined,
+  defaultHint: string,
+): string {
+  if (probeStatus === "probing") return "Sondando capabilities…";
+  if (probeStatus === "failed") return `Sondagem falhou: ${probeReason ?? "erro desconhecido"}`;
+  return defaultHint;
+}
+
+function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, dir }: AgentFieldsProps) {
+  const agentNames = useMemo(() => Object.keys(agents ?? {}), [agents]);
+  const selectedAgent = step.agent ?? "";
+  const resolvedAgentName = selectedAgent || defaultAgentName || agentNames[0] || "";
+  const agentDef = resolvedAgentName ? agents?.[resolvedAgentName] : undefined;
+
+  // Probe capabilities for the selected agent
+  const { status: probeStatus, caps, reason: probeReason, probe } = useAgentCapabilities(
+    resolvedAgentName || undefined,
+    agentDef?.command,
+    dir,
+  );
+
+  // Agent select: closed, keys from registry + "" for default (D26)
+  const agentOptions = useMemo(() => ["", ...agentNames], [agentNames]);
+  const renderAgentOption = useCallback(
+    (opt: string) => {
+      if (opt === "") {
+        const name = defaultAgentName || agentNames[0];
+        return name ? `(default: ${name})` : "(default)";
+      }
+      return opt;
+    },
+    [defaultAgentName, agentNames],
+  );
+
+  // Mode/model/effort select options — include current value if unknown (D31)
+  const modeOptions = useMemo(() => {
+    if (probeStatus !== "ok" || !caps) return [];
+    return ensureOption(["", ...caps.modes], step.mode ?? "");
+  }, [probeStatus, caps, step.mode]);
+
+  const modelOptions = useMemo(() => {
+    if (probeStatus !== "ok" || !caps) return [];
+    return ensureOption(["", ...caps.models], step.model ?? "");
+  }, [probeStatus, caps, step.model]);
+
+  const effortOptions = useMemo(() => {
+    if (probeStatus !== "ok" || !caps) return [];
+    return ensureOption(["", ...caps.efforts], step.effort ?? "");
+  }, [probeStatus, caps, step.effort]);
+
+  const renderCapOption = useCallback(
+    (knownValues: readonly string[]) => (opt: string) => {
+      if (opt === "") return "(nenhum)";
+      if (!knownValues.includes(opt)) return `${opt} (desconhecido)`;
+      return opt;
+    },
+    [],
+  );
+
+  // Effort disabled when agent doesn't announce it
+  const effortDisabled = probeStatus === "ok" && caps?.efforts.length === 0;
+
+  // Fallback to text field when probe failed or still probing
+  const useSelects = probeStatus === "ok" && caps != null;
+
   return (
     <fieldset className="step-editor__section">
       <legend className="step-editor__legend">Agent</legend>
@@ -330,39 +428,103 @@ function AgentFields({ step, patchStep, fieldError }: FieldSectionProps<AgentSte
         onChange={(v) => patchStep("retry_prompt", v || undefined)}
         error={fieldError("retry_prompt")}
       />
-      <TextField
-        label="mode"
-        value={step.mode ?? ""}
-        onChange={(v) => patchStep("mode", v || undefined)}
-        error={fieldError("mode")}
-        hint="ACP autonomy mode (e.g. acceptEdits, plan)"
-      />
+      {/* agent — closed select (D26) */}
+      {agentNames.length > 0 ? (
+        <SelectField
+          label="agent"
+          value={selectedAgent}
+          options={agentOptions}
+          onChange={(v) => patchStep("agent", v || undefined)}
+          error={fieldError("agent")}
+          renderOption={renderAgentOption}
+          hint="Agente no registry"
+        />
+      ) : (
+        <TextField
+          label="agent"
+          value={selectedAgent}
+          onChange={(v) => patchStep("agent", v || undefined)}
+          error={fieldError("agent")}
+          hint="Nenhum agente no registry — adicione em Config > Agents"
+        />
+      )}
       <ToggleField
         label="clear_context"
         value={step.clear_context ?? true}
         onChange={(v) => patchStep("clear_context", v)}
       />
-      <TextField
-        label="agent"
-        value={step.agent ?? ""}
-        onChange={(v) => patchStep("agent", v || undefined)}
-        error={fieldError("agent")}
-        hint="Nome do agente no registry (vazio = default)"
-      />
-      <TextField
-        label="model"
-        value={step.model ?? ""}
-        onChange={(v) => patchStep("model", v || undefined)}
-        error={fieldError("model")}
-        hint="Model override (best-effort)"
-      />
-      <TextField
-        label="effort"
-        value={step.effort ?? ""}
-        onChange={(v) => patchStep("effort", v || undefined)}
-        error={fieldError("effort")}
-        hint="Reasoning effort override (best-effort)"
-      />
+      {/* mode — probed select or text fallback (D30/D31) */}
+      {useSelects ? (
+        <SelectField
+          label="mode"
+          value={step.mode ?? ""}
+          options={modeOptions}
+          onChange={(v) => patchStep("mode", v || undefined)}
+          error={fieldError("mode")}
+          renderOption={renderCapOption(caps!.modes)}
+          hint="ACP autonomy mode"
+        />
+      ) : (
+        <TextField
+          label="mode"
+          value={step.mode ?? ""}
+          onChange={(v) => patchStep("mode", v || undefined)}
+          error={fieldError("mode")}
+          hint={probeFallbackHint(probeStatus, probeReason, "ACP autonomy mode (e.g. acceptEdits, plan)")}
+        />
+      )}
+      {/* model — probed select or text fallback */}
+      {useSelects ? (
+        <SelectField
+          label="model"
+          value={step.model ?? ""}
+          options={modelOptions}
+          onChange={(v) => patchStep("model", v || undefined)}
+          error={fieldError("model")}
+          renderOption={renderCapOption(caps!.models)}
+          hint="Model override (best-effort)"
+        />
+      ) : (
+        <TextField
+          label="model"
+          value={step.model ?? ""}
+          onChange={(v) => patchStep("model", v || undefined)}
+          error={fieldError("model")}
+          hint={probeFallbackHint(probeStatus, probeReason, "Model override (best-effort)")}
+        />
+      )}
+      {/* effort — probed select, disabled if unsupported, or text fallback */}
+      {useSelects ? (
+        <SelectField
+          label="effort"
+          value={step.effort ?? ""}
+          options={effortDisabled ? [""] : effortOptions}
+          onChange={(v) => patchStep("effort", v || undefined)}
+          error={fieldError("effort")}
+          disabled={effortDisabled}
+          disabledReason={`Este agente não anuncia effort`}
+          renderOption={effortDisabled ? undefined : renderCapOption(caps!.efforts)}
+          hint={effortDisabled ? undefined : "Reasoning effort override (best-effort)"}
+        />
+      ) : (
+        <TextField
+          label="effort"
+          value={step.effort ?? ""}
+          onChange={(v) => patchStep("effort", v || undefined)}
+          error={fieldError("effort")}
+          hint={probeFallbackHint(probeStatus, probeReason, "Reasoning effort override (best-effort)")}
+        />
+      )}
+      {/* Probe status indicator */}
+      {probeStatus === "probing" && (
+        <div className="step-editor__probe-status" data-testid="probe-status">Sondando capabilities de "{resolvedAgentName}"…</div>
+      )}
+      {probeStatus === "failed" && (
+        <div className="step-editor__probe-status step-editor__probe-status--failed" data-testid="probe-failed">
+          Sondagem falhou: {probeReason ?? "erro desconhecido"}.{" "}
+          <button type="button" className="step-editor__probe-retry" onClick={probe}>Tentar novamente</button>
+        </div>
+      )}
       <TextField
         label="verify.run"
         value={step.verify?.run ?? ""}
