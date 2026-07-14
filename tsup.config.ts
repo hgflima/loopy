@@ -23,6 +23,7 @@ export default defineConfig([
       "tui/transport": "src/tui/transport.ts",
       "config": "src/config/index.ts",
       "backlog": "src/backlog/index.ts",
+      "scheduler": "src/scheduler/index.ts",
     },
     dts: true,
     clean: false,

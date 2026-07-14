@@ -37,6 +37,10 @@
     "./backlog": {
       "types": "./dist/backlog.d.ts",
       "import": "./dist/backlog.js"
+    },
+    "./scheduler": {
+      "types": "./dist/scheduler.d.ts",
+      "import": "./dist/scheduler.js"
     }
   },
   "files": [

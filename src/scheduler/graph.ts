@@ -205,6 +205,82 @@ export function skipDescendants(
 }
 
 // ---------------------------------------------------------------------------
+// findWidest (private — single-pass width + widest layer)
+// ---------------------------------------------------------------------------
+
+/** One traversal to find the max layer width and the first widest layer. */
+function findWidest(layers: readonly string[][]): {
+  width: number;
+  widestLayer: readonly string[];
+} {
+  let width = 0;
+  let widestLayer: readonly string[] = [];
+  for (const layer of layers) {
+    if (layer.length > width) {
+      width = layer.length;
+      widestLayer = layer;
+    }
+  }
+  return { width, widestLayer };
+}
+
+// ---------------------------------------------------------------------------
+// resolveConcurrency
+// ---------------------------------------------------------------------------
+
+export interface ConcurrencyResolution {
+  /** Resolved concurrency value. */
+  readonly value: number;
+  /** True only when the effective input was `"auto"`. */
+  readonly auto: boolean;
+  /** maxLayerWidth of the graph. */
+  readonly width: number;
+  /** Ids in the widest layer (first on tie — deterministic). */
+  readonly widestLayer: readonly string[];
+  /** The maxConcurrency cap that was applied. */
+  readonly cap: number;
+}
+
+/**
+ * Single source of truth for concurrency resolution (AD-6 — pure, no I/O).
+ *
+ * Precedence: flag > declared. If the effective value is a number, it is used
+ * as-is with **no clamping** (D17 — the cap only bites `"auto"`).
+ * If `"auto"`, value = max(1, min(maxLayerWidth, maxConcurrency)).
+ */
+export function resolveConcurrency(input: {
+  flag?: number | "auto";
+  declared: number | "auto";
+  maxConcurrency: number;
+  graph: TaskGraph;
+}): ConcurrencyResolution {
+  const { flag, declared, maxConcurrency, graph } = input;
+  const effective = flag !== undefined ? flag : declared;
+
+  const { width, widestLayer } = findWidest(topoLayers(graph));
+
+  if (typeof effective === "number") {
+    return { value: effective, auto: false, width, widestLayer, cap: maxConcurrency };
+  }
+
+  // "auto" — clamp by maxConcurrency, floor at 1
+  const value = Math.max(1, Math.min(width, maxConcurrency));
+  return { value, auto: true, width, widestLayer, cap: maxConcurrency };
+}
+
+// ---------------------------------------------------------------------------
+// maxLayerWidth
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum width across all topological layers.
+ * Empty graph → 0 (no layers at all).
+ */
+export function maxLayerWidth(graph: TaskGraph): number {
+  return findWidest(topoLayers(graph)).width;
+}
+
+// ---------------------------------------------------------------------------
 // topoLayers
 // ---------------------------------------------------------------------------
 
