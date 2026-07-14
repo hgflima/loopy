@@ -13,7 +13,7 @@ CLI TypeScript/Node que roda um **loop agêntico de dois níveis** sobre um dire
 - **Invariante browser-safe**: os barrels `config` e `backlog` rodam no browser. `node:fs` vive **só** em `src/config/load.ts` e `src/backlog/todo.ts`; `parse.ts`/`schema.ts`/`serialize.ts` de ambos são puros. Importar `node:fs` fora desses dois arquivos quebra o build Vite do app.
 
 ## Usage Patterns
-Dev do próprio loopy: `npm run dev -- [args]` (tsx). Qualidade: `npm run typecheck` (cobre a raiz **e** o menubar), `npm run lint`, `npm test` (vitest). Build: `npm run build` (tsup → `dist/`). GUI: `npm run menubar`. O exemplo canônico do config vive em `examples/loopy.yml`; `tests/fixtures/project/loopy.yml` é o fixture dos testes de CLI.
+Dev do próprio loopy: `npm run dev -- [args]` (tsx). Qualidade: `npm run typecheck` (cobre a raiz **e** o menubar), `npm run lint`, `npm test` (vitest). Build: `npm run build` (tsup → `dist/`). GUI: `npm run dev -w apps/menubar` roda em dev; `npm run menubar` **empacota o `.app`** (é o `tauri build`). O exemplo canônico do config vive em `examples/loopy.yml`; `tests/fixtures/project/loopy.yml` é o fixture dos testes de CLI.
 
 ⚠️ **`npm test` na raiz NÃO roda os testes do `apps/menubar`** (o `include` da raiz é `tests/**`). Para o app: `npm test -w apps/menubar`.
 

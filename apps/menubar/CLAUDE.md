@@ -17,7 +17,7 @@ NÃO é: parte do motor (não decide nada do loop — AD-1), nem dona do domíni
 - Versão: `tauri.conf.json` aponta para o `package.json` **da raiz** (single source). Travado por `src/version-single-source.test.ts`.
 
 ## Usage Patterns
-- Dev completo: `npm run menubar` na raiz (= `build:sidecar && tauri dev`). UI só, sem Rust: `npm run dev:web -w apps/menubar` (usa o `MOCK_FEED`).
+- Dev completo: `npm run dev -w apps/menubar` (= `build:sidecar && tauri dev`). UI só, sem Rust: `npm run dev:web -w apps/menubar` (usa o `MOCK_FEED`). **`npm run menubar` na raiz não é o caminho de dev**: ele aponta para o `build` daqui (`build:sidecar && tauri build`) e **empacota o `.app`**.
 - Build: `build:sidecar` usa **bun** (`bun build --compile ../../src/index.ts`) + `codesign` ad-hoc, e o `.app` embute o binário via `externalBin`. Isso é o que exige o `import.meta.main` em `src/index.ts` no motor.
 - Testes: `npm test -w apps/menubar` (vitest/jsdom). **`npm test` na raiz NÃO roda os testes deste app** — o `include` da raiz é `tests/**` relativo à raiz. `npm run typecheck` da raiz **cobre** o app (mas só `src/`, não `tests/`).
 
