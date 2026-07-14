@@ -390,7 +390,7 @@
 
 ## Fase 6 — Fechar a change (T-013)
 
-- [ ] T-013: `CONTEXT.md`, `CLAUDE.md` (sync), ADR-0008, ADR-0009 e o D-0003 fechado (D16/D34)
+- [x] T-013: `CONTEXT.md`, `CLAUDE.md` (sync), ADR-0008, ADR-0009 e o D-0003 fechado (D16/D34)
     **É a última e depende de TODAS** — não por cerimônia, mas por **mecânica de merge**: toca
     `CONTEXT.md` e os `CLAUDE.md`, que as duas features também tocam. Sem a aresta, duas tasks
     paralelas editariam os mesmos arquivos e conflitariam
