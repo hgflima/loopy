@@ -7,7 +7,9 @@ workspace:
   worktrees_dir: ".worktrees"
 
 # Registry de agentes nomeados (AD-3 evoluído — um Processo por Agente referenciado).
-# Claude implementa (default) + Codex simplifica (effort: low) + Claude audita (mode: plan).
+# Claude implementa (default) + Codex simplifica (effort: low) + OpenCode refina
+# (mode: build) + Claude audita (mode: plan).
+# mode/model/effort são o DIALETO LITERAL do agente — descubra com `loopy probe-agent <nome>`.
 agents:
   claude:
     command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"]
@@ -18,6 +20,9 @@ agents:
     # env:
     #   CODEX_API_KEY: "${env.CODEX_API_KEY}"
     effort: low
+  opencode:
+    # Subcomando do binário opencode — NÃO é pacote npm como os outros dois.
+    command: ["opencode", "acp"]
 
 acp:
   default_agent: claude
@@ -86,6 +91,21 @@ pipeline:
       ${worktree.diff}
     verify: { run: ci, max_attempts: 3 }
 
+  - id: enhance
+    type: agent
+    agent: opencode
+    clear_context: true
+    # opencode expõe build|plan (via `loopy probe-agent opencode`).
+    # "build" = ler + editar + rodar comandos (análogo a acceptEdits do claude).
+    mode: build
+    prompt: |
+      Revise os tipos e a documentação inline da task ${task.id}.
+      Garanta que funções públicas tenham JSDoc e que types não usem `any`.
+      **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
+      Diff atual:
+      ${worktree.diff}
+    verify: { run: ci, max_attempts: 2 }
+
   - id: review
     type: agent
     clear_context: true
@@ -124,7 +144,8 @@ stop_conditions:
   max_step_visits: 10
   stop_signal_file: ".loopy.stop"
 
-# concurrency: 4   # default 1 (sequencial); com Deps: no todo.md, Tasks independentes rodam em paralelo
+# concurrency: auto   # "auto" = min(maxLayerWidth, max_concurrency); default 1 (sequencial)
+# max_concurrency: 4  # teto do auto (default 4); NÃO limita concurrency numérico explícito
 
 policies:
   escalation:

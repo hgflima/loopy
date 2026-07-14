@@ -82,6 +82,7 @@ describe("acceptance · example loopy.yml matches the final schema", () => {
       "install-deps:shell",
       "implement:agent",
       "simplify:agent",
+      "enhance:agent",
       "review:agent",
       "commit:shell",
       "merge:approval",
@@ -124,7 +125,7 @@ describe("acceptance · multi-agent dry-run resolves agent/model/effort per step
   it("the example declares a multi-agent registry with claude (default) and codex", () => {
     expect(config.resolvedAgents).toBeDefined();
     expect(config.resolvedAgents.default).toBe("claude");
-    expect(Object.keys(config.resolvedAgents.byName).sort()).toEqual(["claude", "codex"]);
+    expect(Object.keys(config.resolvedAgents.byName).sort()).toEqual(["claude", "codex", "opencode"]);
   });
 
   it("dry-run resolves agent bindings per step without writing anything", () => {
