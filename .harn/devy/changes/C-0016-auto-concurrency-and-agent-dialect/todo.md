@@ -81,7 +81,7 @@
     Files: src/acp/capabilities.ts, tests/acp/capabilities.test.ts, tests/fixtures/capabilities/claude.json, tests/fixtures/capabilities/codex.json, tests/fixtures/capabilities/opencode.json
     Scope: S
 
-- [ ] T-007: `StoreEvent` `warning` — o 14º tipo, o canal do aviso visível (D15)
+- [x] T-007: `StoreEvent` `warning` — o 14º tipo, o canal do aviso visível (D15)
     `src/tui/store.ts`: 14ª variante da união `StoreEvent` (`:148-234`) — `{ type: "warning";
     taskId?: string; stepId?: string; agentName?: string; message: string }` (`taskId`/`stepId`
     opcionais: um aviso pode nascer **antes** de qualquer task, na validação eager do Run). O
