@@ -1,7 +1,10 @@
 use serde::Serialize;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::sidecar;
 
 /// Files read from the project directory that the frontend needs.
 #[derive(Debug, Clone, Serialize)]
@@ -64,6 +67,56 @@ pub fn write_loopy_yml(dir: String, contents: String) -> Result<(), String> {
 
     fs::write(&target, contents)
         .map_err(|e| format!("Failed to write loopy.yml: {e}"))
+}
+
+/// Read the capabilities cache from `<dir>/.loopy/capabilities.json`.
+/// Returns `None` when the file doesn't exist (same contract as `read_backlog`).
+#[tauri::command]
+pub fn read_capabilities_cache(dir: String) -> Result<Option<String>, String> {
+    let path = Path::new(&dir).join(".loopy").join("capabilities.json");
+    read_optional(path)
+}
+
+/// Spawn the sidecar binary to probe a single agent's capabilities (T-010).
+///
+/// Runs `loopy probe-agent <name> --json -c <dir>/loopy.yml` as a one-shot
+/// process, collects stdout and returns the JSON. Uses the same sidecar binary
+/// resolution and login-shell PATH recovery as `start_sidecar`.
+#[tauri::command]
+pub async fn probe_agent(dir: String, agent_name: String) -> Result<String, String> {
+    let bin = sidecar::resolve_sidecar_path()?;
+    let config_path = Path::new(&dir).join("loopy.yml");
+
+    let mut cmd = Command::new(&bin);
+    cmd.args([
+        "probe-agent",
+        &agent_name,
+        "--json",
+        "-c",
+        &config_path.to_string_lossy(),
+    ])
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+    // Recover the login-shell PATH so the agent adapter (`npx …`) resolves
+    // inside a `.app` bundle — same logic as `SidecarState::start`.
+    if let Some(path) = sidecar::login_shell_path() {
+        cmd.env("PATH", path);
+    }
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to spawn probe-agent: {e}"))?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8(output.stdout)
+            .map_err(|e| format!("Invalid UTF-8 in probe output: {e}"))?;
+        Ok(stdout.trim().to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("probe-agent failed: {}", stderr.trim()))
+    }
 }
 
 // ---------------------------------------------------------------------------

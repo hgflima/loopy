@@ -271,6 +271,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
         stepIds={configDraft.draft.pipeline.map((s) => s.id)}
         onClose={handleCloseStepEditor}
         onRemoveStep={handleRemoveStep}
+        dir={dir || undefined}
       />
     ) : null;
 

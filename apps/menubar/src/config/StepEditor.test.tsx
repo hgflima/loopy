@@ -8,12 +8,33 @@
  * - Escape closes the drawer
  * - Error counter in header
  *
+ * T-010 additions:
+ * - agent select lists exactly the registry keys (D26)
+ * - mode/model/effort selects populated from probed capabilities (D30)
+ * - efforts: [] → disabled + reason (OpenCode)
+ * - probe failed → text field + reason visible (D31)
+ * - unknown value preserved on save (not corrupted)
+ *
  * Run: `npm test -w apps/menubar -- StepEditor`
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, fireEvent } from "@testing-library/react";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
+
+// Mock useAgentCapabilities BEFORE importing StepEditor (vitest hoists vi.mock).
+// Default: idle (no probe) — existing tests keep working unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockUseAgentCapabilities = vi.fn((): any => ({
+  status: "idle",
+  caps: undefined,
+  reason: undefined,
+  probe: vi.fn(),
+}));
+vi.mock("./useAgentCapabilities", () => ({
+  useAgentCapabilities: () => mockUseAgentCapabilities(),
+}));
+
 import { StepEditor } from "./StepEditor";
 
 // Also test the ⋯ button in KanbanBoard
@@ -24,7 +45,10 @@ import { KanbanBoard } from "../kanban/KanbanBoard";
 // Helpers
 // ---------------------------------------------------------------------------
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  mockUseAgentCapabilities.mockClear();
+});
 
 function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
   return {
@@ -48,6 +72,50 @@ function makeDraft(overrides?: Partial<ConfigDraftAPI>): ConfigDraftAPI {
     seedFromTemplate: vi.fn(),
     ...overrides,
   };
+}
+
+/** Draft with an agents registry (T-010). */
+function makeDraftWithAgents(
+  agentOverrides?: Record<string, { command: readonly string[]; model?: string; effort?: string }>,
+  draftOverrides?: Record<string, unknown>,
+): ConfigDraftAPI {
+  const agents = agentOverrides ?? {
+    claude: { command: ["npx", "-y", "@anthropic-ai/claude-code", "--agent"] },
+    opencode: { command: ["opencode", "acp"] },
+    codex: { command: ["npx", "-y", "@openai/codex", "--agent"] },
+  };
+  return makeDraft({
+    draft: {
+      workspace: { root: ".", parent_branch: "main", worktrees_dir: ".worktrees" },
+      concurrency: 2,
+      agents,
+      pipeline: [
+        { id: "build", type: "agent", prompt: "Build it", agent: "opencode" },
+        { id: "test", type: "shell", run: ["npm test"] },
+        { id: "review", type: "checks", run: "ci" },
+        { id: "deploy", type: "approval", prompt: "Approve deploy?" },
+      ],
+      ...draftOverrides,
+    } as ConfigDraftAPI["draft"],
+  });
+}
+
+/** Shortcut: render a StepEditor for the first step of a draft-with-agents. */
+function renderAgentStep(
+  draft?: ConfigDraftAPI,
+  extraProps?: Partial<React.ComponentProps<typeof StepEditor>>,
+) {
+  const d = draft ?? makeDraftWithAgents();
+  return render(
+    <StepEditor
+      stepIndex={0}
+      configDraft={d}
+      stepIds={["build", "test"]}
+      onClose={vi.fn()}
+      dir="/project"
+      {...extraProps}
+    />,
+  );
 }
 
 function task(id: string, title: string, status: TaskState["status"] = "ready"): TaskState {
@@ -395,5 +463,273 @@ describe("StepEditor — error counter (T-011, R3)", () => {
     );
 
     expect(getByTestId("step-error-count").textContent).toBe("1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StepEditor — agent select with registry keys (T-010, D26)
+// ---------------------------------------------------------------------------
+
+describe("StepEditor — agent select (T-010, D26)", () => {
+  it("renders a select with exactly the registry agent keys", () => {
+    const { getByLabelText } = renderAgentStep();
+
+    const select = getByLabelText("agent") as HTMLSelectElement;
+    const optionValues = Array.from(select.options).map((o) => o.value);
+    // "" = default, then the 3 registry keys
+    expect(optionValues).toEqual(["", "claude", "opencode", "codex"]);
+  });
+
+  it("shows '(default: <name>)' label for the empty option", () => {
+    const { getByLabelText } = renderAgentStep();
+
+    const select = getByLabelText("agent") as HTMLSelectElement;
+    const defaultOption = select.options[0]!;
+    expect(defaultOption.value).toBe("");
+    expect(defaultOption.textContent).toContain("(default:");
+  });
+
+  it("selected agent value matches step.agent", () => {
+    const { getByLabelText } = renderAgentStep();
+
+    const select = getByLabelText("agent") as HTMLSelectElement;
+    expect(select.value).toBe("opencode");
+  });
+
+  it("falls back to text field when no agents in registry", () => {
+    const draft = makeDraft(); // no agents
+    const { getByLabelText } = render(
+      <StepEditor
+        stepIndex={0}
+        configDraft={draft}
+        stepIds={["build", "test"]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    // Should be an input (text field), not a select
+    const agentField = getByLabelText("agent") as HTMLElement;
+    expect(agentField.tagName).toBe("INPUT");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StepEditor — probed mode/model/effort selects (T-010, D30/D31)
+// ---------------------------------------------------------------------------
+
+describe("StepEditor — probed selects (T-010, D30)", () => {
+  const opencodeCaps = {
+    modes: ["build", "plan"],
+    models: ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "deepseek/deepseek-chat"],
+    efforts: [] as string[],
+  };
+
+  const claudeCaps = {
+    modes: ["auto", "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"],
+    models: ["opus", "sonnet", "haiku"],
+    efforts: ["low", "medium", "high", "ultra", "max"],
+  };
+
+  it("populates mode select with exactly the probed modes (opencode)", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: opencodeCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const { getByLabelText } = renderAgentStep();
+
+    const modeSelect = getByLabelText("mode") as HTMLSelectElement;
+    const modeValues = Array.from(modeSelect.options)
+      .map((o) => o.value)
+      .filter((v) => v !== ""); // skip the "(nenhum)" placeholder
+    expect(modeValues).toEqual(["build", "plan"]);
+  });
+
+  it("populates model select with the probed models", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: opencodeCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const { getByLabelText } = renderAgentStep();
+
+    const modelSelect = getByLabelText("model") as HTMLSelectElement;
+    const modelValues = Array.from(modelSelect.options)
+      .map((o) => o.value)
+      .filter((v) => v !== "");
+    // Should contain exactly the probed models — no hardcoded table
+    expect(modelValues).toEqual(opencodeCaps.models);
+  });
+
+  it("disables effort select when efforts: [] (opencode)", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: opencodeCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const { getByLabelText, container } = renderAgentStep();
+
+    const effortSelect = getByLabelText("effort") as HTMLSelectElement;
+    expect(effortSelect.disabled).toBe(true);
+    // Should show the disabled reason
+    const disabledHint = container.querySelector(".field__hint--disabled");
+    expect(disabledHint).toBeTruthy();
+    expect(disabledHint!.textContent).toContain("não anuncia effort");
+  });
+
+  it("populates effort select with probed efforts (claude)", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: claudeCaps,
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const draft = makeDraftWithAgents(undefined, {
+      pipeline: [
+        { id: "build", type: "agent", prompt: "Build it", agent: "claude" },
+        { id: "test", type: "shell", run: ["npm test"] },
+        { id: "review", type: "checks", run: "ci" },
+        { id: "deploy", type: "approval", prompt: "Approve deploy?" },
+      ],
+    });
+    const { getByLabelText } = renderAgentStep(draft);
+
+    const effortSelect = getByLabelText("effort") as HTMLSelectElement;
+    expect(effortSelect.disabled).toBe(false);
+    const effortValues = Array.from(effortSelect.options)
+      .map((o) => o.value)
+      .filter((v) => v !== "");
+    expect(effortValues).toEqual(claudeCaps.efforts);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StepEditor — probe failure degrades to text field (T-010, D31)
+// ---------------------------------------------------------------------------
+
+describe("StepEditor — probe failure fallback (T-010, D31)", () => {
+  it("falls back to text fields when probe fails", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "failed",
+      caps: undefined,
+      reason: "adapter not installed",
+      probe: vi.fn(),
+    });
+
+    const { getByLabelText } = renderAgentStep();
+
+    // mode/model/effort should be text inputs (not selects)
+    expect((getByLabelText("mode") as HTMLElement).tagName).toBe("INPUT");
+    expect((getByLabelText("model") as HTMLElement).tagName).toBe("INPUT");
+    expect((getByLabelText("effort") as HTMLElement).tagName).toBe("INPUT");
+  });
+
+  it("shows probe failure reason", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "failed",
+      caps: undefined,
+      reason: "adapter not installed",
+      probe: vi.fn(),
+    });
+
+    const { getByTestId } = renderAgentStep();
+
+    const failedMsg = getByTestId("probe-failed");
+    expect(failedMsg).toBeTruthy();
+    expect(failedMsg.textContent).toContain("adapter not installed");
+  });
+
+  it("shows retry button on failure", () => {
+    const probeFn = vi.fn();
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "failed",
+      caps: undefined,
+      reason: "timeout",
+      probe: probeFn,
+    });
+
+    const { getByTestId } = renderAgentStep();
+
+    const retryBtn = getByTestId("probe-failed").querySelector("button");
+    expect(retryBtn).toBeTruthy();
+    fireEvent.click(retryBtn!);
+    expect(probeFn).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// StepEditor — unknown values preserved (T-010, D31)
+// ---------------------------------------------------------------------------
+
+describe("StepEditor — unknown values preserved (T-010)", () => {
+  it("preserves a mode value outside the probed list", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: {
+        modes: ["build", "plan"],
+        models: ["openai/gpt-4o"],
+        efforts: [],
+      },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    // Step has mode: "acceptEdits" which is NOT in opencode's modes
+    const draft = makeDraftWithAgents(undefined, {
+      pipeline: [
+        { id: "build", type: "agent", prompt: "Build it", agent: "opencode", mode: "acceptEdits" },
+        { id: "test", type: "shell", run: ["npm test"] },
+        { id: "review", type: "checks", run: "ci" },
+        { id: "deploy", type: "approval", prompt: "Approve deploy?" },
+      ],
+    });
+
+    const { getByLabelText } = renderAgentStep(draft);
+
+    const modeSelect = getByLabelText("mode") as HTMLSelectElement;
+    // The current value must be in the options (not lost)
+    expect(modeSelect.value).toBe("acceptEdits");
+    // It should be present as an option (prepended, marked unknown)
+    const optionValues = Array.from(modeSelect.options).map((o) => o.value);
+    expect(optionValues).toContain("acceptEdits");
+    // And marked as unknown in the display text
+    const unknownOption = Array.from(modeSelect.options).find((o) => o.value === "acceptEdits");
+    expect(unknownOption!.textContent).toContain("desconhecido");
+  });
+
+  it("preserves a model value outside the probed list", () => {
+    mockUseAgentCapabilities.mockReturnValue({
+      status: "ok",
+      caps: {
+        modes: ["build", "plan"],
+        models: ["openai/gpt-4o"],
+        efforts: [],
+      },
+      reason: undefined,
+      probe: vi.fn(),
+    });
+
+    const draft = makeDraftWithAgents(undefined, {
+      pipeline: [
+        { id: "build", type: "agent", prompt: "Build it", agent: "opencode", model: "custom-model" },
+        { id: "test", type: "shell", run: ["npm test"] },
+        { id: "review", type: "checks", run: "ci" },
+        { id: "deploy", type: "approval", prompt: "Approve deploy?" },
+      ],
+    });
+
+    const { getByLabelText } = renderAgentStep(draft);
+
+    const modelSelect = getByLabelText("model") as HTMLSelectElement;
+    expect(modelSelect.value).toBe("custom-model");
+    const optionValues = Array.from(modelSelect.options).map((o) => o.value);
+    expect(optionValues).toContain("custom-model");
   });
 });

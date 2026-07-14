@@ -92,6 +92,18 @@
   color: var(--ink-tertiary);
 }
 
+/* ---- Disabled state ---------------------------------------------------- */
+
+.field--disabled .field__select {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.field__hint--disabled {
+  color: var(--ink-secondary);
+  font-style: italic;
+}
+
 /* ---- Error state ------------------------------------------------------- */
 
 .field--error .field__input,
