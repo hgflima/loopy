@@ -18,6 +18,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
 import { renameAgent, renameChecksList } from "./rename";
+import { useAgentCapabilities } from "./useAgentCapabilities";
 import {
   TextField,
   NumberField,
@@ -34,6 +35,8 @@ import "./ConfigPane.css";
 
 export interface ConfigPaneProps {
   configDraft: ConfigDraftAPI;
+  /** Project directory — needed for agent probe/refresh (T-011). */
+  dir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +72,52 @@ function crossFieldErrors(errors: readonly ConfigError[]): readonly ConfigError[
 }
 
 // ---------------------------------------------------------------------------
+// Agent presets — GUI-only shortcut (T-011, D27)
+// ---------------------------------------------------------------------------
+
+/**
+ * Pre-defined command arrays for known ACP agents.
+ * These live ONLY in the GUI as typing shortcuts — the engine has no allowlist
+ * and no `if (agent === …)` anywhere in `src/` (AD-1).
+ */
+const AGENT_PRESETS = [
+  { label: "Claude", defaultName: "claude", command: ["npx", "-y", "@agentclientprotocol/claude-agent-acp"] },
+  { label: "Codex", defaultName: "codex", command: ["npx", "-y", "@agentclientprotocol/codex-acp"] },
+  { label: "OpenCode", defaultName: "opencode", command: ["opencode", "acp"] },
+  { label: "Em branco", defaultName: "agent", command: [""] },
+] as const;
+
+/** Generate a unique agent name, appending `-N` on collision. */
+function uniqueAgentName(base: string, existing: Record<string, unknown>): string {
+  if (!(base in existing)) return base;
+  let n = 2;
+  while (`${base}-${n}` in existing) n++;
+  return `${base}-${n}`;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for probed selects (T-011, D30/D31)
+// ---------------------------------------------------------------------------
+
+/**
+ * Ensure a value appears in the option list, even if unknown to the probe.
+ * Same logic as StepEditor's `ensureOption` (D31 degradation).
+ */
+function ensureOption(options: readonly string[], value: string): string[] {
+  if (!value || options.includes(value)) return [...options];
+  return [...options, value];
+}
+
+/** Human-readable probe summary for inline display. */
+function probeSummary(caps: { modes: readonly string[]; models: readonly string[]; efforts: readonly string[] }): string {
+  const parts: string[] = [];
+  if (caps.modes.length > 0) parts.push(`modes: ${caps.modes.join(", ")}`);
+  if (caps.models.length > 0) parts.push(`${caps.models.length} models`);
+  parts.push(caps.efforts.length > 0 ? `effort: ${caps.efforts.join(", ")}` : "sem effort");
+  return parts.join(" · ");
+}
+
+// ---------------------------------------------------------------------------
 // Section header with error counter (R5)
 // ---------------------------------------------------------------------------
 
@@ -96,9 +145,33 @@ interface AgentEntryProps {
   onRemove: () => void;
   onRename: (newName: string) => void;
   fieldError: (path: string) => string | undefined;
+  /** Project directory — needed for probe (T-011). */
+  dir?: string;
 }
 
-function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError }: AgentEntryProps) {
+function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError, dir }: AgentEntryProps) {
+  // Probe capabilities for this agent (T-011, D30/D31/D32)
+  const { status: probeStatus, caps, reason: probeReason, probe } = useAgentCapabilities(
+    name,
+    agent.command,
+    dir,
+  );
+
+  const probeOk = probeStatus === "ok" && caps != null;
+  const effortDisabled = probeOk && caps!.efforts.length === 0;
+
+  // Model select options — include current value if unknown (D31)
+  const modelOptions = useMemo(() => {
+    if (!probeOk || !caps) return [];
+    return ensureOption(["", ...caps.models], agent.model ?? "");
+  }, [probeOk, caps, agent.model]);
+
+  // Effort select options
+  const effortOptions = useMemo(() => {
+    if (!probeOk || !caps) return [];
+    return ensureOption(["", ...caps.efforts], agent.effort ?? "");
+  }, [probeOk, caps, agent.effort]);
+
   return (
     <div className="config-pane__agent-entry" data-testid={`agent-entry-${name}`}>
       <div className="config-pane__entry-header">
@@ -108,6 +181,7 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError }: Ag
           onChange={(v) => { if (v && v !== name) onRename(v); }}
         />
         <button type="button" className="field__icon-btn field__icon-btn--danger" onClick={onRemove} aria-label={`Remove agent ${name}`}>×</button>
+        <button type="button" className="field__icon-btn" onClick={probe} aria-label={`Sondar ${name}`}>⟳</button>
       </div>
       <CommandListEditor
         label="command"
@@ -123,20 +197,58 @@ function AgentEntry({ name, agent, onPatch, onRemove, onRename, fieldError }: Ag
         keyPlaceholder="VAR"
         valuePlaceholder="value"
       />
-      <TextField
-        label="model"
-        value={agent.model ?? ""}
-        onChange={(v) => onPatch("model", v || undefined)}
-        error={fieldError("model")}
-        hint="Model ID (best-effort)"
-      />
-      <TextField
-        label="effort"
-        value={agent.effort ?? ""}
-        onChange={(v) => onPatch("effort", v || undefined)}
-        error={fieldError("effort")}
-        hint="Reasoning effort (best-effort)"
-      />
+      {/* model — probed select or text fallback (T-011, D30/D31) */}
+      {probeOk ? (
+        <SelectField
+          label="model"
+          value={agent.model ?? ""}
+          options={modelOptions}
+          onChange={(v) => onPatch("model", v || undefined)}
+          error={fieldError("model")}
+          hint="Model ID (best-effort)"
+        />
+      ) : (
+        <TextField
+          label="model"
+          value={agent.model ?? ""}
+          onChange={(v) => onPatch("model", v || undefined)}
+          error={fieldError("model")}
+          hint="Model ID (best-effort)"
+        />
+      )}
+      {/* effort — probed select, disabled if unsupported, or text fallback */}
+      {probeOk ? (
+        <SelectField
+          label="effort"
+          value={agent.effort ?? ""}
+          options={effortDisabled ? [""] : effortOptions}
+          onChange={(v) => onPatch("effort", v || undefined)}
+          error={fieldError("effort")}
+          disabled={effortDisabled}
+          disabledReason="Este agente não anuncia effort"
+          hint={effortDisabled ? undefined : "Reasoning effort (best-effort)"}
+        />
+      ) : (
+        <TextField
+          label="effort"
+          value={agent.effort ?? ""}
+          onChange={(v) => onPatch("effort", v || undefined)}
+          error={fieldError("effort")}
+          hint="Reasoning effort (best-effort)"
+        />
+      )}
+      {/* Probe result summary (T-011) */}
+      {probeStatus === "probing" && (
+        <div className="config-pane__probe-status">Sondando…</div>
+      )}
+      {probeStatus === "ok" && caps && (
+        <div className="config-pane__probe-status config-pane__probe-status--ok">{probeSummary(caps)}</div>
+      )}
+      {probeStatus === "failed" && (
+        <div className="config-pane__probe-status config-pane__probe-status--failed">
+          Sondagem falhou: {probeReason ?? "erro desconhecido"}
+        </div>
+      )}
       <TextField
         label="display_name"
         value={agent.display_name ?? ""}
@@ -217,7 +329,7 @@ function CheckGroup({ groupName, commands, onPatch, onRemove, onRename }: CheckG
 // Component
 // ---------------------------------------------------------------------------
 
-export function ConfigPane({ configDraft }: ConfigPaneProps) {
+export function ConfigPane({ configDraft, dir }: ConfigPaneProps) {
   // Save lives in the ViewSwitcher tab bar (global save bar), not here — edits
   // also happen on the board (steps/columns), so the affordance must be shared.
   const { draft, errors, patch } = configDraft;
@@ -259,6 +371,14 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
     const name = newAgentName.trim();
     if (!name || agents[name]) return;
     patch("agents", { ...agents, [name]: { command: [""] } });
+    setNewAgentName("");
+  }
+
+  function addAgentFromPreset(preset: typeof AGENT_PRESETS[number]) {
+    const typed = newAgentName.trim();
+    const baseName = typed || preset.defaultName;
+    const name = uniqueAgentName(baseName, agents);
+    patch("agents", { ...agents, [name]: { command: [...preset.command] } });
     setNewAgentName("");
   }
 
@@ -380,6 +500,7 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
               }
             }}
             fieldError={(sub) => fieldError(`agents.${name}.${sub}`)}
+            dir={dir}
           />
         ))}
         <div className="config-pane__add-row">
@@ -392,6 +513,18 @@ export function ConfigPane({ configDraft }: ConfigPaneProps) {
             className="field__record-key"
           />
           <button type="button" className="field__add-btn" onClick={addAgent}>+ Add agent</button>
+        </div>
+        <div className="config-pane__preset-row">
+          {AGENT_PRESETS.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              className="field__add-btn"
+              onClick={() => addAgentFromPreset(preset)}
+            >
+              {preset.label}
+            </button>
+          ))}
         </div>
       </fieldset>
 
