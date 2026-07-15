@@ -38,13 +38,6 @@ const OK_RESULT: RunLoopResult = {
   skipped: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
-  metrics: {
-    index: 0,
-    startedAt: "1970-01-01T00:00:00.000Z",
-    finishedAt: "1970-01-01T00:00:00.000Z",
-    stoppedBy: "backlog_empty",
-    tasks: {},
-  },
   startedAt: "1970-01-01T00:00:00.000Z",
   finishedAt: "1970-01-01T00:00:00.000Z",
 };

@@ -192,6 +192,31 @@ function detectDeadProfiles(
 }
 
 // ---------------------------------------------------------------------------
+// (e) Deprecated config keys the engine no longer honors
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect deprecated keys the engine accepts-but-ignores. `metrics.report`
+ * (the Change report / `index.md`) was retired in C-0017 (D21): the schema
+ * still parses it — so existing ymls and `@hgflima/loopy/config` keep working —
+ * but the engine no longer produces the report. Pure function — AD-6.
+ *
+ * The `metrics:` gate itself survives (opt-in collection, ADR-0003); only the
+ * `report` sub-key is deprecated, so this fires solely on its presence.
+ */
+export function collectDeprecationWarnings(config: {
+  readonly metrics?: { readonly report?: unknown };
+}): string[] {
+  const warnings: string[] = [];
+  if (config.metrics?.report !== undefined) {
+    warnings.push(
+      "'metrics.report' está obsoleto e é ignorado — o Relatório de change (index.md) foi aposentado (C-0017). Remova a chave.",
+    );
+  }
+  return warnings;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 

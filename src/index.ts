@@ -21,7 +21,7 @@
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
 import { realpathSync, statSync } from "node:fs";
-import { basename, dirname, normalize, relative, resolve as resolvePath } from "node:path";
+import { basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
@@ -46,23 +46,22 @@ import {
 } from "./backlog/todo";
 import { runChecks } from "./checks/runner";
 import { ConfigError, loadConfig } from "./config/load";
-import { collectPipelineWarnings, formatWarnings } from "./config/warnings";
+import {
+  collectDeprecationWarnings,
+  collectPipelineWarnings,
+  formatWarnings,
+} from "./config/warnings";
 import {
   createGit,
   initGitRepo,
   isGitRepo,
   type InitGitRepoOptions,
 } from "./git/worktree";
-import {
-  InterpolationError,
-  resolve as resolveInterp,
-  type Scope,
-} from "./interp/resolver";
+import { InterpolationError } from "./interp/resolver";
 import { createLogFactory, type AcpTrafficEntry } from "./logging/logger";
 import {
   createCheckpointPort,
   createMarkDonePort,
-  deriveChange,
   formatDryRunPlan,
   planDryRun,
   resolveAgentBinding,
@@ -72,13 +71,6 @@ import {
   type PlanDryRunOptions,
   type RunLoopResult,
 } from "./loop/orchestrator";
-import {
-  loadMetrics,
-  mergeRun,
-  persistChangeReport,
-  renderRunReport,
-  saveMetrics,
-} from "./metrics/index";
 import {
   clearTaskIn,
   loadState,
@@ -453,30 +445,6 @@ function gitignoreLinesFor(config: LoopyConfig): string[] {
   return [...new Set([worktrees, loopyDir, stop])];
 }
 
-/** Resolve `metrics.report.index` template against run-level scope vars. */
-function resolveReportIndex(
-  template: string,
-  change: { readonly id: string; readonly dir: string },
-  config: LoopyConfig,
-  root: string,
-): string {
-  const map = new Map<string, string>([
-    ["change.id", change.id],
-    ["change.dir", change.dir],
-    ["inputs.spec", config.inputs.spec],
-    ["inputs.plan", config.inputs.plan],
-    ["inputs.todo", config.inputs.todo],
-    ["workspace.root", config.workspace.root],
-    ["workspace.parent_branch", config.workspace.parent_branch],
-    ["workspace.worktrees_dir", config.workspace.worktrees_dir],
-  ]);
-  const scope: Scope = {
-    lookup: (k) => map.get(k),
-    keys: () => [...map.keys()].sort(),
-  };
-  return resolvePath(root, normalize(resolveInterp(template, scope)));
-}
-
 /** A readline y/N approval prompt on stderr — the default git-init gate. */
 async function defaultApprove(prompt: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
@@ -837,35 +805,7 @@ async function runLiveFlow(
     return 1;
   }
 
-  // 4) Metrics — gated by config.metrics presence.
-  if (config.metrics) {
-    const change = deriveChange(config);
-    const metricsPath = resolvePath(root, ".loopy/metrics.json");
-    const existing = loadMetrics(metricsPath);
-    const merged = mergeRun(existing, result.metrics, change);
-    saveMetrics(metricsPath, merged);
-
-    // Run report → stderr (after the TUI stopped in defaultRunLive's finally).
-    io.err(renderRunReport(result.metrics, merged).join("\n") + "\n");
-
-    // Change report — persist index.md when backlog is 100% [x] (T-006).
-    // Trigger: re-parse todo.md (never stoppedBy) + report.index configured.
-    if (config.metrics.report?.index) {
-      const bo = backlogOptionsFrom(config.inputs.backlog);
-      const current = loadBacklog(paths.todoPath, bo);
-      if (pendingTasks(current).length === 0) {
-        const indexPath = resolveReportIndex(
-          config.metrics.report.index,
-          change,
-          config,
-          root,
-        );
-        persistChangeReport(indexPath, change.id, merged);
-      }
-    }
-  }
-
-  // 5) Summary + exit code.
+  // 4) Summary + exit code.
   print(
     `loopy: fim — ${result.completed.length} concluída(s), ` +
       `${result.escalated.length} escalada(s), ` +
@@ -1156,8 +1096,11 @@ async function execute(
   // Config is loaded first, so an invalid config aborts before any effect.
   const config = loadConfig(configPath);
 
-  // Non-blocking warnings (cycles, always+goto) — printed to stderr, never fatal.
-  const warnings = collectPipelineWarnings(config.pipeline, config.resolvedAgents);
+  // Non-blocking warnings (cycles, always+goto, deprecations) — stderr, never fatal.
+  const warnings = [
+    ...collectPipelineWarnings(config.pipeline, config.resolvedAgents),
+    ...collectDeprecationWarnings(config),
+  ];
   if (warnings.length > 0) {
     io.err(`loopy: ${formatWarnings(warnings, configPath)}\n`);
   }
