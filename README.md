@@ -143,11 +143,13 @@ No projeto-alvo, o `loopy` gera em runtime:
 
 - `.worktrees/<id>/` — worktrees isolados por task;
 - `.loopy/logs/<id>.log` — log por task (+ tráfego ACP quando `capture_acp_traffic`);
-- `.loopy.stop` — sinal de parada (criado pelo operador).
+- `.loopy.stop` — sinal de parada (criado pelo operador);
+- `.db/telemetry.db` — a telemetria SQLite, só quando `metrics:` está presente
+  (opt-in; ver [ADR-0011](docs/adrs/0011-telemetria-sqlite-insert-only-e-granularidade-por-tentativa.md)).
 
-Todos devem estar no `.gitignore` (este repo já ignora `.worktrees/`, `.loopy/`
-e `.loopy.stop`). Numa run limpa, ao final o `parent_branch` fica verde e nenhum
-worktree/branch temporário sobra — exceto os preservados por escalonamento
+Todos devem estar no `.gitignore` (este repo já ignora `.worktrees/`, `.loopy/`,
+`.loopy.stop` e `.db/`). Numa run limpa, ao final o `parent_branch` fica verde e
+nenhum worktree/branch temporário sobra — exceto os preservados por escalonamento
 (`keep_worktree: true`).
 
 ## Comandos de desenvolvimento (do próprio repo)

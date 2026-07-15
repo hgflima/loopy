@@ -3,6 +3,7 @@ dist/
 .worktrees/
 .loopy/
 .loopy.stop
+.db/
 *.log
 .DS_Store
 tasks/handoff.md

@@ -26,7 +26,7 @@ interpreta; nenhum default aqui altera *o que* o loop faz (AD-1).
 | `max_concurrency` | `number` | Teto do pool quando `concurrency: auto`. Inteiro ≥ 1. **Default `4`**. Só morde o `auto` — valor numérico explícito de `concurrency` não é limitado por este teto. |
 | `policies` | objeto | Escalonamento e política de git. Ver [`policies`](#policies). |
 | `logging` | objeto | Destino e granularidade dos logs. Ver [`logging`](#logging). |
-| `metrics` | objeto | Instrumentação opt-in. **Opcional**. Ver [`metrics`](#metrics). |
+| `metrics` | objeto | Telemetria opt-in (SQLite `.db/telemetry.db`; ADR-0011). **Opcional**. Ver [`metrics`](#metrics). |
 
 ---
 
@@ -313,23 +313,34 @@ max_concurrency: 4   # teto do auto; default 4
 
 ## `metrics`
 
-**Opcional.** Instrumentação opt-in (ADR-0003). O gate é **por presença, não por
-valor**:
+**Opcional.** Instrumentação opt-in (ADR-0003, estendida pela ADR-0011). O gate é
+**por presença, não por valor**:
 
-- Ausente → feature off (regressão zero, comportamento byte-idêntico).
-- Presente (mesmo `{}`) → liga coleta, persiste `.loopy/metrics.json` e emite o
-  Relatório de execução (stderr por Run).
-- `metrics.report.index` presente → adiciona o Relatório de change no path dado.
+- Ausente → feature off (regressão zero, `RunLoopResult` byte-idêntico).
+- Presente (mesmo `{}`) → liga a **telemetria**: cria e popula
+  `<root>/.db/telemetry.db` (SQLite, insert-only, **uma linha de `step` por
+  Tentativa**). O custo por Task/Change é `SUM()` (fecha o D-0008), e a leitura é a
+  aba **Insights** da GUI menubar (Rust `rusqlite` SELECT-only). Requer **Node
+  ≥ 22.13** (`node:sqlite`).
+
+> **Aposentado na C-0017 (ADR-0011):** o **Relatório de execução** (stderr) e o
+> **Relatório de change** (`index.md`), assim como o `.loopy/metrics.json`, não
+> existem mais — a telemetria vive no `.db` e a única leitura é a aba Insights
+> (headless/CI ficam sem métricas por design).
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `report` | objeto | **Opcional.** Ver abaixo. |
+| `report` | objeto | **Obsoleto (C-0017).** Aceito pelo schema para retrocompat, mas **ignorado** — o motor emite um warning de deprecação. Ver abaixo. |
 
-### `metrics.report`
+### `metrics.report` (obsoleto)
+
+A chave continua parseando (a shape do `@hgflima/loopy/config` não quebra), mas o
+motor **não a honra** e emite `'metrics.report' está obsoleto e é ignorado — o
+Relatório de change (index.md) foi aposentado (C-0017). Remova a chave.`. Remova-a.
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `index` | `string` | Path (template `${…}`) do `index.md` do Relatório de change. Persistido só ao zerar o backlog. |
+| `index` | `string` | **Obsoleto.** Ignorado; era o path do `index.md` do Relatório de change. |
 
 ## Ver também
 

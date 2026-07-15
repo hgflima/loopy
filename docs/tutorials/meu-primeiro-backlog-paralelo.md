@@ -52,6 +52,7 @@ git init -b main
 .worktrees/
 .loopy/
 .loopy.stop
+.db/
 ```
 
 Desta vez **não** criamos código nem testes no scaffold: cada task vai criar o

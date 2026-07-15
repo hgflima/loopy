@@ -8,6 +8,10 @@ O comando `loopy` e todas as suas flags. Derivado de `src/index.ts`
 ```
 loopy [dir] [opções]
 loopy probe-agent <nome> [--json] [opções]
+loopy verdict set --task <id> --pass|--fail [dir]
+loopy verdict clear --task <id> [dir]
+loopy bug add --task <id> --severity <nível> --title <t> [dir]
+loopy change --abandoned|--failed [dir]
 ```
 
 Motor de loop agêntico config-driven via ACP. Lê o `loopy.yml` do diretório-alvo
@@ -116,8 +120,69 @@ modes: build, plan
 efforts: high, max
 ```
 
+### Anotações de telemetria (`verdict` · `bug` · `change`)
+
+Escrevem no `.db/telemetry.db` do projeto-alvo (a telemetria da ADR-0011). São a
+**superfície de escrita** que a aba Insights da GUI invoca como subprocesso — mas
+funcionam também na mão. O último argumento posicional é o `[dir]` do projeto-alvo
+(default `.`); o `.db` **precisa já existir** (foi criado por uma Run com `metrics:`
+presente), senão o comando sai com erro acionável.
+
+O `<id>` da task é o id da telemetria, no formato `<change>/<task>` (ex.:
+`C-0016/T-002`) — não o `T-\d+` cru do backlog.
+
+#### `verdict set` / `verdict clear` — veredito humano de uma task
+
+```
+loopy verdict set --task <id> --pass|--fail [--note <texto>] [--by <autor>] [dir]
+loopy verdict clear --task <id> [dir]
+```
+
+Registra o veredito humano de uma task (tri-estado `pass` / `fail` / não-avaliada).
+`set` é upsert (muda `by`/`at` a cada mudança); `clear` apaga a linha, voltando ao
+estado "não avaliada".
+
+| Flag | Descrição |
+|------|-----------|
+| `--task <id>` | Id da task na telemetria (ex.: `C-0016/T-002`). Obrigatório. |
+| `--pass` / `--fail` | O veredito. Exatamente **um** dos dois em `set`. |
+| `--note <texto>` | **Opcional.** Nota livre. |
+| `--by <autor>` | **Opcional.** Autor. Default: `git config user.name` → `$USER`. |
+
+#### `bug add` — registra um bug ligado a uma task
+
+```
+loopy bug add --task <id> --severity <low|medium|high|critical> --title <t> [--detail <d>] [--found-in <change>] [dir]
+```
+
+Insere um bug com FK para a task. **Sem restrição de change** — um bug encontrado
+numa change posterior, ligado a uma task de change anterior, é o caso normal.
+
+| Flag | Descrição |
+|------|-----------|
+| `--task <id>` | Id da task na telemetria. Obrigatório. |
+| `--severity <nível>` | `low` · `medium` · `high` · `critical`. Obrigatório. |
+| `--title <texto>` | Título curto do bug. Obrigatório. |
+| `--detail <texto>` | **Opcional.** Descrição. |
+| `--found-in <change>` | **Opcional.** Id da change onde o bug foi encontrado (ex.: `C-0017`). |
+
+#### `change --abandoned` / `--failed` — fecha a dimensão change
+
+```
+loopy change --abandoned|--failed [--change <id>] [dir]
+```
+
+Fecha a dimensão `change` **fora** do caminho `merged` (que fecha sozinho ao zerar
+o backlog). É o único `UPDATE` da telemetria fora do `INSERT OR IGNORE` inicial da
+change.
+
+| Flag | Descrição |
+|------|-----------|
+| `--abandoned` / `--failed` | O status terminal. Exatamente um dos dois. |
+| `--change <id>` | **Opcional.** Id da change. Default: a única change aberta no `.db`. |
+
 ## Ver também
 
 - [Configuração (`loopy.yml`)](configuration.md) — os tetos e políticas que
-  algumas flags sobrescrevem.
+  algumas flags sobrescrevem; o bloco `metrics` que liga a telemetria.
 - [Backlog (`todo.md`)](backlog.md) — a lista de tasks que `--task` seleciona.

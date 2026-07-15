@@ -1,7 +1,19 @@
 # D-0008 — Custo do Run subconta: Task virou soma (ADR-0006), Run/Change continuam *last-non-null*
 
-> **Status:** aberto · **Severidade:** média · **Área:** `src/metrics/folds.ts` · `src/loop/orchestrator.ts` · `src/types.ts`
+> **Status:** resolvido em C-0017 (ADR-0011) · **Severidade:** média · **Área:** `src/metrics/folds.ts` · `src/loop/orchestrator.ts` · `src/types.ts`
 > **Descoberto em:** 2026-07-14 · **Origem:** sync do Intent Layer (`/write-agent-md sync`)
+
+## Resolução (C-0017 · ADR-0011)
+
+Pago **de graça** pela troca do meio de persistência. A C-0017 desmontou
+`src/metrics/` (folds/store/report) e passou a telemetria para um SQLite
+(`.db/telemetry.db`, insert-only, uma linha de `step` por Tentativa). Com o custo
+gravado **por-linha** — `step.cost_usd` = delta de snapshots cumulativos por Sessão
+(D10) —, o custo por Task/Change deixou de ser um fold e virou **`SUM(cost_usd)`**
+nas views (`v_task`/`v_change`). Não há mais *last-non-null*: a álgebra que
+subcontava simplesmente não existe mais. As três regras divergentes citadas abaixo
+(código × `types.ts` × `change-report`) foram todas removidas junto com o módulo.
+Ver ADR-0011 e a spec da C-0017.
 
 ## Sintoma
 O "Total Run · custo" do Relatório de execução mostra, na prática, o custo da **última Task iterada** — não a soma das Tasks do Run. Num Run de 5 Tasks, o total reportado fica próximo de 1/5 do real.
