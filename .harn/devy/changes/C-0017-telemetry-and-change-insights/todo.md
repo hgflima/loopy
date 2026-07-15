@@ -168,7 +168,7 @@
     Aceite: `npm test -w apps/menubar -- insights` verde.
     Deps: T-002
 
-- [ ] T-011: `InsightsPane` + hook + 4º segmento do `ViewSwitcher`
+- [x] T-011: `InsightsPane` + hook + 4º segmento do `ViewSwitcher`
     `apps/menubar/src/insights/InsightsPane.tsx`+`.css` e `useInsights.ts` (invoke Rust, molde
     `useAgentCapabilities.ts`). `ViewSwitcher.tsx`: 4º segmento `insights` (`ViewId` `:24`, `SEGMENTS`
     `:26-30`, pane `display:none` `:111`). Cabeçalho de 3 colunas (esta change · média±desvio das merged
