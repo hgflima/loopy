@@ -25,6 +25,7 @@ import { basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
 import { Command, CommanderError, InvalidArgumentError } from "commander";
+import { execa } from "execa";
 import pkg from "../package.json" with { type: "json" };
 import { openAgent, type AgentHandle } from "./acp/agent";
 import type { AgentCapabilities } from "./acp/capabilities";
@@ -80,6 +81,14 @@ import {
 } from "./resume/state";
 import { createMutex } from "./loop/mutex";
 import { createFullRegistry } from "./steps/index";
+import {
+  addBug,
+  clearVerdict,
+  setChangeStatus,
+  setVerdict,
+  type BugSeverity,
+  type Verdict,
+} from "./telemetry/annotate";
 import { openDb, type TelemetryDb } from "./telemetry/db";
 import { bootstrap } from "./telemetry/schema";
 import { markChangeMerged } from "./telemetry/write";
@@ -893,6 +902,300 @@ async function markChangeMergedIfComplete(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Telemetry annotation subcommands (T-008 / C-0017): the write surface the GUI
+// drives one-shot (D6/D20), mirroring `probe-agent`. Each opens the existing
+// `.db` under `[dir]`, applies one mutation via `src/telemetry/annotate`, and
+// turns the typed result into a message + exit code.
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the telemetry `.db` under `dir` for a one-shot annotation, run `fn`, and
+ * always close (so WAL flushes). The `.db` must already exist — annotations
+ * target a change/task the run recorded and never create an empty database
+ * (mirrors {@link markChangeMergedIfComplete}). Missing `.db` → actionable
+ * error, exit 1.
+ */
+async function withTelemetryDb(
+  dir: string,
+  io: RunIO,
+  fn: (db: TelemetryDb) => number,
+): Promise<number> {
+  const dbPath = telemetryDbPath(resolvePath(dir));
+  if (!existsSync(dbPath)) {
+    io.err(
+      `loopy: sem telemetria em ${dbPath} — rode uma change com 'metrics:' ligado antes de anotar.\n`,
+    );
+    return 1;
+  }
+  let db: TelemetryDb | undefined;
+  try {
+    db = await openDb(dbPath);
+    await bootstrap(db);
+    return fn(db);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    io.err(`loopy: falha ao acessar a telemetria: ${reason}\n`);
+    return 1;
+  } finally {
+    db?.close();
+  }
+}
+
+/**
+ * Resolve the `--by` author of a verdict: the explicit flag, else
+ * `git config user.name`, else `$USER` (best-effort — a bare `unknown` is the
+ * last resort, never a failure).
+ */
+async function resolveVerdictAuthor(
+  explicit: string | undefined,
+  dir: string,
+): Promise<string> {
+  const given = explicit?.trim();
+  if (given) return given;
+  try {
+    const res = await execa("git", ["config", "user.name"], {
+      cwd: resolvePath(dir),
+      reject: false,
+      stripFinalNewline: true,
+    });
+    if (res.exitCode === 0 && res.stdout.trim()) return res.stdout.trim();
+  } catch {
+    // Fall through to $USER when git is absent or has no user.name.
+  }
+  return process.env.USER?.trim() || "unknown";
+}
+
+const BUG_SEVERITIES: readonly BugSeverity[] = ["low", "medium", "high", "critical"];
+
+function isBugSeverity(value: string): value is BugSeverity {
+  return (BUG_SEVERITIES as readonly string[]).includes(value);
+}
+
+/** `verdict set` — upsert a task's human verdict (D20). */
+async function executeVerdictSet(
+  opts: {
+    task?: string;
+    pass?: boolean;
+    fail?: boolean;
+    note?: string;
+    by?: string;
+  },
+  dir: string,
+  io: RunIO,
+): Promise<number> {
+  if (!opts.task) {
+    io.err("loopy: verdict set exige --task <id>.\n");
+    return 1;
+  }
+  if (!opts.pass && !opts.fail) {
+    io.err("loopy: verdict set exige um de --pass ou --fail.\n");
+    return 1;
+  }
+  if (opts.pass && opts.fail) {
+    io.err("loopy: verdict set aceita --pass OU --fail, não os dois.\n");
+    return 1;
+  }
+  const taskId = opts.task;
+  const verdict: Verdict = opts.pass ? "pass" : "fail";
+  const by = await resolveVerdictAuthor(opts.by, dir);
+  return withTelemetryDb(dir, io, (db) => {
+    const res = setVerdict(db, {
+      taskId,
+      verdict,
+      note: opts.note ?? null,
+      by,
+      at: new Date().toISOString(),
+    });
+    if (!res.ok) {
+      io.err(`loopy: task "${taskId}" não encontrada na telemetria.\n`);
+      return 1;
+    }
+    io.out(`loopy: veredito ${verdict} registrado para ${taskId} (por ${by}).\n`);
+    return 0;
+  });
+}
+
+/** `verdict clear` — delete a task's verdict (tri-state → NULL, D20). Idempotent. */
+async function executeVerdictClear(
+  opts: { task?: string },
+  dir: string,
+  io: RunIO,
+): Promise<number> {
+  if (!opts.task) {
+    io.err("loopy: verdict clear exige --task <id>.\n");
+    return 1;
+  }
+  const taskId = opts.task;
+  return withTelemetryDb(dir, io, (db) => {
+    const { removed } = clearVerdict(db, taskId);
+    io.out(
+      removed
+        ? `loopy: veredito de ${taskId} removido (volta a não avaliada).\n`
+        : `loopy: ${taskId} já estava sem veredito.\n`,
+    );
+    return 0;
+  });
+}
+
+/** `bug add` — insert a bug linked to a task (FK, no change restriction, D14). */
+async function executeBugAdd(
+  opts: {
+    task?: string;
+    severity?: string;
+    title?: string;
+    detail?: string;
+    foundIn?: string;
+  },
+  dir: string,
+  io: RunIO,
+): Promise<number> {
+  if (!opts.task) {
+    io.err("loopy: bug add exige --task <id>.\n");
+    return 1;
+  }
+  if (!opts.severity) {
+    io.err("loopy: bug add exige --severity <low|medium|high|critical>.\n");
+    return 1;
+  }
+  if (!isBugSeverity(opts.severity)) {
+    io.err(
+      `loopy: severidade "${opts.severity}" inválida (use low|medium|high|critical).\n`,
+    );
+    return 1;
+  }
+  if (!opts.title) {
+    io.err("loopy: bug add exige --title <texto>.\n");
+    return 1;
+  }
+  const taskId = opts.task;
+  const title = opts.title;
+  const severity = opts.severity;
+  return withTelemetryDb(dir, io, (db) => {
+    const res = addBug(db, {
+      taskId,
+      severity,
+      title,
+      detail: opts.detail ?? null,
+      foundInChange: opts.foundIn ?? null,
+      reportedAt: new Date().toISOString(),
+    });
+    if (!res.ok) {
+      io.err(
+        res.reason === "unknown-task"
+          ? `loopy: task "${taskId}" não encontrada na telemetria.\n`
+          : `loopy: change "${opts.foundIn}" (--found-in) não encontrada na telemetria.\n`,
+      );
+      return 1;
+    }
+    io.out(
+      `loopy: bug registrado em ${taskId} (severidade ${severity}, id ${res.bugId}).\n`,
+    );
+    return 0;
+  });
+}
+
+/** `change --abandoned|--failed` — close the change dimension (D2/D20). */
+async function executeChangeStatus(
+  opts: { abandoned?: boolean; failed?: boolean; change?: string },
+  dir: string,
+  io: RunIO,
+): Promise<number> {
+  if (!opts.abandoned && !opts.failed) {
+    io.err("loopy: change exige um de --abandoned ou --failed.\n");
+    return 1;
+  }
+  if (opts.abandoned && opts.failed) {
+    io.err("loopy: change aceita --abandoned OU --failed, não os dois.\n");
+    return 1;
+  }
+  const status = opts.abandoned ? "abandoned" : "failed";
+  return withTelemetryDb(dir, io, (db) => {
+    const res = setChangeStatus(db, status, new Date().toISOString(), opts.change);
+    if (!res.ok) {
+      switch (res.reason) {
+        case "unknown-change":
+          io.err(`loopy: change "${res.changeId}" não encontrada na telemetria.\n`);
+          break;
+        case "already-closed":
+          io.err(
+            `loopy: change "${res.changeId}" já está fechada (status ${res.status}).\n`,
+          );
+          break;
+        case "no-open-change":
+          io.err("loopy: nenhuma change aberta na telemetria; passe --change <id>.\n");
+          break;
+        case "ambiguous":
+          io.err(
+            `loopy: múltiplas changes abertas (${res.candidates.join(", ")}); passe --change <id>.\n`,
+          );
+          break;
+      }
+      return 1;
+    }
+    io.out(`loopy: change ${res.changeId} fechada como ${status}.\n`);
+    return 0;
+  });
+}
+
+/**
+ * Register the `verdict` / `bug` / `change` annotation subcommands on `program`,
+ * routing usage output through `io` and reporting each action's exit code via
+ * `setExit` (the same seam `probe-agent` uses in {@link run}).
+ */
+function registerAnnotateCommands(
+  program: Command,
+  io: RunIO,
+  setExit: (code: number) => void,
+): void {
+  const withIoConfig = (cmd: Command): Command =>
+    cmd.exitOverride().configureOutput({
+      writeOut: (str) => io.out(str),
+      writeErr: (str) => io.err(str),
+    });
+
+  const verdict = withIoConfig(program.command("verdict")).description(
+    "anota o veredito humano de uma task na telemetria (C-0017)",
+  );
+  withIoConfig(verdict.command("set"))
+    .description("registra pass/fail para uma task (upsert)")
+    .option("--task <id>", "id da task na telemetria (ex.: C-0016/T-002)")
+    .option("--pass", "marca a task como aprovada")
+    .option("--fail", "marca a task como reprovada")
+    .option("--note <texto>", "nota livre do veredito")
+    .option("--by <autor>", "autor (default: git config user.name → $USER)")
+    .argument("[dir]", "diretorio do projeto-alvo", ".")
+    .action(async (dir: string, opts) => setExit(await executeVerdictSet(opts, dir, io)));
+  withIoConfig(verdict.command("clear"))
+    .description("apaga o veredito de uma task (volta ao tri-estado não avaliada)")
+    .option("--task <id>", "id da task na telemetria (ex.: C-0016/T-002)")
+    .argument("[dir]", "diretorio do projeto-alvo", ".")
+    .action(async (dir: string, opts) => setExit(await executeVerdictClear(opts, dir, io)));
+
+  const bug = withIoConfig(program.command("bug")).description(
+    "anota bugs na telemetria (C-0017)",
+  );
+  withIoConfig(bug.command("add"))
+    .description("registra um bug ligado a uma task (FK; bug de change anterior é normal)")
+    .option("--task <id>", "id da task na telemetria (ex.: C-0016/T-002)")
+    .option("--severity <nivel>", "low|medium|high|critical")
+    .option("--title <texto>", "título curto do bug")
+    .option("--detail <texto>", "descrição opcional")
+    .option("--found-in <change>", "change onde o bug foi encontrado (id, ex.: C-0017)")
+    .argument("[dir]", "diretorio do projeto-alvo", ".")
+    .action(async (dir: string, opts) => setExit(await executeBugAdd(opts, dir, io)));
+
+  withIoConfig(program.command("change"))
+    .description(
+      "fecha a dimensão change fora do caminho merged (--abandoned|--failed) (C-0017)",
+    )
+    .option("--abandoned", "fecha a change como abandonada")
+    .option("--failed", "fecha a change como falha")
+    .option("--change <id>", "id da change (default: a única change aberta)")
+    .argument("[dir]", "diretorio do projeto-alvo", ".")
+    .action(async (dir: string, opts) => setExit(await executeChangeStatus(opts, dir, io)));
+}
+
 /**
  * Pick the `--clean` target: explicit id, or the single paused/running entry.
  * Returns the task id on success, or an error message on ambiguity/absence.
@@ -1355,6 +1658,11 @@ export async function run(
         }
       },
     );
+
+  // T-008 (C-0017): telemetry annotation subcommands (verdict/bug/change).
+  registerAnnotateCommands(program, io, (code) => {
+    exitCode = code;
+  });
 
   try {
     await program.parseAsync([...head], { from: "user" });
