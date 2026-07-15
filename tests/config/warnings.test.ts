@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/config/load";
 import {
+  collectDeprecationWarnings,
   collectPipelineWarnings,
   formatWarnings,
   referencedAgents,
@@ -477,5 +478,37 @@ describe("collectPipelineWarnings — dead agent profile (C-0008 T-001)", () => 
     const config = parseConfig(yaml);
     const warnings = collectPipelineWarnings(config.pipeline);
     expect(warnings.some((w) => w.includes("perfil morto"))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-0017 D21 — metrics.report obsoleto: aceito-mas-ignorado + warning
+// ---------------------------------------------------------------------------
+
+describe("collectDeprecationWarnings — metrics.report obsoleto (C-0017 D21)", () => {
+  it("metrics.report presente -> 1 warning de deprecação apontando a chave", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = { report: { index: "${change.dir}/../index.md" } };
+    });
+    const config = parseConfig(yaml);
+    const warnings = collectDeprecationWarnings(config);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/metrics\.report/);
+    expect(warnings[0]).toMatch(/obsolet|ignorad|aposentad/i);
+  });
+
+  it("metrics presente sem report -> zero warnings (gate opt-in sobrevive)", () => {
+    const yaml = configYaml((c) => {
+      c.metrics = {};
+    });
+    const config = parseConfig(yaml);
+    expect(collectDeprecationWarnings(config)).toEqual([]);
+  });
+
+  it("sem bloco metrics -> zero warnings", () => {
+    const yaml = configYaml();
+    const config = parseConfig(yaml);
+    expect(collectDeprecationWarnings(config)).toEqual([]);
   });
 });
