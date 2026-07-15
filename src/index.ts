@@ -20,7 +20,7 @@
  * and live-run infra faults become a clear message + non-zero exit, never a
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
-import { mkdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
@@ -66,6 +66,7 @@ import {
   planDryRun,
   resolveAgentBinding,
   runLoop,
+  telemetryChangeId,
   worktreePathFor,
   type OrchestratorDeps,
   type PlanDryRunOptions,
@@ -81,6 +82,7 @@ import { createMutex } from "./loop/mutex";
 import { createFullRegistry } from "./steps/index";
 import { openDb, type TelemetryDb } from "./telemetry/db";
 import { bootstrap } from "./telemetry/schema";
+import { markChangeMerged } from "./telemetry/write";
 import { mountApp } from "./tui/mount";
 import { startUi } from "./tui/start";
 import type {
@@ -656,7 +658,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   let telemetry: TelemetryDb | undefined;
   if (config.metrics) {
     try {
-      const dbPath = resolvePath(root, ".db/telemetry.db");
+      const dbPath = telemetryDbPath(root);
       mkdirSync(dirname(dbPath), { recursive: true });
       telemetry = await openDb(dbPath);
       await bootstrap(telemetry);
@@ -829,7 +831,15 @@ async function runLiveFlow(
     return 1;
   }
 
-  // 4) Summary + exit code.
+  // 4) End-of-change gate (C-0017 / D2): when `metrics:` is on and the backlog
+  //    re-parses to zero pending, the change is complete — mark it `merged`.
+  //    Replaces the metrics.json / index.md persistence T-003 removed (the same
+  //    trigger: a full `- [x]` backlog). Best-effort, never fatal.
+  if (config.metrics) {
+    await markChangeMergedIfComplete(config, paths.todoPath, root);
+  }
+
+  // 5) Summary + exit code.
   print(
     `loopy: fim — ${result.completed.length} concluída(s), ` +
       `${result.escalated.length} escalada(s), ` +
@@ -841,6 +851,46 @@ async function runLiveFlow(
     result.paused.length > 0 ||
     result.stoppedBy === "dirty_parent";
   return problem ? 1 : 0;
+}
+
+/**
+ * Path of the telemetry `.db` under a workspace `root` (C-0017). Single source
+ * so the run's writer (`defaultRunLive`) and the end-of-change reader
+ * ({@link markChangeMergedIfComplete}) can never drift to different files.
+ */
+function telemetryDbPath(root: string): string {
+  return resolvePath(root, ".db/telemetry.db");
+}
+
+/**
+ * End-of-change gate (C-0017 / D2): if re-parsing the backlog shows zero pending
+ * tasks — the same trigger the change report used before T-003 — close the
+ * change dimension as `merged`. Opens a fresh telemetry connection because the
+ * run's own handle was closed in `defaultRunLive`'s `finally` (so WAL flushed);
+ * only when the `.db` already exists (never creates one just to mark merged).
+ * Best-effort: a missing db, a still-pending backlog, or any fault is a no-op.
+ */
+async function markChangeMergedIfComplete(
+  config: LoopyConfig,
+  todoPath: string,
+  root: string,
+): Promise<void> {
+  const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+  const current = loadBacklog(todoPath, backlogOptions);
+  if (pendingTasks(current).length > 0) return;
+
+  const dbPath = telemetryDbPath(root);
+  if (!existsSync(dbPath)) return;
+
+  let db: TelemetryDb | undefined;
+  try {
+    db = await openDb(dbPath);
+    markChangeMerged(db, telemetryChangeId(config), new Date().toISOString());
+  } catch {
+    // Best-effort: closing the change never fails the run (D9).
+  } finally {
+    db?.close();
+  }
 }
 
 /**

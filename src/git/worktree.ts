@@ -82,6 +82,20 @@ export function createGit(options: CreateGitOptions): Git {
     return typeof res.exitCode === "number" ? res.exitCode : res.failed ? 1 : 0;
   }
 
+  /**
+   * Run git in the root without throwing; resolve with the trimmed stdout on a
+   * clean exit, or `null` on any failure (non-zero exit, spawn error). The
+   * best-effort reader behind the C-0017 telemetry lookups.
+   */
+  async function tryRunOut(args: readonly string[]): Promise<string | null> {
+    const res = await execa("git", args, {
+      cwd: root,
+      reject: false,
+      stripFinalNewline: true,
+    });
+    return res.exitCode === 0 ? res.stdout.trim() : null;
+  }
+
   /** True when a merge is in progress (MERGE_HEAD present) — i.e. a conflict. */
   async function mergeInProgress(): Promise<boolean> {
     const exitCode = await tryRun([
@@ -167,6 +181,16 @@ export function createGit(options: CreateGitOptions): Git {
       // Conflict or error: abort so the worktree is restored to pre-rebase state.
       await tryRun(["-C", worktreePath, "rebase", "--abort"]);
       return { ok: false, conflict: true };
+    },
+
+    async revParseHead() {
+      // Best-effort (C-0017 base_sha): null in a repo with no commits yet.
+      return tryRunOut(["rev-parse", "HEAD"]);
+    },
+
+    async remoteOriginUrl() {
+      // Best-effort (C-0017 repo): null when no `origin` remote is configured.
+      return tryRunOut(["remote", "get-url", "origin"]);
     },
   };
 }

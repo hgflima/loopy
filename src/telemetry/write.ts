@@ -68,6 +68,22 @@ export interface StepRow {
   readonly human_seconds: number | null;
 }
 
+/**
+ * A row inserted into the `change` dimension (INSERT OR IGNORE at run start,
+ * D2/D26). `ended_at`/`status` are absent here — they start NULL ("in progress")
+ * and are set once by {@link markChangeMerged} (or the CLI) when the change
+ * closes. The `change` table is the **only** one that ever takes an UPDATE.
+ */
+export interface ChangeRow {
+  readonly change_id: string;
+  readonly name: string;
+  readonly repo: string;
+  /** `git rev-parse HEAD` of the parent; NULL when unknown (best-effort). */
+  readonly base_sha: string | null;
+  readonly pipeline_version: string;
+  readonly created_at: string;
+}
+
 const AGENT_CONFIG_INSERT = `
 INSERT OR IGNORE INTO agent_config (
   config_id, preset, model, mode, effort, prompt_version, resolved_json, first_seen_at
@@ -110,6 +126,44 @@ function safeRun(db: TelemetryDb, sql: string, params: SqlParams): void {
  */
 export function insertAgentConfig(db: TelemetryDb, row: AgentConfigRow): void {
   safeRun(db, AGENT_CONFIG_INSERT, { ...row });
+}
+
+const CHANGE_INSERT = `
+INSERT OR IGNORE INTO change (
+  change_id, name, repo, base_sha, pipeline_version, created_at, ended_at, status
+) VALUES (
+  :change_id, :name, :repo, :base_sha, :pipeline_version, :created_at, NULL, NULL
+)`;
+
+const CHANGE_MERGED_UPDATE = `
+UPDATE change SET status = 'merged', ended_at = :ended_at
+WHERE change_id = :change_id AND status IS NULL`;
+
+/**
+ * INSERT OR IGNORE the `change` dimension at run start (D2/D26). Idempotent
+ * across the N runs a change spans: the first run creates the row (`status`/
+ * `ended_at` NULL = in progress), later runs no-op. Must exist before any `task`
+ * row (T-006), which carries an FK to it. Best-effort, never throws.
+ */
+export function insertChange(db: TelemetryDb, row: ChangeRow): void {
+  safeRun(db, CHANGE_INSERT, { ...row });
+}
+
+/**
+ * Close an **open** change as `merged` — the sole UPDATE outside the initial
+ * INSERT OR IGNORE (D2). Guarded by `status IS NULL` so it is idempotent and
+ * never clobbers a terminal status a human already set via the CLI (`abandoned`/
+ * `failed`, T-008). Best-effort, never throws.
+ */
+export function markChangeMerged(
+  db: TelemetryDb,
+  changeId: string,
+  endedAt: string,
+): void {
+  safeRun(db, CHANGE_MERGED_UPDATE, {
+    change_id: changeId,
+    ended_at: endedAt,
+  });
 }
 
 /**

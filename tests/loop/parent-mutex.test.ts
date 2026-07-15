@@ -443,6 +443,8 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
       },
       isMergeInProgress: async () => false,
       rebaseOnto: async () => ({ ok: true, conflict: false }),
+      revParseHead: async () => null,
+      remoteOriginUrl: async () => null,
     };
 
     const config = loopyConfig(true);
@@ -465,6 +467,8 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
       isParentClean: async () => true, // always clean
       isMergeInProgress: async () => false,
       rebaseOnto: async () => ({ ok: true, conflict: false }),
+      revParseHead: async () => null,
+      remoteOriginUrl: async () => null,
     };
 
     const config = loopyConfig(true);
@@ -485,6 +489,8 @@ describe("orchestrator — require_clean_parent inside mutex (T-004)", () => {
       isParentClean: async () => true,
       isMergeInProgress: async () => false,
       rebaseOnto: async () => ({ ok: true, conflict: false }),
+      revParseHead: async () => null,
+      remoteOriginUrl: async () => null,
     };
 
     const config = loopyConfig(true);

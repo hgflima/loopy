@@ -110,6 +110,8 @@ function gitWithParentClean(clean: () => boolean | Promise<boolean>): GitPort {
     isParentClean: async () => clean(),
     isMergeInProgress: async () => false,
     rebaseOnto: nope,
+    revParseHead: nope,
+    remoteOriginUrl: nope,
   };
 }
 

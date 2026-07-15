@@ -570,6 +570,18 @@ export interface GitPort {
     worktreePath: string,
     parentBranch: string,
   ): Promise<MergeResult>;
+  /**
+   * `git rev-parse HEAD` on the parent — the base commit a run starts from
+   * (`change.base_sha`, C-0017). Best-effort: `null` when there is no HEAD yet
+   * (a repo with no commits) or the command fails.
+   */
+  revParseHead(): Promise<string | null>;
+  /**
+   * `git remote get-url origin` — the origin remote's URL, used to derive
+   * `change.repo` (C-0017). Best-effort: `null` when no `origin` is configured
+   * or the command fails.
+   */
+  remoteOriginUrl(): Promise<string | null>;
 }
 
 /** Runs check commands and aggregates a `ChecksReport`. */
