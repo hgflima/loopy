@@ -13,10 +13,12 @@ import type {
   AgentStep,
   ChecksReport,
   ChecksRunnerPort,
+  StepCost,
   StopReason,
+  TurnUsage,
 } from "../../src/types";
 import type { StoreEvent } from "../../src/tui/store";
-import { makeLogger, makeStepContext } from "./support";
+import { makeLogger, makeRecorder, makeStepContext } from "./support";
 
 // ---------------------------------------------------------------------------
 // Doubles
@@ -34,21 +36,37 @@ interface ScriptedSession extends AgentSession {
   modelCalls(): readonly string[];
   /** Effort levels applied via `setEffort`, in order. */
   effortCalls(): readonly string[];
+  /** Number of `drainUsage()` calls the step made. */
+  drainUsageCount(): number;
+  /** Number of `readCost()` calls the step made. */
+  readCostCount(): number;
 }
 
-/** Build a scripted session; `stopReasons`/`texts` are indexed by prompt turn. */
+/**
+ * Build a scripted session; `stopReasons`/`texts` are indexed by prompt turn.
+ * `usages` is indexed by `drainUsage()` call (once per attempt, T-007); `costs`
+ * is the queue `readCost()` returns per call — the step reads it twice per
+ * attempt (before + after the prompt), so a cumulative `costs` sequence models
+ * the per-attempt delta across `clear_context` (D10).
+ */
 function scriptedSession(script: {
   readonly stopReasons?: readonly StopReason[];
   readonly texts?: readonly string[];
+  readonly usages?: readonly (TurnUsage | null)[];
+  readonly costs?: readonly (StepCost | null)[];
 }): ScriptedSession {
   const stopReasons = script.stopReasons ?? [];
   const texts = script.texts ?? [];
+  const usages = script.usages ?? [];
+  const costs = script.costs ?? [];
   const prompts: string[] = [];
   const modes: string[] = [];
   const models: string[] = [];
   const efforts: string[] = [];
   let clears = 0;
   let turn = -1; // index of the last prompt turn (readText is turn-scoped, OQ3)
+  let drains = 0;
+  let costReads = 0;
   return {
     sessionId: "sess-scripted",
     setMode: async (m) => {
@@ -70,13 +88,51 @@ function scriptedSession(script: {
     },
     readText: () => texts[turn] ?? "",
     cancel: async () => {},
-    drainUsage: () => null,
-    readCost: () => null,
+    drainUsage: () => usages[drains++] ?? null,
+    readCost: () => costs[costReads++] ?? null,
     clearCount: () => clears,
     modeCalls: () => modes,
     promptCalls: () => prompts,
     modelCalls: () => models,
     effortCalls: () => efforts,
+    drainUsageCount: () => drains,
+    readCostCount: () => costReads,
+  };
+}
+
+/** A {@link TurnUsage} with the four counters set (drives `tokens_*`). */
+function usage(input: number, output: number): TurnUsage {
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    cachedReadTokens: 0,
+    cachedWriteTokens: 0,
+    totalTokens: input + output,
+    available: true,
+  };
+}
+
+/** A cumulative {@link StepCost} snapshot (per-Session, monotonic, D10). */
+function cost(amount: number): StepCost {
+  return { amount, currency: "USD", available: true };
+}
+
+/** A red {@link ChecksReport} carrying one failing check named `name` (for the D5 heuristic). */
+function redCheck(name: string, text = `${name} falhou`): ChecksReport {
+  return {
+    ok: false,
+    results: [
+      {
+        name,
+        command: "cmd",
+        exitCode: 1,
+        ok: false,
+        stdout: "",
+        stderr: "",
+        durationMs: 1,
+      },
+    ],
+    text,
   };
 }
 
@@ -677,5 +733,300 @@ describe("agent step — setModel / setEffort (T-005)", () => {
     const result = await createAgentStep().execute(ctx);
 
     expect(result).toEqual({ ok: true, output: "done" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-Attempt telemetry (T-007 / D3) — one sample per attempt with its own
+// tokens, cost delta, window, status and fail_reason; NULL when telemetry off.
+// ---------------------------------------------------------------------------
+
+describe("agent step — per-attempt telemetry (T-007)", () => {
+  it("pushes one sample per attempt in a fix-loop, each with its own tokens/cost/window", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn", "end_turn"],
+      usages: [usage(100, 20), usage(50, 10)],
+      // before1, after1, before2, after2 — cumulative per Session (D10).
+      costs: [cost(0), cost(0.1), cost(0.1), cost(0.25)],
+    });
+    const checks = scriptedChecks([redCheck("test"), GREEN]);
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      telemetry: recorder,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(recorder.samples).toHaveLength(2);
+
+    const [first, second] = recorder.samples;
+    // Attempt 1 failed verify (the `test` check) — its own token/cost window.
+    expect(first).toMatchObject({
+      attemptNo: 1,
+      status: "fail",
+      failReason: "test-fail",
+      usage: usage(100, 20),
+    });
+    expect(first!.costDelta).toBeCloseTo(0.1, 10);
+    expect(first!.endedAt).toBeGreaterThan(first!.startedAt);
+    // Attempt 2 passed — a fresh sample, tokens/cost of just that turn.
+    expect(second).toMatchObject({
+      attemptNo: 2,
+      status: "pass",
+      failReason: null,
+      usage: usage(50, 10),
+    });
+    expect(second!.costDelta).toBeCloseTo(0.15, 10);
+    // The two windows do not overlap (each attempt is its own interval).
+    expect(second!.startedAt).toBeGreaterThanOrEqual(first!.endedAt);
+  });
+
+  it("keeps the cost delta per-attempt across clear_context (D10)", async () => {
+    // readCost() is cumulative and monotonic across the clear/reopen (costCarry);
+    // each attempt's delta is only its own increment, never the running total.
+    const session = scriptedSession({
+      stopReasons: ["end_turn", "end_turn"],
+      usages: [usage(1, 1), usage(1, 1)],
+      costs: [cost(1.0), cost(1.3), cost(1.3), cost(1.75)],
+    });
+    const checks = scriptedChecks([redCheck("lint"), GREEN]);
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      telemetry: recorder,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    expect(recorder.samples[0]!.costDelta).toBeCloseTo(0.3, 10);
+    expect(recorder.samples[1]!.costDelta).toBeCloseTo(0.45, 10);
+    // One clear per attempt — the reopen did not reset the delta accounting.
+    expect(session.clearCount()).toBe(2);
+  });
+
+  it("leaves costDelta NULL when either cost snapshot is unavailable", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn"],
+      usages: [usage(10, 5)],
+      costs: [cost(1.0), null], // after-snapshot missing → delta unpaired
+    });
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep({ verify: undefined }) as AgentStep,
+      session,
+      telemetry: recorder,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    expect(recorder.samples).toHaveLength(1);
+    expect(recorder.samples[0]!.costDelta).toBeNull();
+    // Usage still recorded even when cost is unpaired.
+    expect(recorder.samples[0]!.usage).toEqual(usage(10, 5));
+  });
+
+  it("drains usage exactly once per attempt", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn", "end_turn"],
+      usages: [usage(1, 1), usage(2, 2)],
+      costs: [cost(0), cost(0.1), cost(0.1), cost(0.2)],
+    });
+    const checks = scriptedChecks([redCheck("test"), GREEN]);
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      telemetry: recorder,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    // Two attempts → drainUsage called exactly twice (once per attempt).
+    expect(session.drainUsageCount()).toBe(2);
+  });
+
+  it("records a non-end_turn attempt as an 'infra' error sample", async () => {
+    const session = scriptedSession({
+      stopReasons: ["refusal"],
+      usages: [usage(5, 0)],
+      costs: [cost(0), cost(0.05)],
+    });
+    const checks = scriptedChecks([GREEN]);
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      telemetry: recorder,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(recorder.samples).toHaveLength(1);
+    expect(recorder.samples[0]).toMatchObject({
+      attemptNo: 1,
+      status: "error",
+      failReason: "infra",
+      failDetail: "refusal",
+    });
+    // The turn short-circuited before verify ever ran.
+    expect(checks.callCount()).toBe(0);
+  });
+
+  it("records a cancelled turn as status 'cancelled' (still fail_reason infra)", async () => {
+    const session = scriptedSession({
+      stopReasons: ["cancelled"],
+      usages: [null],
+      costs: [null, null],
+    });
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+      telemetry: recorder,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    expect(recorder.samples[0]).toMatchObject({
+      status: "cancelled",
+      failReason: "infra",
+    });
+  });
+
+  it("rewrites the last sample to expect-fail when the verdict gate blocks (post-loop)", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn"],
+      texts: ["AUDIT: FAIL: faltou tratar o caso vazio"],
+      usages: [usage(30, 8)],
+      costs: [cost(0), cost(0.02)],
+    });
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: auditStep(),
+      session,
+      telemetry: recorder,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(recorder.samples).toHaveLength(1);
+    expect(recorder.samples[0]).toMatchObject({
+      attemptNo: 1,
+      status: "fail",
+      failReason: "expect-fail",
+      // Token/cost of the turn are preserved when the gate rewrites the status.
+      usage: usage(30, 8),
+    });
+    expect(recorder.samples[0]!.costDelta).toBeCloseTo(0.02, 10);
+    expect(recorder.samples[0]!.failDetail).toContain("faltou tratar o caso vazio");
+  });
+
+  it("records a fail sample per attempt when verify is exhausted", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn", "end_turn"],
+      usages: [usage(1, 1), usage(1, 1)],
+      costs: [cost(0), cost(0.1), cost(0.1), cost(0.2)],
+    });
+    const checks = scriptedChecks([redCheck("eslint"), redCheck("eslint")]);
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep({ verify: { run: "ci", max_attempts: 2 } }),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      telemetry: recorder,
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(recorder.samples).toHaveLength(2);
+    expect(recorder.samples.map((s) => s.status)).toEqual(["fail", "fail"]);
+    expect(recorder.samples.map((s) => s.failReason)).toEqual([
+      "lint-fail",
+      "lint-fail",
+    ]);
+  });
+
+  it.each([
+    ["unit-test", "test-fail"],
+    ["spec", "test-fail"],
+    ["typecheck", "type-error"],
+    ["tsc", "type-error"],
+    ["eslint", "lint-fail"],
+    ["build", "build-fail"],
+  ] as const)(
+    "classifies a failed check named %s as fail_reason %s (D5 heuristic)",
+    async (checkName, expectedReason) => {
+      const session = scriptedSession({ stopReasons: ["end_turn"] });
+      const checks = scriptedChecks([redCheck(checkName)]);
+      const recorder = makeRecorder();
+      const ctx = makeStepContext({
+        step: verifyStep({ verify: { run: "ci", max_attempts: 1 } }),
+        checksConfig: CI,
+        checks: checks.port,
+        session,
+        telemetry: recorder,
+      });
+
+      await createAgentStep().execute(ctx);
+
+      expect(recorder.samples[0]!.failReason).toBe(expectedReason);
+    },
+  );
+
+  it("leaves fail_reason NULL (with fail_detail) for an unmatched check name", async () => {
+    const session = scriptedSession({ stopReasons: ["end_turn"] });
+    const checks = scriptedChecks([redCheck("integration-smoke")]);
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: verifyStep({ verify: { run: "ci", max_attempts: 1 } }),
+      checksConfig: CI,
+      checks: checks.port,
+      session,
+      telemetry: recorder,
+    });
+
+    await createAgentStep().execute(ctx);
+
+    expect(recorder.samples[0]!.failReason).toBeNull();
+    expect(recorder.samples[0]!.failDetail).toBe("integration-smoke");
+  });
+
+  it("does not touch usage/cost when telemetry is off (opt-in gate, AD-1)", async () => {
+    const session = scriptedSession({
+      stopReasons: ["end_turn"],
+      usages: [usage(1, 1)],
+      costs: [cost(1)],
+    });
+    const ctx = makeStepContext({
+      step: verifyStep(),
+      checksConfig: CI,
+      checks: scriptedChecks([GREEN]).port,
+      session,
+      // no telemetry
+    });
+
+    const result = await createAgentStep().execute(ctx);
+
+    expect(result.ok).toBe(true);
+    expect(session.drainUsageCount()).toBe(0);
+    expect(session.readCostCount()).toBe(0);
   });
 });

@@ -94,18 +94,29 @@ export function createApprovalStep(
       // Decide: --yes short-circuits the gate; otherwise ask via the port.
       // The human wait runs OUTSIDE the mutex (T-004): deliberation does not
       // block the critical section, so other tasks can start/merge meanwhile.
+      //
+      // Telemetry (T-007 / D12): bracket the human wait with the recorder's clock
+      // (determinism) to record `human_seconds` for this Visit's row. Under
+      // `--yes` no gate occurs, so it stays NULL (the clock is never read).
+      const recorder = ctx.telemetry;
       let approved: boolean;
       if (ctx.flags.yes) {
         ctx.logger.info(`[approval:${step.id}] auto-aprovado (--yes)`);
         approved = true;
       } else {
+        const waitStart = recorder?.now();
         approved = await ctx.ui.requestApproval(promptText);
+        if (recorder !== undefined && waitStart !== undefined) {
+          recorder.setHumanSeconds((recorder.now() - waitStart) / 1000);
+        }
       }
 
       if (!approved) {
         const reason = `[approval:${step.id}] rejeitado pelo gate humano; escalonando.`;
         ctx.logger.info(reason);
-        // The action never runs; ok:false lets the orchestrator escalate.
+        // The action never runs; ok:false lets the orchestrator escalate. The
+        // rejection is the one mechanical fail_reason an approval carries (D5).
+        recorder?.setFailReason("human-rejected");
         return { ok: false, reason };
       }
 

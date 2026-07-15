@@ -442,7 +442,7 @@ describe("telemetry write — createVisitRecorder (per-Visit, non-agent)", () =>
     expect(row?.status).toBe("fail");
   });
 
-  it("finalize records NOTHING for an agent step (per-attempt rows land in T-007)", () => {
+  it("finalize records NOTHING for an agent step with no pushed samples (no phantom row)", () => {
     const rec = createVisitRecorder(db, {
       taskId: "C-0017/T-001",
       changeId: "C-0017",
@@ -454,6 +454,126 @@ describe("telemetry write — createVisitRecorder (per-Visit, non-agent)", () =>
     });
     rec.finalize({ ok: true });
     expect(db.all("SELECT * FROM step")).toHaveLength(0);
+  });
+
+  it("finalize inserts one row per pushed AttemptSample for an agent step (T-007 / D3)", () => {
+    // Seed the config dimension so the step.config_id FK resolves.
+    insertAgentConfig(db, agentConfigRow);
+    const rec = createVisitRecorder(db, {
+      taskId: "C-0017/T-007",
+      changeId: "C-0017",
+      stepName: "implement",
+      kind: "agent",
+      visitNo: 3,
+      configId: "cfg1",
+      now: clock(),
+    });
+    rec.push({
+      attemptNo: 1,
+      startedAt: 1_000_000,
+      endedAt: 1_002_000,
+      status: "fail",
+      failReason: "test-fail",
+      failDetail: "unit-test",
+      usage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cachedReadTokens: 5,
+        cachedWriteTokens: 3,
+        totalTokens: 128,
+        available: true,
+      },
+      costDelta: 0.1,
+    });
+    rec.push({
+      attemptNo: 2,
+      startedAt: 1_002_000,
+      endedAt: 1_003_000,
+      status: "pass",
+      failReason: null,
+      failDetail: null,
+      usage: null,
+      costDelta: 0.15,
+    });
+    // finalize ignores the aggregate result for an agent step — it never
+    // re-drains; the pushed samples are the source of truth.
+    rec.finalize({ ok: true });
+
+    const rows = db.all<Record<string, unknown>>(
+      "SELECT * FROM step ORDER BY attempt_no",
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      task_id: "C-0017/T-007",
+      name: "implement",
+      kind: "agent",
+      visit_no: 3,
+      attempt_no: 1,
+      seq: 1,
+      status: "fail",
+      fail_reason: "test-fail",
+      fail_detail: "unit-test",
+      config_id: "cfg1",
+      tokens_in: 100,
+      tokens_out: 20,
+      tokens_cache_read: 5,
+      tokens_cache_write: 3,
+    });
+    expect(rows[0]!.cost_usd).toBeCloseTo(0.1, 10);
+    expect(rows[0]!.started_at).toBe(new Date(1_000_000).toISOString());
+    expect(rows[0]!.ended_at).toBe(new Date(1_002_000).toISOString());
+    expect(rows[1]).toMatchObject({
+      attempt_no: 2,
+      seq: 2,
+      status: "pass",
+      fail_reason: null,
+      // Zeroed token counters when usage was unreported (NULL usage).
+      tokens_in: 0,
+      tokens_out: 0,
+    });
+    expect(rows[1]!.cost_usd).toBeCloseTo(0.15, 10);
+  });
+
+  it("finalize carries human_seconds and fail_reason onto a non-agent row", () => {
+    const rec = createVisitRecorder(db, {
+      taskId: "C-0017/T-001",
+      changeId: "C-0017",
+      stepName: "merge",
+      kind: "approval",
+      visitNo: 1,
+      now: clock(),
+    });
+    rec.setHumanSeconds(42);
+    rec.setFailReason("human-rejected");
+    rec.finalize({ ok: false, reason: "rejected" });
+
+    const row = db
+      .prepare("SELECT * FROM step")
+      .get<Record<string, unknown>>();
+    expect(row?.status).toBe("fail");
+    expect(row?.fail_reason).toBe("human-rejected");
+    expect(row?.human_seconds).toBe(42);
+    expect(row?.attempt_no).toBe(1);
+  });
+
+  it("exposes the injected clock via now() (delegates, monotonic)", () => {
+    let t = 100;
+    const rec = createVisitRecorder(db, {
+      taskId: "C-0017/T-001",
+      changeId: "C-0017",
+      stepName: "implement",
+      kind: "agent",
+      visitNo: 1,
+      now: () => {
+        const v = t;
+        t += 5;
+        return v;
+      },
+    });
+    // now() forwards to the injected clock regardless of construction-time reads.
+    const a = rec.now();
+    const b = rec.now();
+    expect(b - a).toBe(5);
   });
 
   it("finalize never throws even if the DB write fails", () => {
