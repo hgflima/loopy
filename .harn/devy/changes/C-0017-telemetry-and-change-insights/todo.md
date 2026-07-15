@@ -42,7 +42,7 @@
     (fixture com change de ≥2 tasks e um fix-loop `visit_no≥2`).
     Deps: T-001
 
-- [ ] T-003: Desmontar `src/metrics/` + remover `RunLoopResult.metrics` + D21 (aterrissar verde, OFF)
+- [x] T-003: Desmontar `src/metrics/` + remover `RunLoopResult.metrics` + D21 (aterrissar verde, OFF)
     Deleção pura, sistema verde com telemetria desligada — **libera o acumulador `drainUsage`** que a
     Fase 2 vai reusar. Remover o diretório `src/metrics/` inteiro (folds/store/report/change-report/
     format/index/CLAUDE.md). Do `orchestrator.ts`: `stepSamples`/`recordSample` (`:890-899`), o drain em

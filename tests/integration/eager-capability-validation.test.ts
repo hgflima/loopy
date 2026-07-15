@@ -54,13 +54,6 @@ const EMPTY_RESULT: RunLoopResult = {
   skipped: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
-  metrics: {
-    index: 0,
-    startedAt: "",
-    finishedAt: "",
-    stoppedBy: "backlog_empty",
-    tasks: {},
-  },
   startedAt: "",
   finishedAt: "",
 };

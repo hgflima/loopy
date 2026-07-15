@@ -37,7 +37,6 @@ import {
   selectPrompt,
   type ScopeVars,
 } from "../interp/resolver";
-import { addCost, foldSamples } from "../metrics/folds.js";
 import {
   clearTaskIn,
   loadState,
@@ -66,16 +65,11 @@ import type {
   PipelineOutcome,
   ResolvedAgents,
   RunFlags,
-  RunMetrics,
-  Sample,
   StepConfig,
   StepContext,
-  StepCost,
-  StepMetrics,
   StepResult,
   StepType,
   Task,
-  TaskMetrics,
   UiPort,
 } from "../types";
 
@@ -758,8 +752,8 @@ export interface OrchestratorDeps {
    */
   readonly knownTaskIds?: readonly string[];
   /**
-   * Injectable clock for timing measurements (default `Date.now`).
-   * Returns milliseconds since epoch. Tests inject for determinism.
+   * Injectable clock that stamps the run's `startedAt`/`finishedAt` (default
+   * `Date.now`). Returns milliseconds since epoch. Tests inject for determinism.
    */
   readonly now?: () => number;
   /**
@@ -854,12 +848,6 @@ function buildTaskStepContext(
 
 export type { PipelineOutcome };
 
-/** Internal result from `runTaskPipeline` — outcome + collected metrics. */
-interface PipelineRunResult {
-  readonly outcome: PipelineOutcome;
-  readonly taskMetrics: TaskMetrics;
-}
-
 /**
  * Run one task's pipeline via a **program counter (PC)** over
  * `stepIndex: Map<id, index>` (T-006). On each PC entry: increment
@@ -881,22 +869,10 @@ async function runTaskPipeline(
   iteration: number,
   deps: OrchestratorDeps,
   resumePoint?: ResumePoint,
-): Promise<PipelineRunResult> {
+): Promise<PipelineOutcome> {
   const { pipeline, stop_conditions, policies } = config;
   const maxStepVisits = stop_conditions.max_step_visits;
   const worktreePath = worktreePathFor(config, task);
-  const clock = deps.now ?? Date.now;
-
-  // --- Sample accumulator (C-0005 T-004) ---
-  const stepSamples = new Map<string, { type: StepType; samples: Sample[] }>();
-  const recordSample = (stepId: string, type: StepType, sample: Sample): void => {
-    let entry = stepSamples.get(stepId);
-    if (!entry) {
-      entry = { type, samples: [] };
-      stepSamples.set(stepId, entry);
-    }
-    entry.samples.push(sample);
-  };
 
   // On a failed task, `keep_worktree` preserves the worktree for inspection —
   // which means the teardown (`always`) steps that would remove it must be
@@ -920,8 +896,8 @@ async function runTaskPipeline(
     return s;
   };
 
-  /** Execute a step: emit start/finish, measure duration, record a Sample. */
-  const timedExecute = async (
+  /** Execute a step: emit start/finish around the interpreter. */
+  const executeStep = async (
     interpreter: { execute(ctx: StepContext): Promise<StepResult> },
     ctx: StepContext,
     agentLabel?: AgentLabel,
@@ -933,13 +909,7 @@ async function runTaskPipeline(
       stepType: ctx.step.type,
       ...(agentLabel && { agentName: agentLabel.agentName, model: agentLabel.model }),
     });
-    const t0 = clock();
     const result = await interpreter.execute(ctx);
-    recordSample(ctx.step.id, ctx.step.type, {
-      durationMs: clock() - t0,
-      usage: ctx.session.drainUsage(),
-      cost: ctx.session.readCost(),
-    });
     safeEmit(deps, {
       type: "step_finished",
       taskId: task.id,
@@ -1048,7 +1018,7 @@ async function runTaskPipeline(
       deps,
       stepSession,
     );
-    const result: StepResult = await timedExecute(
+    const result: StepResult = await executeStep(
       interpreter, ctx, buildAgentLabel(step, binding, config.resolvedAgents),
     );
     executedSteps.add(step.id);
@@ -1160,7 +1130,7 @@ async function runTaskPipeline(
           deps,
           teardownSession,
         );
-        const result = await timedExecute(
+        const result = await executeStep(
           interpreter, ctx, buildAgentLabel(step, teardownBinding, config.resolvedAgents),
         );
         executedSteps.add(step.id);
@@ -1180,22 +1150,7 @@ async function runTaskPipeline(
     }
   }
 
-  // --- Build TaskMetrics from accumulated samples (C-0005 T-004) ---
-  const steps: Record<string, StepMetrics> = {};
-  for (const [stepId, { type, samples }] of stepSamples) {
-    steps[stepId] = foldSamples(type, samples);
-  }
-
-  // Cost = sum of readCost() finals from each Session of the Task (T-007).
-  // Multi-agent: one session per agent, each with its own cumulative cost.
-  // Best-effort: null/absent tolerated via addCost identity.
-  let taskCost: StepCost | null = null;
-  for (const session of sessionsByAgent.values()) {
-    taskCost = addCost(taskCost, session.readCost());
-  }
-  const taskMetrics: TaskMetrics = { steps, cost: taskCost };
-
-  return { outcome: terminal, taskMetrics };
+  return terminal;
 }
 
 // ---------------------------------------------------------------------------
@@ -1236,8 +1191,6 @@ export interface RunLoopResult {
   readonly iterations: number;
   /** Which stop condition ended the loop. */
   readonly stoppedBy: LoopStopReason;
-  /** Per-task metrics collected during this run (timing + usage + cost). */
-  readonly metrics: RunMetrics;
   /** ISO timestamp of when the run started. */
   readonly startedAt: string;
   /** ISO timestamp of when the run finished. */
@@ -1351,7 +1304,6 @@ export async function runLoop(
   const escalated: string[] = [];
   const paused: string[] = [];
   const skipped: string[] = [];
-  const tasksMetrics: Record<string, TaskMetrics> = {};
   const maxIterations =
     deps.flags.maxIterations ?? config.stop_conditions.max_iterations;
   const stopSignalPath = join(
@@ -1370,13 +1322,6 @@ export async function runLoop(
       skipped,
       iterations: tasksStarted,
       stoppedBy,
-      metrics: {
-        index: 0,
-        startedAt,
-        finishedAt,
-        stoppedBy,
-        tasks: tasksMetrics,
-      },
       startedAt,
       finishedAt,
     };
@@ -1512,14 +1457,13 @@ export async function runLoop(
     const resumePoint = resumeMap?.get(task.id);
 
     const promise = (async (): Promise<TaskSignal> => {
-      const { outcome, taskMetrics } = await runTaskPipeline(
+      const outcome = await runTaskPipeline(
         config,
         task,
         iteration,
         deps,
         resumePoint,
       );
-      tasksMetrics[task.id] = taskMetrics;
 
       if (outcome.ok) {
         const markDoneResult = await markDoneWithMutex(

@@ -28,14 +28,6 @@ function capture() {
   };
 }
 
-const EMPTY_METRICS = {
-  index: 0,
-  startedAt: "1970-01-01T00:00:00.000Z",
-  finishedAt: "1970-01-01T00:00:00.000Z",
-  stoppedBy: "backlog_empty",
-  tasks: {},
-} as const;
-
 const OK_RESULT: RunLoopResult = {
   completed: [],
   escalated: [],
@@ -43,7 +35,6 @@ const OK_RESULT: RunLoopResult = {
   skipped: [],
   iterations: 0,
   stoppedBy: "backlog_empty",
-  metrics: EMPTY_METRICS,
   startedAt: "1970-01-01T00:00:00.000Z",
   finishedAt: "1970-01-01T00:00:00.000Z",
 };
@@ -144,7 +135,6 @@ describe("run — live loop (git repo already present)", () => {
         skipped: [],
         iterations: 1,
         stoppedBy: "escalation_abort",
-        metrics: { ...EMPTY_METRICS, stoppedBy: "escalation_abort" },
         startedAt: "1970-01-01T00:00:00.000Z",
         finishedAt: "1970-01-01T00:00:00.000Z",
       },

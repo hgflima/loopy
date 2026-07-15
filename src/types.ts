@@ -317,13 +317,18 @@ export interface LoggingConfig {
   readonly capture_acp_traffic: boolean;
 }
 
-/** Where the Change report is persisted (opt-in via `metrics.report`). */
+/**
+ * @deprecated Retired in C-0017 (D21). The Change report (`index.md`) is gone;
+ * the schema still parses this key so existing ymls and `@hgflima/loopy/config`
+ * keep working, but the engine ignores it and warns on its presence.
+ */
 export interface MetricsReportConfig {
   readonly index: string;
 }
 
-/** Opt-in metrics block — presence enables collection + Run report. */
+/** Opt-in metrics block — presence gates telemetry collection (ADR-0003). */
 export interface MetricsConfig {
+  /** @deprecated Retired in C-0017 (D21) — accepted-but-ignored, warns. */
   readonly report?: MetricsReportConfig;
 }
 
@@ -377,58 +382,11 @@ export interface StepCost {
   readonly available: boolean;
 }
 
-/**
- * Measurement of **one Visit** to a Step — the minimum unit of collection.
- * `usage` is the **sum** of per-turn usage across all turns of the visit;
- * `cost` is the cumulative Session snapshot at the end of the visit.
- */
-export interface Sample {
-  readonly durationMs: number;
-  readonly usage: TurnUsage | null;
-  readonly cost: StepCost | null;
-}
-
-/** Aggregated metrics for one step within a task (sum of visit Samples). */
-export interface StepMetrics {
-  readonly type: StepType;
-  readonly visits: number;
-  readonly durationMs: number;
-  /** Sum of per-visit usage; `null` for non-agent steps ("n-a"). */
-  readonly usage: TurnUsage | null;
-}
-
-/** Aggregated metrics for one task (steps + session cost snapshot). */
-export interface TaskMetrics {
-  readonly steps: Readonly<Record<string, StepMetrics>>;
-  /** Last non-null cumulative Session cost snapshot; `null` when unavailable. */
-  readonly cost: StepCost | null;
-}
-
-/** Aggregated metrics for one Run (index + timestamps + per-task breakdown). */
-export interface RunMetrics {
-  readonly index: number;
-  readonly startedAt: string;
-  readonly finishedAt: string;
-  readonly stoppedBy: string;
-  readonly tasks: Readonly<Record<string, TaskMetrics>>;
-}
-
-/** Persisted state of `.loopy/metrics.json` (v1) — fold over `runs[]`. */
-export interface ChangeMetrics {
-  readonly version: 1;
-  readonly change: { readonly id: string; readonly dir: string };
-  readonly runs: readonly RunMetrics[];
-}
-
-/** Flattened summary produced by fold functions for reports. */
-export interface MetricsSummary {
-  readonly durationMs: number;
-  readonly usage: TurnUsage | null;
-  readonly visits: number;
-  readonly cost: StepCost | null;
-  readonly taskCount: number;
-  readonly runCount: number;
-}
+// The per-Visit aggregation types (Sample/StepMetrics/TaskMetrics/RunMetrics/
+// ChangeMetrics/MetricsSummary) were retired in C-0017: the `.loopy/metrics.json`
+// rollup — with the Run report and the Change report — is replaced by the SQLite
+// telemetry subsystem (`src/telemetry/`). `TurnUsage`/`StepCost` above stay: they
+// are the per-turn/per-session ACP capture the collector still reads.
 
 // ---------------------------------------------------------------------------
 // Pipeline outcome (used by the orchestrator's outer loop)
