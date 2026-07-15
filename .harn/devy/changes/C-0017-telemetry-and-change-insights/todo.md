@@ -143,7 +143,7 @@
 
 ## Fase 4 — Ponte GUI (Rust)
 
-- [ ] T-009: `telemetry.rs` — `rusqlite` leitura SELECT-only + escrita por subprocesso
+- [x] T-009: `telemetry.rs` — `rusqlite` leitura SELECT-only + escrita por subprocesso
     `apps/menubar/src-tauri/Cargo.toml`: adicionar `rusqlite` (feature `bundled`) em `[dependencies]`.
     `apps/menubar/src-tauri/src/telemetry.rs`: comandos `#[tauri::command]` SELECT-only nas views lendo
     `<dir>/.db/telemetry.db` (`read_change_insights`, `read_task_insights`, `read_change_list`,
