@@ -13,7 +13,7 @@
 
 ## Fase 1 — Fundação & desmonte
 
-- [ ] T-001: Adapter SQLite runtime-guarded (`src/telemetry/db.ts`)
+- [x] T-001: Adapter SQLite runtime-guarded (`src/telemetry/db.ts`)
     `src/telemetry/db.ts`: `openDb(path): Promise<TelemetryDb>` escolhe o driver por runtime —
     `bun:sqlite` (`typeof Bun !== "undefined"`) ou `node:sqlite` (`DatabaseSync`, Node ≥22.13), ambos
     por `import(...)` dinâmico. Seta os pragmas **1× no bootstrap** (D8):
