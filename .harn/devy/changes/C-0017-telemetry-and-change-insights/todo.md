@@ -25,7 +25,7 @@
     `package.json`: `engines.node` `>=20` → `>=22.13` (Node 20 é EOL; `node:sqlite` não existe nele).
     Teste: abre `.db` temporário, WAL persistente (2º open não re-executa o pragma), close idempotente.
 
-- [ ] T-002: Schema, views e hashes de identidade (`schema.sql` + `schema.ts`)
+- [x] T-002: Schema, views e hashes de identidade (`schema.sql` + `schema.ts`)
     `src/telemetry/schema.sql`: a DDL completa da `spec.md` (tabelas `agent_config`, `price`, `change`,
     `task`, `step`, `task_verdict`, `bug` + índices) e as views (`v_step`, `v_task` por-tentativa,
     `v_change`, `v_change_baseline` com desvio à mão `sqrt(avg(x*x)-avg(x)*avg(x))` D17, `v_task_bugs`,
