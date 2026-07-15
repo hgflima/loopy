@@ -12,6 +12,7 @@
  */
 import type {
   AgentSession,
+  AttemptSample,
   ChecksConfig,
   ChecksRunnerPort,
   GitPort,
@@ -21,8 +22,11 @@ import type {
   RunFlags,
   StepConfig,
   StepContext,
+  StepFailReason,
+  StepResult,
   Task,
   UiPort,
+  VisitRecorder,
 } from "../../src/types";
 import type { StoreEvent } from "../../src/tui/store";
 
@@ -163,6 +167,8 @@ export interface StepContextOverrides {
   readonly emit?: (event: StoreEvent) => void;
   /** Override the resolved agents registry (for multi-agent tests). */
   readonly resolvedAgents?: ResolvedAgents;
+  /** Per-Visit telemetry recorder (C-0017); defaults to absent (collection off). */
+  readonly telemetry?: VisitRecorder;
 }
 
 /** Assemble a {@link StepContext} for a step interpreter under test. */
@@ -185,5 +191,54 @@ export function makeStepContext(overrides: StepContextOverrides): StepContext {
     ui: overrides.ui ?? inertUi,
     logger: overrides.logger ?? makeLogger(),
     emit: overrides.emit,
+    telemetry: overrides.telemetry,
+  };
+}
+
+/** A recorded `setFailReason` call. */
+export interface FailReasonCall {
+  readonly reason: StepFailReason | null;
+  readonly detail: string | null;
+}
+
+/**
+ * A capturing {@link VisitRecorder} for the step-interpreter specs (T-007). It
+ * records everything an interpreter pushes/sets so a test can assert the
+ * per-attempt samples, the merge-gate `human_seconds`, and the `fail_reason`
+ * without touching SQLite. `now()` advances by `stepMs` per call (default 1s) so
+ * every attempt/human-wait window is a non-empty, deterministic interval.
+ */
+export interface CapturingRecorder extends VisitRecorder {
+  readonly samples: AttemptSample[];
+  readonly humanSeconds: (number | null)[];
+  readonly failReasons: FailReasonCall[];
+  readonly finalized: StepResult[];
+}
+
+/** Build a {@link CapturingRecorder} over a ticking clock. */
+export function makeRecorder(startMs = 1_000_000, stepMs = 1000): CapturingRecorder {
+  const samples: AttemptSample[] = [];
+  const humanSeconds: (number | null)[] = [];
+  const failReasons: FailReasonCall[] = [];
+  const finalized: StepResult[] = [];
+  let t = startMs - stepMs;
+  return {
+    samples,
+    humanSeconds,
+    failReasons,
+    finalized,
+    now: () => (t += stepMs),
+    push: (sample) => {
+      samples.push(sample);
+    },
+    setHumanSeconds: (seconds) => {
+      humanSeconds.push(seconds);
+    },
+    setFailReason: (reason, detail) => {
+      failReasons.push({ reason, detail: detail ?? null });
+    },
+    finalize: (result) => {
+      finalized.push(result);
+    },
   };
 }

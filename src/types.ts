@@ -644,6 +644,60 @@ export interface LoggerPort {
 // ---------------------------------------------------------------------------
 
 /**
+ * Terminal status of a `step` row (C-0017). `pass`/`fail` cover the ordinary
+ * outcomes; `error`/`timeout`/`cancelled`/`crashed` distinguish the abnormal
+ * turn terminations an agent attempt can hit (a non-`end_turn` stop reason).
+ */
+export type StepStatus =
+  | "pass"
+  | "fail"
+  | "error"
+  | "timeout"
+  | "cancelled"
+  | "crashed";
+
+/**
+ * The mechanical `fail_reason` the engine records for a failed `step` row (D5) —
+ * only what it can classify without judgment: a check-name heuristic
+ * (`test-fail`/`type-error`/`lint-fail`/`build-fail`), the verdict gate
+ * (`expect-fail`), a rejected approval (`human-rejected`), or an abnormal turn
+ * (`infra`). Qualitative judgments are out of scope (D5).
+ */
+export type StepFailReason =
+  | "test-fail"
+  | "type-error"
+  | "lint-fail"
+  | "build-fail"
+  | "expect-fail"
+  | "human-rejected"
+  | "infra";
+
+/**
+ * One per-Attempt measurement pushed by the `agent` step (T-007 / D3). Each
+ * retry of the inner `verify` loop is its own sample — its own tokens
+ * ({@link TurnUsage} drained once per attempt), cost delta (snapshot after −
+ * before, D10), window (`startedAt`/`endedAt` from the recorder's injected
+ * clock), status and `fail_reason`. The recorder writes one `step` row per
+ * pushed sample at {@link VisitRecorder.finalize}.
+ */
+export interface AttemptSample {
+  /** 1-based attempt index within the Visit (`1..max_attempts`). */
+  readonly attemptNo: number;
+  /** Attempt start (ms since epoch, from {@link VisitRecorder.now}). */
+  readonly startedAt: number;
+  /** Attempt end (ms since epoch, from {@link VisitRecorder.now}). */
+  readonly endedAt: number;
+  readonly status: StepStatus;
+  readonly failReason: StepFailReason | null;
+  /** Free-text detail when `failReason` is NULL (e.g. an unmatched check name). */
+  readonly failDetail: string | null;
+  /** Per-turn usage drained once, right after the prompt (D3). NULL if unreported. */
+  readonly usage: TurnUsage | null;
+  /** Cost delta over the attempt (cumulative after − before, D10). NULL if unpaired. */
+  readonly costDelta: number | null;
+}
+
+/**
  * Per-Visit telemetry recorder attached to a step's context (C-0017 / ADR-0011).
  * The orchestrator builds one per Visit in `buildTaskStepContext`, closed over
  * the immutable facts (task/change/step/kind/visit), and calls {@link finalize}
@@ -653,9 +707,34 @@ export interface LoggerPort {
  */
 export interface VisitRecorder {
   /**
+   * The recorder's injected clock (ms since epoch). Interpreters stamp their own
+   * attempt / human-wait windows with it so run and dry-run resolve identical
+   * timestamps (determinism, AD-4).
+   */
+  now(): number;
+  /**
+   * Accumulate one per-Attempt sample (agent step, T-007 / D3). Each pushed
+   * sample becomes its own `step` row at {@link finalize}; a Visit that pushes
+   * nothing writes nothing (no phantom zero-token row).
+   */
+  push(sample: AttemptSample): void;
+  /**
+   * Record `human_seconds` for the Visit's single row — the merge-gate
+   * deliberation time (approval step, D12). Left unset (NULL) under `--yes`,
+   * where no gate occurred.
+   */
+  setHumanSeconds(seconds: number | null): void;
+  /**
+   * Record the `fail_reason`/`fail_detail` for the Visit's single non-agent row
+   * (e.g. `human-rejected` for a rejected approval, D5).
+   */
+  setFailReason(reason: StepFailReason | null, detail?: string | null): void;
+  /**
    * Terminal write, called once by the orchestrator after the interpreter
-   * returns. For a non-agent step (no pushed attempts) it inserts a single Visit
-   * row whose `status` follows `result.ok`; agent per-attempt rows land in T-007.
+   * returns. For an agent step it inserts one row per pushed {@link
+   * AttemptSample} (never re-draining); for a non-agent step it inserts a single
+   * Visit row whose `status` follows `result.ok`, carrying any `human_seconds` /
+   * `fail_reason` set above.
    */
   finalize(result: StepResult): void;
 }

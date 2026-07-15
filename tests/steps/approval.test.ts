@@ -6,7 +6,7 @@ import {
 } from "../../src/steps/shell";
 import { InterpolationError } from "../../src/interp/resolver";
 import type { ApprovalStep, UiPort } from "../../src/types";
-import { makeLogger, makeStepContext } from "./support";
+import { makeLogger, makeRecorder, makeStepContext } from "./support";
 
 /** Build an `approval` step config with sane defaults (a merge gate). */
 function approvalStep(overrides: Partial<ApprovalStep> = {}): ApprovalStep {
@@ -348,5 +348,81 @@ describe("createApprovalStep — execute", () => {
       step: { id: "x", type: "shell", run: ["echo hi"] },
     });
     await expect(createApprovalStep().execute(ctx)).rejects.toThrow(/approval/);
+  });
+
+  // -------------------------------------------------------------------------
+  // human_seconds telemetry (T-007 / D12)
+  // -------------------------------------------------------------------------
+
+  it("brackets the human wait and delivers human_seconds via the recorder (D12)", async () => {
+    const { ui } = recordingUi(true);
+    const { runner } = recordingRunner();
+    const recorder = makeRecorder(); // now() ticks 1s per call
+    const ctx = makeStepContext({
+      step: approvalStep({ run: [] }),
+      ui,
+      telemetry: recorder,
+    });
+
+    await createApprovalStep({ runCommand: runner }).execute(ctx);
+
+    // now() bracket the await: 1s elapsed between the two reads.
+    expect(recorder.humanSeconds).toEqual([1]);
+  });
+
+  it("does NOT record human_seconds under --yes (no gate occurred, D12)", async () => {
+    const { runner } = recordingRunner();
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: approvalStep({ run: [] }),
+      flags: { yes: true },
+      telemetry: recorder,
+    });
+
+    await createApprovalStep({ runCommand: runner }).execute(ctx);
+
+    // Under --yes the recorder's clock is never read for the gate → NULL.
+    expect(recorder.humanSeconds).toEqual([]);
+  });
+
+  it("sets fail_reason 'human-rejected' on a rejected gate (D5)", async () => {
+    const { ui } = recordingUi(false);
+    const { runner } = recordingRunner();
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: approvalStep({ run: ["merge"] }),
+      ui,
+      telemetry: recorder,
+    });
+
+    const result = await createApprovalStep({ runCommand: runner }).execute(ctx);
+
+    expect(result.ok).toBe(false);
+    expect(recorder.failReasons).toEqual([
+      { reason: "human-rejected", detail: null },
+    ]);
+    // A rejection still measured the human wait.
+    expect(recorder.humanSeconds).toEqual([1]);
+  });
+
+  it("records human_seconds but no fail_reason when an approved action later fails", async () => {
+    const { ui } = recordingUi(true);
+    const { runner } = recordingRunner((cmd) =>
+      cmd.includes("merge") ? { ok: false, exitCode: 1 } : {},
+    );
+    const recorder = makeRecorder();
+    const ctx = makeStepContext({
+      step: approvalStep({ run: ["git merge"] }),
+      ui,
+      telemetry: recorder,
+    });
+
+    const result = await createApprovalStep({ runCommand: runner }).execute(ctx);
+
+    expect(result.ok).toBe(false);
+    // The human deliberated (so human_seconds is recorded)…
+    expect(recorder.humanSeconds).toEqual([1]);
+    // …but an action failure has no clean bucket (NULL, not human-rejected).
+    expect(recorder.failReasons).toEqual([]);
   });
 });

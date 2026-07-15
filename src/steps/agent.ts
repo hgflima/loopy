@@ -53,18 +53,58 @@
  * checks list that does not exist, or being handed a step of the wrong `type`.
  */
 import { createResolver, createScope, selectPrompt } from "../interp/resolver";
-import { buildScopeVars, formatOnFail, resolveAgentBinding } from "../loop/orchestrator";
+import {
+  buildScopeVars,
+  formatOnFail,
+  resolveAgentBinding,
+} from "../loop/orchestrator";
 import { classifyStopReason } from "../acp/session";
 import type {
+  AgentSession,
   AgentStep,
+  AttemptSample,
   ChecksReport,
+  StepCost,
   Step,
   StepContext,
+  StepFailReason,
   StepResult,
+  StepStatus,
   StopReason,
+  TurnUsage,
 } from "../types";
 import { assertStepType } from "./guards";
 import { parseVerdict } from "./verdict";
+
+/**
+ * Classify a failed `verify` report into the mechanical `fail_reason` (D5): the
+ * **first** failing check's name decides it (`test`/`spec` → `test-fail`,
+ * `type`/`tsc` → `type-error`, `lint`/`eslint` → `lint-fail`, `build` →
+ * `build-fail`). A name that matches none yields `null` + the raw name as
+ * `fail_detail` (no bucket without evidence). Pure (AD-6).
+ */
+function classifyCheckFailure(report: ChecksReport): {
+  readonly reason: StepFailReason | null;
+  readonly detail: string | null;
+} {
+  const failed = report.results.find((r) => !r.ok);
+  if (failed === undefined) return { reason: null, detail: null };
+  const name = failed.name.toLowerCase();
+  if (/test|spec/.test(name)) return { reason: "test-fail", detail: null };
+  if (/type|tsc/.test(name)) return { reason: "type-error", detail: null };
+  if (/lint|eslint/.test(name)) return { reason: "lint-fail", detail: null };
+  if (/build/.test(name)) return { reason: "build-fail", detail: null };
+  return { reason: null, detail: failed.name };
+}
+
+/**
+ * Map a non-`end_turn` stop reason to a `step.status` (D5): our own cancel is
+ * `cancelled`; every other abnormal stop (`refusal`/`max_tokens`/
+ * `max_turn_requests`) is an `error` (an infra fault). Pure (AD-6).
+ */
+function statusFromStopReason(reason: StopReason): StepStatus {
+  return classifyStopReason(reason) === "stop_signal" ? "cancelled" : "error";
+}
 
 /**
  * Build a resolver for a specific `attempt`, reusing {@link buildScopeVars} (the
@@ -174,6 +214,90 @@ function applyVerdictGate(ctx: StepContext, step: AgentStep): StepResult {
 }
 
 /**
+ * Per-Attempt telemetry accumulator for the `agent` step (T-007 / D3). Owns the
+ * opt-in gate (AD-1): with no recorder every method is a no-op and the session's
+ * `drainUsage`/`readCost` are **never** touched, keeping a telemetry-off run
+ * byte-identical. One sample accrues per attempt — its own tokens (drained once,
+ * D3), cost delta (post − pre snapshot across the reopen, D10) and window (from
+ * the recorder's injected clock) — buffered locally so the verdict gate can still
+ * rewrite the last one before {@link AttemptMeter.flush} hands them off.
+ */
+interface AttemptMeter {
+  /** After the (optional) reopen: stamp the window start, read the cost baseline (D10). */
+  begin(): void;
+  /** After the prompt: drain usage once and close the cost delta (D3/D10). */
+  measure(): void;
+  /** Buffer a sample for `attemptNo`, stamping `endedAt` at this moment. */
+  record(
+    attemptNo: number,
+    status: StepStatus,
+    failReason: StepFailReason | null,
+    failDetail: string | null,
+  ): void;
+  /** Rewrite the last buffered sample as an `expect-fail` (post-loop verdict gate, D5). */
+  rewriteLastAsExpectFail(detail: string | null): void;
+  /** Hand every buffered sample to the recorder (the Visit's single write trigger). */
+  flush(): void;
+}
+
+function createAttemptMeter(
+  recorder: StepContext["telemetry"],
+  session: AgentSession,
+): AttemptMeter {
+  const samples: AttemptSample[] = [];
+  let startedAt = 0;
+  let usage: TurnUsage | null = null;
+  let costDelta: number | null = null;
+  let costBefore: StepCost | null = null;
+
+  return {
+    begin(): void {
+      if (recorder === undefined) return;
+      startedAt = recorder.now();
+      usage = null;
+      costDelta = null;
+      costBefore = session.readCost();
+    },
+    measure(): void {
+      if (recorder === undefined) return;
+      usage = session.drainUsage();
+      const costAfter = session.readCost();
+      costDelta =
+        costBefore !== null && costAfter !== null
+          ? costAfter.amount - costBefore.amount
+          : null;
+    },
+    record(attemptNo, status, failReason, failDetail): void {
+      if (recorder === undefined) return;
+      samples.push({
+        attemptNo,
+        startedAt,
+        endedAt: recorder.now(),
+        status,
+        failReason,
+        failDetail,
+        usage,
+        costDelta,
+      });
+    },
+    rewriteLastAsExpectFail(detail): void {
+      if (samples.length === 0) return;
+      const last = samples[samples.length - 1]!;
+      samples[samples.length - 1] = {
+        ...last,
+        status: "fail",
+        failReason: "expect-fail",
+        failDetail: detail,
+      };
+    },
+    flush(): void {
+      if (recorder === undefined) return;
+      for (const sample of samples) recorder.push(sample);
+    },
+  };
+}
+
+/**
  * Build the `agent` {@link Step} interpreter. It reads the current step from
  * `ctx.step` (the orchestrator only routes `agent` steps here) and drives
  * `ctx.session` / `ctx.checks`; it holds no per-run state, so one instance is
@@ -229,6 +353,11 @@ export function createAgentStep(): Step {
       let checksReport = ctx.resolve("${checks.report}");
       let succeeded = false;
 
+      // Per-Attempt telemetry (T-007 / D3): one sample per attempt, pushed to the
+      // recorder at each exit point. The meter owns the opt-in gate — a no-op that
+      // never touches the session when `metrics:` is off (AD-1).
+      const meter = createAttemptMeter(ctx.telemetry, ctx.session);
+
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         ctx.emit?.({
           type: "attempt_started",
@@ -240,6 +369,10 @@ export function createAgentStep(): Step {
 
         if (clearContext) await ctx.session.clear();
 
+        // Telemetry: stamp the window start and read the cost baseline AFTER the
+        // clear (D10) — `costCarry` keeps `readCost()` monotonic across the reopen.
+        meter.begin();
+
         const resolve = buildAttemptResolver(
           ctx,
           worktree,
@@ -249,13 +382,25 @@ export function createAgentStep(): Step {
         const promptText = resolve(selectPrompt(step, attempt));
         const stopReason = await ctx.session.prompt(promptText);
 
+        // Drain usage ONCE per attempt, right after the prompt (D3); close the
+        // cost delta against the same-session baseline (D10).
+        meter.measure();
+
         if (classifyStopReason(stopReason) !== "success") {
           const reason = nonEndTurnReason(step.id, stopReason);
           ctx.logger.error(reason);
+          meter.record(
+            attempt,
+            statusFromStopReason(stopReason),
+            "infra",
+            stopReason,
+          );
+          meter.flush();
           return { ok: false, reason, output: ctx.session.readText() };
         }
 
         if (verify === undefined) {
+          meter.record(attempt, "pass", null, null);
           succeeded = true;
           break;
         }
@@ -271,10 +416,14 @@ export function createAgentStep(): Step {
           ctx.logger.info(
             `[agent:${step.id}] verify "${verify.run}" verde na tentativa ${attempt}/${maxAttempts}.`,
           );
+          meter.record(attempt, "pass", null, null);
           succeeded = true;
           break;
         }
 
+        const { reason: failReason, detail: failDetail } =
+          classifyCheckFailure(report);
+        meter.record(attempt, "fail", failReason, failDetail);
         checksReport = report.text;
         ctx.logger.info(
           `[agent:${step.id}] verify "${verify.run}" falhou (tentativa ${attempt}/${maxAttempts}).`,
@@ -287,6 +436,7 @@ export function createAgentStep(): Step {
           `[agent:${step.id}] verify "${verify.run}" falhou após ` +
           `${maxAttempts} tentativa(s); aplicando on_fail: ${formatOnFail(onFail)}.`;
         ctx.logger.error(reason);
+        meter.flush();
         return {
           ok: false,
           reason,
@@ -295,7 +445,14 @@ export function createAgentStep(): Step {
         };
       }
 
-      return applyVerdictGate(ctx, step);
+      // The verdict gate is only known post-loop (an `expect` step): rewrite the
+      // last (successful) attempt sample to fail/expect-fail before flushing —
+      // the same turn passed verify but failed the expect gate (D5).
+      const gateResult = applyVerdictGate(ctx, step);
+      if (!gateResult.ok)
+        meter.rewriteLastAsExpectFail(gateResult.reason ?? null);
+      meter.flush();
+      return gateResult;
     },
   };
 }

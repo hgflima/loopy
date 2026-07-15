@@ -18,7 +18,14 @@
  */
 import { randomUUID } from "node:crypto";
 
-import type { StepResult, StepType, VisitRecorder } from "../types";
+import type {
+  AttemptSample,
+  StepFailReason,
+  StepResult,
+  StepStatus,
+  StepType,
+  VisitRecorder,
+} from "../types";
 import type { SqlParams, TelemetryDb } from "./db";
 
 /** A row inserted into `agent_config` (INSERT OR IGNORE — the dimension, D11). */
@@ -49,14 +56,8 @@ export interface StepRow {
   readonly queued_at: string | null;
   readonly started_at: string;
   readonly ended_at: string;
-  readonly status:
-    | "pass"
-    | "fail"
-    | "error"
-    | "timeout"
-    | "cancelled"
-    | "crashed";
-  readonly fail_reason: string | null;
+  readonly status: StepStatus;
+  readonly fail_reason: StepFailReason | null;
   readonly fail_detail: string | null;
   readonly tokens_in: number;
   readonly tokens_out: number;
@@ -234,28 +235,81 @@ export interface VisitContext {
   readonly now: () => number;
 }
 
+/** Turn one per-Attempt sample into a `step` row for an agent Visit (T-007). */
+function sampleToRow(ctx: VisitContext, sample: AttemptSample): StepRow {
+  return {
+    task_id: ctx.taskId,
+    change_id: ctx.changeId,
+    name: ctx.stepName,
+    kind: ctx.kind,
+    visit_no: ctx.visitNo,
+    attempt_no: sample.attemptNo,
+    config_id: ctx.configId ?? null,
+    queued_at: null,
+    started_at: new Date(sample.startedAt).toISOString(),
+    ended_at: new Date(sample.endedAt).toISOString(),
+    status: sample.status,
+    fail_reason: sample.failReason,
+    fail_detail: sample.failDetail,
+    tokens_in: sample.usage?.inputTokens ?? 0,
+    tokens_out: sample.usage?.outputTokens ?? 0,
+    tokens_cache_read: sample.usage?.cachedReadTokens ?? 0,
+    tokens_cache_write: sample.usage?.cachedWriteTokens ?? 0,
+    cost_usd: sample.costDelta,
+    cost_confidence: "exact",
+    price_version: null,
+    // human_seconds lives only on the approval (non-agent) row (D12).
+    human_seconds: null,
+  };
+}
+
 /**
  * Build the per-Visit recorder the orchestrator attaches to a step's context.
- * It stamps `started_at` at construction (right before the interpreter runs) and
- * `ended_at` at {@link VisitRecorder.finalize}.
+ * It stamps `started_at` at construction (right before the interpreter runs, for
+ * the non-agent branch) and `ended_at` at {@link VisitRecorder.finalize}.
  *
- * `finalize` is the **single write trigger**. For a non-agent step it inserts
- * one Visit row (`attempt_no=1`, `config_id`/`cost_usd` NULL, zeroed tokens,
- * `status` from `result.ok`). Agent steps push per-attempt samples and emit N
- * rows in T-007; until then an agent Visit records nothing here (so T-004 writes
- * exactly the non-agent Visit rows the acceptance calls for).
+ * `finalize` is the **single write trigger** (D3):
+ *
+ *  - **Agent step** — inserts one row per {@link VisitRecorder.push}ed sample
+ *    (each retry of the inner `verify` loop is its own line with its own tokens,
+ *    cost delta and window, D3). It **never re-drains** and ignores the aggregate
+ *    `result`; a Visit that pushed nothing writes nothing (no phantom row).
+ *  - **Non-agent step** (shell / checks / approval) — inserts a single Visit row
+ *    (`attempt_no=1`, `cost_usd` NULL, zeroed tokens, `status` from `result.ok`),
+ *    carrying any `human_seconds` / `fail_reason` set via {@link
+ *    VisitRecorder.setHumanSeconds} / {@link VisitRecorder.setFailReason} (D12/D5).
  */
 export function createVisitRecorder(
   db: TelemetryDb,
   ctx: VisitContext,
 ): VisitRecorder {
   const startedAtMs = ctx.now();
+  const samples: AttemptSample[] = [];
+  let humanSeconds: number | null = null;
+  let failReason: StepFailReason | null = null;
+  let failDetail: string | null = null;
+
   return {
+    now: () => ctx.now(),
+    push(sample: AttemptSample): void {
+      samples.push(sample);
+    },
+    setHumanSeconds(seconds: number | null): void {
+      humanSeconds = seconds;
+    },
+    setFailReason(reason: StepFailReason | null, detail?: string | null): void {
+      failReason = reason;
+      failDetail = detail ?? null;
+    },
     finalize(result: StepResult): void {
       try {
-        // Agent per-attempt instrumentation is T-007; non-agent Visits (shell /
-        // checks / approval) each produce a single row here.
-        if (ctx.kind === "agent") return;
+        if (ctx.kind === "agent") {
+          // One row per pushed attempt; never re-drain (no phantom zero row).
+          for (const sample of samples) insertStep(db, sampleToRow(ctx, sample));
+          return;
+        }
+        // Non-agent Visit: a single row, status from result.ok, carrying the
+        // human wait and any mechanical fail_reason set by the interpreter.
         insertStep(db, {
           task_id: ctx.taskId,
           change_id: ctx.changeId,
@@ -268,8 +322,8 @@ export function createVisitRecorder(
           started_at: new Date(startedAtMs).toISOString(),
           ended_at: new Date(ctx.now()).toISOString(),
           status: result.ok ? "pass" : "fail",
-          fail_reason: null,
-          fail_detail: null,
+          fail_reason: failReason,
+          fail_detail: failDetail,
           tokens_in: 0,
           tokens_out: 0,
           tokens_cache_read: 0,
@@ -277,7 +331,7 @@ export function createVisitRecorder(
           cost_usd: null,
           cost_confidence: "exact",
           price_version: null,
-          human_seconds: null,
+          human_seconds: humanSeconds,
         });
       } catch {
         // Best-effort: telemetry never throws into the engine (D9).
