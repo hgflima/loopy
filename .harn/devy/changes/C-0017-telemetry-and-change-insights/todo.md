@@ -79,7 +79,7 @@
     **não** cria `.db`; falha de DB não derruba step.
     Deps: T-002, T-003
 
-- [ ] T-005: Dimensão `change` (INSERT OR IGNORE no início + UPDATE `merged` no fim)
+- [x] T-005: Dimensão `change` (INSERT OR IGNORE no início + UPDATE `merged` no fim)
     `orchestrator.ts` (início de `runLoop`, `:1348-1401`): INSERT OR IGNORE da `change` —
     `change_id` = prefixo `C-\d+` de `basename(dirname(inputs.todo))` (espelha `deriveChange:116`);
     `name` = slug do dir (fallback `config.name` quando dir=`.`); `repo` = origin/basename;
