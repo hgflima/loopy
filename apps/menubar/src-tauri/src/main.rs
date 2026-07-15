@@ -5,10 +5,15 @@ mod config;
 mod panel;
 mod project_fs;
 mod sidecar;
+mod telemetry;
 
 use config::{load_launch_config, save_launch_config};
 use project_fs::{probe_agent, read_backlog, read_capabilities_cache, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
+use telemetry::{
+    insights_add_bug, insights_set_change_status, insights_set_verdict, read_baseline,
+    read_change_insights, read_change_list, read_task_insights,
+};
 use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -300,6 +305,15 @@ fn main() {
             write_loopy_yml,
             read_capabilities_cache,
             probe_agent,
+            // Telemetry Insights bridge (C-0017 / T-009): SELECT-only reads over
+            // the engine's views + one-shot CLI writes (verdict/bug/change).
+            read_change_list,
+            read_change_insights,
+            read_task_insights,
+            read_baseline,
+            insights_set_verdict,
+            insights_add_bug,
+            insights_set_change_status,
             log_error,
             quit_app,
         ])
