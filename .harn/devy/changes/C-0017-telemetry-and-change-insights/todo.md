@@ -105,7 +105,7 @@
     `SUM(step.cost_usd)` da task bate (D-0008).
     Deps: T-005
 
-- [ ] T-007: Instrumentação por-Tentativa (`agent.ts`) + `human_seconds` (`approval.ts`)
+- [x] T-007: Instrumentação por-Tentativa (`agent.ts`) + `human_seconds` (`approval.ts`)
     ⚠️ fatia de maior risco — construída por último sobre pipeline validado.
     `agent.ts` (loop `:232-282`): acumular por tentativa `{ attemptNo, startedAt, endedAt, status,
     failReason, failDetail, usage, costDelta }`. `usage = ctx.session.drainUsage()` **uma vez por
