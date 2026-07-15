@@ -93,7 +93,7 @@
     `task.change_id` resolve.
     Deps: T-004
 
-- [ ] T-006: Linha `task` + `size_*` via `git diff --numstat`
+- [x] T-006: Linha `task` + `size_*` via `git diff --numstat`
     `src/git/*`: `GitPort.diffNumstat(base, head) → {files,added,removed}|null` (best-effort).
     `orchestrator.ts`: capturar o numstat `base_sha .. task.branch` **antes** do loop de teardown
     (`runTaskPipeline:1138`, com o branch/worktree ainda vivos — o `cleanup` do yml os apaga ali) e
