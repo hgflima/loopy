@@ -158,7 +158,7 @@
 
 ## Fase 5 — Aba Insights (React)
 
-- [ ] T-010: View-model puro + testes (`apps/menubar/src/insights/*.ts`)
+- [x] T-010: View-model puro + testes (`apps/menubar/src/insights/*.ts`)
     Módulos `.ts` puros (sem montar Tauri, padrão `configToStore.test.ts`): mapeamento de linhas das
     views → view-model — Δ% da 3ª coluna, toggle absoluto↔normalizado por churn
     (`size_added+size_removed`), tri-estado do veredito (`pass`/`fail`/`null`), marca `estimated`
