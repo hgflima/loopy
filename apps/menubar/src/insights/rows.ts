@@ -26,6 +26,22 @@ export type CostConfidence = "exact" | "estimated";
 /** Veredito humano persistido (`task_verdict.verdict`); ausência = não avaliada. */
 export type HumanVerdict = "pass" | "fail";
 
+/** Os quatro tipos de Step (D16 — `checks` inclusive). */
+export type StepKind = "shell" | "agent" | "checks" | "approval";
+
+/** Terminação de uma Tentativa (`step.status`). */
+export type StepStatus = "pass" | "fail" | "error" | "timeout" | "cancelled" | "crashed";
+
+/** Motivo mecânico da falha (`step.fail_reason`, D5); `null` = sem match. */
+export type FailReason =
+  | "test-fail"
+  | "type-error"
+  | "lint-fail"
+  | "build-fail"
+  | "expect-fail"
+  | "human-rejected"
+  | "infra";
+
 /**
  * Uma linha de `v_change` — a agregação de uma change sobre suas tasks.
  *
@@ -110,4 +126,42 @@ export interface TaskRow {
   human_verdict: HumanVerdict | null;
   bugs: number | null;
   bugs_open: number | null;
+}
+
+/**
+ * Uma linha de `v_step` — uma **Tentativa** (D3), a granularidade que o SC1 pede
+ * ao expandir uma task. Carrega seus próprios tokens/custo/duração e o
+ * `preset`/`model`/`mode`/`effort` resolvidos (do `agent_config`; `null` em step
+ * não-agente). `visit_no`≥2 = pós-goto (fix-loop); `attempt_no` = a tentativa do
+ * verify dentro da visita. `work_s` já vem em segundos da view.
+ */
+export interface StepRow {
+  step_id: string;
+  task_id: string;
+  change_id: string;
+  seq: number;
+  name: string;
+  kind: StepKind;
+  visit_no: number;
+  attempt_no: number;
+  status: StepStatus;
+  fail_reason: FailReason | null;
+  fail_detail: string | null;
+  config_id: string | null;
+  preset: string | null;
+  model: string | null;
+  mode: string | null;
+  effort: string | null;
+  tokens_in: number | null;
+  tokens_out: number | null;
+  tokens_cache_read: number | null;
+  tokens_cache_write: number | null;
+  cost_usd: number | null;
+  cost_confidence: CostConfidence | null;
+  price_version: string | null;
+  human_seconds: number | null;
+  work_s: number | null;
+  queued_at: string | null;
+  started_at: string;
+  ended_at: string;
 }

@@ -1,0 +1,393 @@
+/* InsightsPane — a 4ª aba: cabeçalho 3-col, lista de tasks, expansão nos passos. */
+
+.insights {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-md);
+  gap: var(--sp-md);
+  font-family: var(--font-ui);
+  color: var(--ink);
+}
+
+/* ---- Empty state (sem telemetria) ------------------------------------- */
+
+.insights__empty {
+  margin: auto;
+  max-width: 380px;
+  text-align: center;
+  color: var(--ink-secondary);
+}
+
+.insights__empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 var(--sp-xs);
+}
+
+.insights__empty-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.insights code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--surface);
+  border-radius: var(--r-sm);
+  padding: 1px 4px;
+}
+
+/* ---- Toolbar ----------------------------------------------------------- */
+
+.insights__toolbar {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+
+.insights__select {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.insights__select-label {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+}
+
+.insights__select-input {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+}
+
+.insights__toolbar-spacer {
+  flex: 1;
+}
+
+.insights__unrated {
+  font-size: 12px;
+  color: var(--ink-secondary);
+  align-self: center;
+}
+
+.insights__estimated {
+  font-size: 11px;
+  color: var(--state-blocked-ink);
+  background: var(--state-blocked-subtle);
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+  align-self: center;
+}
+
+.insights__escaped {
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--state-failed-ink);
+  background: var(--state-failed-subtle);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  padding: 3px 9px;
+  cursor: pointer;
+  align-self: center;
+}
+
+.insights__escaped.is-active {
+  border-color: var(--state-failed);
+}
+
+.insights__error {
+  font-size: 12px;
+  color: var(--state-failed-ink);
+  background: var(--state-failed-subtle);
+  border-radius: var(--r-sm);
+  padding: var(--sp-sm);
+}
+
+/* ---- Header (3-col table) --------------------------------------------- */
+
+.insights__header {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.insights__header th,
+.insights__header td {
+  text-align: right;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.insights__header thead th {
+  color: var(--ink-tertiary);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.insights__h-metric {
+  text-align: left !important;
+  color: var(--ink-secondary);
+  font-weight: 500;
+}
+
+.insights__h-norm,
+.insights__h-est {
+  color: var(--ink-tertiary);
+  font-size: 0.85em;
+}
+
+.insights__h-baseline {
+  color: var(--ink-secondary);
+}
+
+.insights__h-compared {
+  color: var(--ink-secondary);
+  margin-right: var(--sp-xs);
+}
+
+.insights__delta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.insights__delta--good {
+  color: var(--state-done-ink);
+}
+
+.insights__delta--bad {
+  color: var(--state-failed-ink);
+}
+
+.insights__delta--neutral {
+  color: var(--ink-tertiary);
+}
+
+/* ---- Task list --------------------------------------------------------- */
+
+.insights__no-tasks {
+  font-size: 12px;
+  color: var(--ink-tertiary);
+  padding: var(--sp-md);
+}
+
+.insights__tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.insights__task {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface-elevated);
+}
+
+.insights__task-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  padding: 4px 8px;
+}
+
+.insights__task-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  padding: 2px 0;
+}
+
+.insights__task-caret {
+  color: var(--ink-tertiary);
+  width: 12px;
+}
+
+.insights__task-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.insights__task-name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.insights__task-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  font-size: 11px;
+  color: var(--ink-secondary);
+}
+
+.insights__escaped-badge {
+  color: var(--state-failed-ink);
+}
+
+.insights__task-cost {
+  font-variant-numeric: tabular-nums;
+}
+
+.insights__task-attempts {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-tertiary);
+}
+
+.insights__task-bugs {
+  color: var(--state-blocked-ink);
+}
+
+/* ---- Tri-state verdict control ---------------------------------------- */
+
+.verdict {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.verdict__btn {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 8px;
+  border: none;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+.verdict__btn + .verdict__btn {
+  border-left: 1px solid var(--border);
+}
+
+.verdict__btn--pass.is-active {
+  background: var(--state-done-subtle);
+  color: var(--state-done-ink);
+}
+
+.verdict__btn--fail.is-active {
+  background: var(--state-failed-subtle);
+  color: var(--state-failed-ink);
+}
+
+.insights__bug-toggle {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+}
+
+/* ---- Inline bug form --------------------------------------------------- */
+
+.insights__bug-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+  padding: var(--sp-sm) var(--sp-md);
+  border-top: 1px dashed var(--border);
+}
+
+.insights__bug-input,
+.insights__bug-severity {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+}
+
+.insights__bug-input {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* ---- Step expansion (per-attempt timeline, SC1) ----------------------- */
+
+.insights__steps {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-sm) var(--sp-md);
+  overflow-x: auto;
+}
+
+.insights__steps-loading,
+.insights__steps-empty {
+  font-size: 11px;
+  color: var(--ink-tertiary);
+  margin: 0;
+}
+
+.insights__steps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.insights__steps-table th {
+  text-align: left;
+  color: var(--ink-tertiary);
+  font-weight: 600;
+  padding: 2px 8px;
+}
+
+.insights__steps-table td {
+  padding: 2px 8px;
+  border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.insights__step-name {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+
+.insights__step-kind {
+  margin-left: var(--sp-xs);
+  color: var(--ink-tertiary);
+  font-size: 0.9em;
+}
+
+.insights__step-status--ok {
+  color: var(--state-done-ink);
+}
+
+.insights__step-status--bad {
+  color: var(--state-failed-ink);
+}
+
+.insights__step-fail {
+  color: var(--ink-tertiary);
+}

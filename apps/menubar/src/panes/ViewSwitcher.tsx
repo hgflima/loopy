@@ -18,15 +18,17 @@ import type { OrphanRef } from "../config/pipeline-edit";
 import { KanbanBoard } from "../kanban/KanbanBoard";
 import { DepsFlow } from "../graph/DepsFlow";
 import { ConfigPane } from "../config/ConfigPane";
+import { InsightsPane } from "../insights/InsightsPane";
 import { SegmentedControl, Button, type Segment } from "../ui";
 import "./ViewSwitcher.css";
 
-export type ViewId = "kanban" | "deps" | "config";
+export type ViewId = "kanban" | "deps" | "config" | "insights";
 
 const SEGMENTS: readonly Segment<ViewId>[] = [
   { id: "kanban", label: "Kanban" },
   { id: "deps", label: "Deps" },
   { id: "config", label: "Config" },
+  { id: "insights", label: "Insights" },
 ];
 
 interface ViewSwitcherProps {
@@ -148,6 +150,13 @@ export function ViewSwitcher({
         style={{ display: view === "config" ? "flex" : "none" }}
       >
         {configDraft && <ConfigPane configDraft={configDraft} dir={dir} />}
+      </div>
+      {/* Insights: 4ª aba, sempre montada (lê o `.db` por Rust; funciona em idle e no run). */}
+      <div
+        className="view-switcher__pane"
+        style={{ display: view === "insights" ? "flex" : "none" }}
+      >
+        <InsightsPane dir={dir} />
       </div>
     </div>
   );
