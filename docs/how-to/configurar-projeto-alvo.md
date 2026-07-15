@@ -211,6 +211,7 @@ Como `require_clean_parent: true` exige o parent limpo antes de cada merge, um
 .worktrees/
 .loopy/
 .loopy.stop
+.db/
 ```
 
 ### 6. Valide sem efeitos colaterais (`--dry-run`)

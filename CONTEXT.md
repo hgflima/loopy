@@ -302,33 +302,34 @@ _Avoid_: simulação, preview
 A substituição de variáveis conhecidas (`task.*`, `worktree.*`, `iteration`, `attempt`, `checks.report`, `inputs.*`, `workspace.*`, `change.*`) nos textos da Configuração, resolvida uma vez por Task/Tentativa. Variável desconhecida aborta (fail-fast).
 _Avoid_: template, variável de ambiente
 
-## Métricas (ADR-0003)
+## Telemetria (ADR-0003, estendida pela ADR-0011)
 
-Instrumentação opt-in de tempo, tokens e custo por Step, acumulados em quatro níveis. Ativada pela presença do bloco `metrics` no `loopy.yml`; ausência = feature desligada (regressão zero). Não confundir estes termos com os do cluster de verificação (Report de checks, Verify, Tentativa).
+Persistência opt-in de tempo, tokens, custo e anotações humanas num **SQLite** (`<root>/.db/telemetry.db`, WAL, adapter por-runtime `node:sqlite`/`bun:sqlite`): **insert-only** para os fatos (`step`/`task` + a dimensão mutável `change`), mutável para as anotações. Ativada pela presença do bloco `metrics` no `loopy.yml`; ausência = feature desligada (regressão zero, `RunLoopResult` byte-idêntico). Não confundir estes termos com os do cluster de verificação (Report de checks, Verify, Tentativa).
+_Avoid_: métricas (o meio agora é telemetria SQLite); `.loopy/metrics.json`, Amostra, Relatório de execução, Relatório de change (aposentados na C-0017 — ver ADR-0011)
 
-**Amostra** (_Sample_):
-A medição de **uma Visita** efetivamente executada a um Step: `{ durationMs, usage?, cost? }`. Unidade mínima de coleta. Steps não executados (visit-exceeded, sem intérprete) não geram Amostra. Um Step visitado N vezes numa Task gera N Amostras — todas somadas no rollup.
-_Avoid_: medição (genérico), ponto de dados
+**Granularidade por-Tentativa** (a linha de `step`):
+A unidade de gravação de fato: **uma linha de `step` por Tentativa** do verify (`visit_no` = entrada do PC no step; `attempt_no` = tentativa dentro da Visita), com tokens/custo/duração próprios. Insert-only, gravada na finalização de cada Tentativa (qualquer terminação insere; nenhum estado `running`). Responde "quanto custa o loop errar".
+_Avoid_: Amostra (a medição por-Visita da ADR-0003, que fundia as Tentativas)
 
 **Uso** (_Usage_):
-Tokens de **um turno ACP** (`input/output/cachedRead/cachedWrite/thought/total`), emitido **por-turno** pelo agente. Best-effort: pode ser `null` (⇒ `n/d`). Somado ao longo dos turnos de uma Visita → Uso por-Step. Só Steps de **Agente** têm Uso; Shell/Checks/Aprovação → `n/a`.
+Tokens de **um turno ACP** (`input/output/cachedRead/cachedWrite/thought/total`), emitido **por-turno** pelo agente. Best-effort: pode ser `null` (⇒ `n/d`). Drenado uma vez por Tentativa (`drainUsage()`) → tokens da linha de `step`. Só Steps de **Agente** têm Uso; Shell/Checks/Aprovação → `n/a`.
 _Avoid_: consumo, tokens (sozinho — ambíguo com input/output/cached)
 
 **Custo** (_Cost_):
-Valor monetário **cumulativo da Sessão** (`amount` + `currency`), obtido via `usage_update` do ACP. Best-effort: pode ser `null` (⇒ `n/d`). Reportado a nível de **Task/Run/Change** (nunca por-Step — cumulativo impede rateio confiável). O rollup por Task toma o último snapshot não-nulo.
-_Avoid_: preço, gasto; não confundir com Uso (tokens ≠ custo)
+Valor monetário derivado **por-Step** como **delta de snapshots cumulativos da Sessão** (`readCost()` ao fim da Tentativa menos o snapshot anterior da **mesma** Sessão; `costCarry` mantém o cumulativo monotônico através de `clear_context`). Por Task/Change é **`SUM(cost_usd)`** nas views — a agregação correta pós-ADR-0006, que **paga o D-0008**. Best-effort (`null` ⇒ `n/d`); Step não-agente → NULL.
+_Avoid_: preço, gasto; _last-non-null_ (a regra antiga que subcontava — D-0008); não confundir com Uso (tokens ≠ custo)
 
-**Agregado** (_Rollup_):
-Soma de Amostras num nível de contenção: **por Step** (Amostras de um `id` numa Task) → **por Task** (Σ Steps) → **por Run** (Σ Tasks da execução) → **por Change** (Σ Runs). Cada nível é um fold puro sobre o anterior.
-_Avoid_: resumo, acumulado (quando não qualificado)
+**Veredito humano** (_Human verdict_):
+Anotação mutável de uma Task: tri-estado `pass` / `fail` / não-avaliada (linha ausente). Upsert por `loopy verdict set` (registra `by`/`at`); `loopy verdict clear` volta ao "não-avaliada". É o julgamento do operador **a posteriori** — distinto do Verdict (o conteúdo que o Agente emite no Expect, cluster de verificação).
+_Avoid_: Verdict (o do Agente), veredito (sozinho — qualifique "humano")
 
-**Relatório de execução** (_Run report_):
-Saída emitida ao fim de **cada Run** (stderr): breakdown por Step, subtotal por Task, total da Run e linha "Change até agora" (acumulado cross-run). Distinto do Report de checks (que é a saída de uma Lista de checks devolvida ao Agente).
-_Avoid_: relatório (sozinho — colide com Report de checks), log
+**Defeito escapado** (_Escaped defect_):
+Uma Task `status='merged'` **com** `human_verdict='fail'` — mergeou, passou no review do Agente, e é reprovada pelo humano. O sinal de "onde o review deixou passar defeito?"; badge/filtro dedicado na aba Insights (bônus quando tem `bug` aberto ligado).
+_Avoid_: bug (o `bug` é uma linha própria; o defeito escapado é a **condição** da Task)
 
-**Relatório de change** (_Change report_):
-Artefato Markdown persistido no `index.md` (configurável via `metrics.report.index`) ao **finalizar a Change** — ou seja, quando o `todo.md` fica com 0 pendentes após a Run. Uma seção por Change (`## <change.id>`) com totais + tabela rica por Task. Reescrita byte-preserving (atualiza só a própria seção). Disparado por re-parse do todo.md, **nunca** por `stoppedBy`.
-_Avoid_: index (sozinho — o index.md é o arquivo, não o conceito)
+**Insights** (a aba):
+A 4ª aba da GUI menubar (4º segmento do `ViewSwitcher`) e a **única leitura** da telemetria: lê o `.db` por comando Rust `rusqlite` SELECT-only nas views e compara a Change contra a média±desvio das merged e contra outra Change escolhida (Δ%, absoluto↔normalizado por churn). Funciona em idle (revisão fria) e durante o Run.
+_Avoid_: Relatório de execução, Relatório de change (aposentados); dashboard (é a TUI de execução)
 
 **Change**:
 Termo do **devy**, adotado no motor **apenas** como par de valores de config derivados: `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. O motor não tem lógica de change além de (a) interpolar `${change.*}` e (b) escrever onde o yml mandar. Quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`. (Cf. AD-1.)

@@ -257,6 +257,7 @@ incompleto quebraria a run logo no começo. Crie `.gitignore`:
 .worktrees/
 .loopy/
 .loopy.stop
+.db/
 ```
 
 Agora commite tudo na `main`:
