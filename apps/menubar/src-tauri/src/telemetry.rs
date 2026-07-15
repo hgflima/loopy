@@ -185,6 +185,18 @@ pub fn read_task_insights(dir: String, change_id: String) -> Result<Vec<Value>, 
     )
 }
 
+/// The per-attempt rows of a task (`v_step`), ordered by `seq` — the timeline the
+/// task list expands into (SC1: per-attempt cost). Each row is one Tentativa (D3),
+/// carrying its own tokens/cost/duration plus the resolved preset/model/mode/effort.
+#[tauri::command]
+pub fn read_step_insights(dir: String, task_id: String) -> Result<Vec<Value>, String> {
+    query_view(
+        &dir,
+        "SELECT * FROM v_step WHERE task_id = ?1 ORDER BY seq",
+        [task_id.as_str()],
+    )
+}
+
 /// The historical baseline over merged changes (`v_change_baseline`): mean and
 /// population std-dev per metric (D17). Always a single row (an ungrouped
 /// aggregate: `n=0` with NULL means when no change has merged yet).
@@ -481,6 +493,30 @@ mod tests {
         let baseline = read_baseline(d).unwrap();
         assert_eq!(baseline.len(), 1);
         assert_eq!(baseline[0]["n"].as_i64(), Some(1));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A task's `v_step` rows are read per-attempt (SC1), ordered by `seq`, with the
+    /// step's own cost mapped onto JSON — the timeline the task list expands into.
+    #[test]
+    fn reads_step_rows_for_a_task() {
+        let dir = temp_dir("steps");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        seed_db(&dir);
+        let d = dir.to_string_lossy().to_string();
+
+        let steps = read_step_insights(d.clone(), "C-0017/T-001".into()).unwrap();
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0]["step_id"].as_str(), Some("s1"));
+        assert_eq!(steps[0]["attempt_no"].as_i64(), Some(1));
+        assert_eq!(steps[0]["cost_usd"].as_f64(), Some(0.5)); // REAL → number
+
+        // An unknown task reads empty, never errors.
+        assert!(read_step_insights(d, "C-9999/T-404".into())
+            .unwrap()
+            .is_empty());
 
         let _ = fs::remove_dir_all(&dir);
     }

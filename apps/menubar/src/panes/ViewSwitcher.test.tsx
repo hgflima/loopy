@@ -42,6 +42,14 @@ vi.mock("../config/ConfigPane", () => ({
   },
 }));
 
+let insightsPaneProps: Record<string, unknown> = {};
+vi.mock("../insights/InsightsPane", () => ({
+  InsightsPane: (props: Record<string, unknown>) => {
+    insightsPaneProps = props;
+    return <div data-testid="insights-pane" />;
+  },
+}));
+
 const { ViewSwitcher } = await import("./ViewSwitcher");
 
 // ---------------------------------------------------------------------------
@@ -53,6 +61,7 @@ afterEach(() => {
   kanbanProps = {};
   depsFlowProps = {};
   configPaneProps = {};
+  insightsPaneProps = {};
 });
 
 function makeStore(taskIds: string[] = ["T-001"]): StoreState {
@@ -198,6 +207,40 @@ describe("ViewSwitcher — Config tab (T-008)", () => {
       />,
     );
     expect(configPaneProps.dir).toBe("/meu/projeto");
+  });
+});
+
+describe("ViewSwitcher — Insights tab (T-011)", () => {
+  it("renders an Insights segment that switches to the InsightsPane", () => {
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} dir="/meu/projeto" />,
+    );
+
+    const insightsButton = getByRole("radio", { name: "Insights" });
+    expect(insightsButton).toBeTruthy();
+
+    fireEvent.click(insightsButton);
+
+    expect(getByTestId("insights-pane")).toBeTruthy();
+    // The pane needs `dir` to read the telemetry `.db` (SELECT-only via Rust).
+    expect(insightsPaneProps.dir).toBe("/meu/projeto");
+  });
+
+  it("all four panes stay mounted when switching to Insights (state preserved)", () => {
+    const { getByTestId, getByRole } = render(<ViewSwitcher store={makeStore()} tick={0} />);
+
+    fireEvent.click(getByRole("radio", { name: "Insights" }));
+
+    expect(getByTestId("kanban-board")).toBeTruthy();
+    expect(getByTestId("deps-flow")).toBeTruthy();
+    expect(getByTestId("insights-pane")).toBeTruthy();
+  });
+
+  it("Insights is available during a run too (no configDraft needed)", () => {
+    // configDraft is undefined during a run — the pane must still mount (idle+run).
+    const { getByTestId, getByRole } = render(<ViewSwitcher store={makeStore()} tick={0} />);
+    fireEvent.click(getByRole("radio", { name: "Insights" }));
+    expect(getByTestId("insights-pane")).toBeTruthy();
   });
 });
 

@@ -7,10 +7,14 @@ export type {
   ChangeRow,
   BaselineRow,
   TaskRow,
+  StepRow,
   ChangeStatus,
   TaskStatus,
   CostConfidence,
   HumanVerdict,
+  StepKind,
+  StepStatus,
+  FailReason,
 } from "./rows";
 export {
   METRICS,
@@ -36,4 +40,10 @@ export {
   type TaskView,
   type EscapedFilter,
 } from "./tasks";
+export { toStepView, buildStepViews, type StepView } from "./steps";
+export {
+  pickDefaultThisChange,
+  pickDefaultCompared,
+  findChange,
+} from "./selection";
 export { buildInsights, type InsightsInput, type InsightsModel } from "./model";
