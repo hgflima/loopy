@@ -6,6 +6,10 @@ const shared: Options = {
   platform: "node",
   minify: false,
   sourcemap: false,
+  // esbuild cannot resolve Bun's built-in SQLite module; the telemetry adapter
+  // only reaches it on the Bun sidecar (runtime-guarded), so keep it external.
+  // The dead `import("node:sqlite")` branch is tolerated without tree-shaking.
+  external: ["bun:sqlite"],
 };
 
 export default defineConfig([
