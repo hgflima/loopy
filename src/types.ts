@@ -604,6 +604,23 @@ export interface LoggerPort {
 // ---------------------------------------------------------------------------
 
 /**
+ * Per-Visit telemetry recorder attached to a step's context (C-0017 / ADR-0011).
+ * The orchestrator builds one per Visit in `buildTaskStepContext`, closed over
+ * the immutable facts (task/change/step/kind/visit), and calls {@link finalize}
+ * once the step's interpreter returns — the **single write trigger**. Absent
+ * when `metrics:` is off (opt-in gate, AD-1): `ctx.telemetry?.finalize(...)` is a
+ * no-op and no `.db` exists. Best-effort: it never throws into the engine.
+ */
+export interface VisitRecorder {
+  /**
+   * Terminal write, called once by the orchestrator after the interpreter
+   * returns. For a non-agent step (no pushed attempts) it inserts a single Visit
+   * row whose `status` follows `result.ok`; agent per-attempt rows land in T-007.
+   */
+  finalize(result: StepResult): void;
+}
+
+/**
  * Everything a step interpreter needs to run (AD-4). Interpolation is resolved
  * once per task/attempt via `resolve`; the current step's config is `step`.
  */
@@ -636,6 +653,14 @@ export interface StepContext {
    * with or without it (AD-1).
    */
   readonly emit?: (event: StoreEvent) => void;
+  /**
+   * Per-Visit telemetry recorder (C-0017 / ADR-0011). Present only when the
+   * `metrics:` gate opened a `.db`; wired by the orchestrator per Visit. The
+   * orchestrator calls `finalize` after the interpreter returns; an agent step
+   * (T-007) also pushes per-attempt samples. Absent → collection is a no-op,
+   * `RunLoopResult` byte-identical (AD-1).
+   */
+  readonly telemetry?: VisitRecorder;
 }
 
 /**

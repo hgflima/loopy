@@ -170,6 +170,8 @@ export function makeDeps(parts: {
   readonly checks?: ChecksRunnerPort;
   readonly ui?: UiPort;
   readonly logger?: LoggerPort;
+  readonly telemetry?: OrchestratorDeps["telemetry"];
+  readonly now?: () => number;
 }): OrchestratorDeps {
   return {
     root: parts.root ?? join(tmpdir(), "loopy-fake-root-that-does-not-exist"),
@@ -179,6 +181,8 @@ export function makeDeps(parts: {
     ui: parts.ui ?? approvingUi,
     logger: parts.logger ?? makeLogger(),
     markDone: parts.markDone,
+    telemetry: parts.telemetry,
+    now: parts.now,
   };
 }
 
