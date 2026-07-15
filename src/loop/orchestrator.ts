@@ -49,6 +49,8 @@ import {
   type ResumePoint,
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
+import type { TelemetryDb } from "../telemetry/db";
+import { createVisitRecorder } from "../telemetry/write";
 import type { StoreEvent } from "../tui/store";
 import type { Mutex } from "./mutex";
 import { guarded } from "./mutex";
@@ -111,6 +113,22 @@ export function deriveChange(config: LoopyConfig): { readonly id: string; readon
   const dir = dirname(config.inputs.todo);
   if (dir === "." || dir === "") return { id: config.name, dir: "." };
   return { id: basename(dir), dir };
+}
+
+/**
+ * The telemetry `change_id` (C-0017 / D26): the `C-\d+` prefix of the change
+ * dir's basename, so `task_id` (`<change_id>/<task.id>`) matches the CLI's
+ * `--task C-0016/T-002`. Falls back to {@link deriveChange}'s id (the full slug
+ * or `config.name`) when there is no such prefix. Pure (AD-6).
+ */
+export function telemetryChangeId(config: LoopyConfig): string {
+  const { id } = deriveChange(config);
+  return /^(C-\d+)/.exec(id)?.[1] ?? id;
+}
+
+/** The telemetry `task_id`: `<change_id>/<task.id>`, e.g. `C-0017/T-004` (D26). */
+export function telemetryTaskId(config: LoopyConfig, task: Task): string {
+  return `${telemetryChangeId(config)}/${task.id}`;
 }
 
 /**
@@ -776,6 +794,14 @@ export interface OrchestratorDeps {
    * engine. Absent → no events emitted (motor byte-identical, AD-1).
    */
   readonly emit?: (event: StoreEvent) => void;
+  /**
+   * Telemetry writer connection (C-0017 / ADR-0011). Present only when the
+   * `metrics:` gate opened a `.db` (wired by `index.ts`). The orchestrator uses
+   * it in {@link buildTaskStepContext} to build a per-Visit {@link VisitRecorder}
+   * for each step. Absent → `ctx.telemetry` undefined → collection is a no-op,
+   * no `.db`, `RunLoopResult` byte-identical (AD-1).
+   */
+  readonly telemetry?: TelemetryDb;
 }
 
 /**
@@ -822,6 +848,7 @@ function buildTaskStepContext(
   runtime: ScopeRuntime,
   deps: OrchestratorDeps,
   session: AgentSession,
+  visitNo: number,
 ): StepContext {
   const scope = createScope(buildScopeVars(config, task, runtime));
   return {
@@ -839,6 +866,19 @@ function buildTaskStepContext(
     ui: deps.ui,
     logger: deps.logger,
     emit: deps.emit,
+    // Per-Visit telemetry recorder (C-0017) — only when `metrics:` opened a
+    // `.db`. Closed over the immutable Visit facts (D3/D26); `finalize` (called
+    // in `executeStep`) is the single write trigger.
+    telemetry: deps.telemetry
+      ? createVisitRecorder(deps.telemetry, {
+          taskId: telemetryTaskId(config, task),
+          changeId: telemetryChangeId(config),
+          stepName: step.id,
+          kind: step.type,
+          visitNo,
+          now: deps.now ?? Date.now,
+        })
+      : undefined,
   };
 }
 
@@ -910,6 +950,10 @@ async function runTaskPipeline(
       ...(agentLabel && { agentName: agentLabel.agentName, model: agentLabel.model }),
     });
     const result = await interpreter.execute(ctx);
+    // Telemetry write trigger (C-0017): finalize the Visit. Best-effort — the
+    // recorder never throws (D9). No-op when `metrics:` is off (ctx.telemetry
+    // undefined). Agent per-attempt rows land in T-007.
+    ctx.telemetry?.finalize(result);
     safeEmit(deps, {
       type: "step_finished",
       taskId: task.id,
@@ -1003,7 +1047,8 @@ async function runTaskPipeline(
     const binding = resolveAgentBinding(step, config.resolvedAgents);
     const stepSession = getSession(binding.agentName);
 
-    // Build context and execute.
+    // Build context and execute. `visits[step.id]` is the current Visit number
+    // (incremented by the entry guard above) — the telemetry `visit_no` (D3).
     const ctx = buildTaskStepContext(
       config,
       task,
@@ -1017,6 +1062,7 @@ async function runTaskPipeline(
       },
       deps,
       stepSession,
+      visits[step.id]!,
     );
     const result: StepResult = await executeStep(
       interpreter, ctx, buildAgentLabel(step, binding, config.resolvedAgents),
@@ -1116,6 +1162,8 @@ async function runTaskPipeline(
       try {
         const teardownBinding = resolveAgentBinding(step, config.resolvedAgents);
         const teardownSession = getSession(teardownBinding.agentName);
+        // Teardown steps never entered the PC loop → this is their first (only)
+        // Visit (`visit_no=1`); fall back only when the guard never touched them.
         const ctx = buildTaskStepContext(
           config,
           task,
@@ -1129,6 +1177,7 @@ async function runTaskPipeline(
           },
           deps,
           teardownSession,
+          visits[step.id] ?? 1,
         );
         const result = await executeStep(
           interpreter, ctx, buildAgentLabel(step, teardownBinding, config.resolvedAgents),

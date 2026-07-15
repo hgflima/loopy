@@ -20,7 +20,7 @@
  * and live-run infra faults become a clear message + non-zero exit, never a
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
-import { realpathSync, statSync } from "node:fs";
+import { mkdirSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
@@ -79,6 +79,8 @@ import {
 } from "./resume/state";
 import { createMutex } from "./loop/mutex";
 import { createFullRegistry } from "./steps/index";
+import { openDb, type TelemetryDb } from "./telemetry/db";
+import { bootstrap } from "./telemetry/schema";
 import { mountApp } from "./tui/mount";
 import { startUi } from "./tui/start";
 import type {
@@ -646,6 +648,25 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   // T-004: one mutex per Run serializes all parent-branch mutations.
   const parentMutex = createMutex();
 
+  // C-0017 (ADR-0011): open the telemetry `.db` only when `metrics:` is present
+  // — the opt-in gate (AD-1). Absent → `telemetry` stays undefined, the
+  // orchestrator wires no recorder, and no `.db` is ever created. SQLite creates
+  // the file but not its parent dir, so ensure `.db/` exists first. Best-effort:
+  // a bootstrap failure must not abort the Run (collection is non-essential).
+  let telemetry: TelemetryDb | undefined;
+  if (config.metrics) {
+    try {
+      const dbPath = resolvePath(root, ".db/telemetry.db");
+      mkdirSync(dirname(dbPath), { recursive: true });
+      telemetry = await openDb(dbPath);
+      await bootstrap(telemetry);
+    } catch (err) {
+      logger.error(`[telemetry] falha ao abrir o .db — coleta desativada: ${err}`);
+      telemetry?.close();
+      telemetry = undefined;
+    }
+  }
+
   const deps: OrchestratorDeps = {
     root,
     flags,
@@ -670,6 +691,7 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     checkpoint: createCheckpointPort({ statePath, pipelineHash }),
     knownTaskIds,
     parentMutex,
+    telemetry,
     emit: (event) => {
       // Track currentStepId per task for usage_sample stamping (T-007).
       if (event.type === "step_started") {
@@ -694,6 +716,8 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
   } finally {
     await pool.shutdownAll();
     ui.stop();
+    // Close the telemetry connection so WAL flushes to the main `.db` file.
+    telemetry?.close();
     // Drain buffered notify messages to stderr after the TUI is unmounted.
     for (const msg of notifyBuffer) {
       io.err(`${msg}\n`);

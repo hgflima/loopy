@@ -10,6 +10,14 @@ const shared: Options = {
   // only reaches it on the Bun sidecar (runtime-guarded), so keep it external.
   // The dead `import("node:sqlite")` branch is tolerated without tree-shaking.
   external: ["bun:sqlite"],
+  // `schema.ts`'s Bun-only text-import
+  // (`import("./schema.sql", { with: { type: "text" } })`) is dead code on Node
+  // (it reads the copied `dist/schema.sql` via `readFileSync`), but esbuild
+  // rejects the `type: "text"` attribute unless the specifier is left external.
+  // tsup's `external` does not glob, so reach esbuild's native (globbing) one.
+  esbuildOptions(options) {
+    options.external = [...(options.external ?? []), "*.sql"];
+  },
 };
 
 export default defineConfig([
