@@ -183,7 +183,7 @@
 
 ## Fase 6 — Documentação
 
-- [ ] T-012: ADR-0011 + fecho do D-0008 + gitignore + docs
+- [x] T-012: ADR-0011 + fecho do D-0008 + gitignore + docs
     ADR-0011 (via skill `adrs:create`): persistência SQLite + granularidade por-tentativa, **estendendo**
     a ADR-0003 (não revoga; o gate opt-in sobrevive). Marcar o **D-0008** como pago (o custo por
     Run/Change vira `SUM()`). `.gitignore` (deste repo e do alvo) ignora `.db/`. Atualizar `CLAUDE.md` +
