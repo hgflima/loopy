@@ -61,7 +61,7 @@
 
 ## Fase 2 — Coleta de fatos (motor)
 
-- [ ] T-004: Port de telemetria + gravador por-Visita + linhas não-agente + lifecycle
+- [x] T-004: Port de telemetria + gravador por-Visita + linhas não-agente + lifecycle
     `src/telemetry/write.ts`: o INSERT físico (o único escritor de fatos) — `insertStep`,
     `insertAgentConfig` (INSERT OR IGNORE), com `seq` derivado na sentença
     (`COALESCE((SELECT MAX(seq) FROM step WHERE task_id=:tid),0)+1`, D25). Envolto em try/catch estilo
