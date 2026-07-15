@@ -128,7 +128,7 @@
 
 ## Fase 3 — CLI de anotações
 
-- [ ] T-008: `annotate.ts` + `query.ts` + subcomandos CLI (verdict/bug/change)
+- [x] T-008: `annotate.ts` + `query.ts` + subcomandos CLI (verdict/bug/change)
     `src/telemetry/annotate.ts`: upsert `task_verdict` (muda `by`/`at`), insert `bug`, UPDATE de
     `change.status`. `src/telemetry/query.ts`: SELECTs tipados internos p/ reuso pelo `annotate` — **não**
     é superfície de leitura CLI (D19; a GUI lê pelo Rust).
