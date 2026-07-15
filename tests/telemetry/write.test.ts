@@ -8,8 +8,11 @@ import { bootstrap } from "../../src/telemetry/schema";
 import {
   createVisitRecorder,
   insertAgentConfig,
+  insertChange,
   insertStep,
+  markChangeMerged,
   type AgentConfigRow,
+  type ChangeRow,
   type StepRow,
 } from "../../src/telemetry/write";
 
@@ -167,6 +170,122 @@ describe("telemetry write — insertAgentConfig (INSERT OR IGNORE)", () => {
   it("never throws when the write fails (best-effort)", () => {
     db.close();
     expect(() => insertAgentConfig(db, agentConfigRow)).not.toThrow();
+  });
+});
+
+// A complete `change` dimension row; each test overrides only what it exercises.
+function changeRow(over: Partial<ChangeRow> = {}): ChangeRow {
+  return {
+    change_id: "C-0017",
+    name: "C-0017-telemetry-and-change-insights",
+    repo: "acp-agentic-loop",
+    base_sha: "abc123",
+    pipeline_version: "sha256:deadbeef",
+    created_at: "2026-07-14T00:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("telemetry write — change dimension (D2)", () => {
+  let dir: string;
+  let db: TelemetryDb;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "loopy-change-"));
+    db = await openDb(join(dir, "telemetry.db"));
+    await bootstrap(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("inserts an in-progress change — status and ended_at NULL (D2)", () => {
+    insertChange(db, changeRow());
+    const row = db
+      .prepare("SELECT * FROM change")
+      .get<Record<string, unknown>>();
+    expect(row?.change_id).toBe("C-0017");
+    expect(row?.name).toBe("C-0017-telemetry-and-change-insights");
+    expect(row?.repo).toBe("acp-agentic-loop");
+    expect(row?.base_sha).toBe("abc123");
+    expect(row?.pipeline_version).toBe("sha256:deadbeef");
+    expect(row?.created_at).toBe("2026-07-14T00:00:00.000Z");
+    // In progress: no terminal status, no end timestamp.
+    expect(row?.status).toBeNull();
+    expect(row?.ended_at).toBeNull();
+  });
+
+  it("stores base_sha NULL when the parent HEAD is unknown (best-effort)", () => {
+    insertChange(db, changeRow({ base_sha: null }));
+    const row = db
+      .prepare("SELECT base_sha FROM change")
+      .get<{ base_sha: string | null }>();
+    expect(row?.base_sha).toBeNull();
+  });
+
+  it("is INSERT OR IGNORE — the first write of a change_id wins", () => {
+    insertChange(db, changeRow({ name: "first" }));
+    insertChange(db, changeRow({ name: "second" }));
+    const rows = db.all<{ name: string }>("SELECT name FROM change");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.name).toBe("first");
+  });
+
+  it("markChangeMerged closes an open change (status='merged' + ended_at)", () => {
+    insertChange(db, changeRow());
+    markChangeMerged(db, "C-0017", "2026-07-14T12:00:00.000Z");
+    const row = db
+      .prepare("SELECT status, ended_at FROM change")
+      .get<{ status: string; ended_at: string }>();
+    expect(row?.status).toBe("merged");
+    expect(row?.ended_at).toBe("2026-07-14T12:00:00.000Z");
+  });
+
+  it("markChangeMerged only closes an OPEN change — never clobbers a CLI-set status", () => {
+    insertChange(db, changeRow());
+    // Simulate `loopy change --abandoned` (T-008) having already closed it.
+    db.prepare(
+      "UPDATE change SET status='abandoned', ended_at='2026-07-14T09:00:00.000Z' WHERE change_id='C-0017'",
+    ).run();
+    markChangeMerged(db, "C-0017", "2026-07-14T12:00:00.000Z");
+    const row = db
+      .prepare("SELECT status, ended_at FROM change")
+      .get<{ status: string; ended_at: string }>();
+    expect(row?.status).toBe("abandoned");
+    expect(row?.ended_at).toBe("2026-07-14T09:00:00.000Z");
+  });
+
+  it("lets a task row reference an inserted change_id — FK resolves (the acceptance)", () => {
+    insertChange(db, changeRow());
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO task (task_id, change_id, task_number, name, created_at, ended_at, status)
+           VALUES ('C-0017/T-005','C-0017','T-005','x','a','b','merged')`,
+        )
+        .run(),
+    ).not.toThrow();
+    expect(db.all("SELECT * FROM task")).toHaveLength(1);
+  });
+
+  it("rejects a task row referencing an unknown change_id (FK enforced)", () => {
+    // No change inserted → the FK to change(change_id) has nothing to resolve.
+    expect(() =>
+      db
+        .prepare(
+          `INSERT INTO task (task_id, change_id, task_number, name, created_at, ended_at, status)
+           VALUES ('MISSING/T-1','MISSING','T-1','x','a','b','merged')`,
+        )
+        .run(),
+    ).toThrow();
+  });
+
+  it("never throws when the write fails (best-effort, safeEmit style)", () => {
+    db.close();
+    expect(() => insertChange(db, changeRow())).not.toThrow();
+    expect(() => markChangeMerged(db, "C-0017", "t")).not.toThrow();
   });
 });
 

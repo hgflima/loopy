@@ -50,7 +50,7 @@ import {
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
 import type { TelemetryDb } from "../telemetry/db";
-import { createVisitRecorder } from "../telemetry/write";
+import { createVisitRecorder, insertChange } from "../telemetry/write";
 import type { StoreEvent } from "../tui/store";
 import type { Mutex } from "./mutex";
 import { guarded } from "./mutex";
@@ -129,6 +129,23 @@ export function telemetryChangeId(config: LoopyConfig): string {
 /** The telemetry `task_id`: `<change_id>/<task.id>`, e.g. `C-0017/T-004` (D26). */
 export function telemetryTaskId(config: LoopyConfig, task: Task): string {
   return `${telemetryChangeId(config)}/${task.id}`;
+}
+
+/**
+ * The telemetry `change.repo` (C-0017 / D26): the basename of the `origin`
+ * remote URL, with any `.git` suffix stripped (so both
+ * `git@host:group/repo.git` and `https://host/group/repo.git` yield `repo`).
+ * Falls back to the workspace dir's basename when there is no origin — the
+ * greenfield / no-remote case. Pure (AD-6); `repo` is NOT NULL in the schema, so
+ * this always returns a non-empty string.
+ */
+export function repoNameFrom(originUrl: string | null, root: string): string {
+  if (originUrl) {
+    const trimmed = originUrl.replace(/[/\\]+$/, "").replace(/\.git$/, "");
+    const base = trimmed.split(/[/\\:]/).pop();
+    if (base) return base;
+  }
+  return basename(root);
 }
 
 /**
@@ -644,6 +661,8 @@ const notWiredGit: GitPort = {
   isParentClean: notWired("git.isParentClean"),
   isMergeInProgress: notWired("git.isMergeInProgress"),
   rebaseOnto: notWired("git.rebaseOnto"),
+  revParseHead: notWired("git.revParseHead"),
+  remoteOriginUrl: notWired("git.remoteOriginUrl"),
 };
 
 /**
@@ -826,6 +845,39 @@ function safeEmit(deps: OrchestratorDeps, event: StoreEvent): void {
     deps.emit?.(event);
   } catch {
     // Best-effort — never block/throw into the engine (AD-1).
+  }
+}
+
+/**
+ * INSERT OR IGNORE the `change` dimension at the start of a run (C-0017 / D2,
+ * D26). No-op unless `metrics:` opened a `.db` (`deps.telemetry` set) — the
+ * opt-in gate keeps `RunLoopResult` byte-identical (AD-1), and returning before
+ * touching the clock means telemetry-off runs consume no `deps.now` tick.
+ *
+ * The row lands "in progress" (`status`/`ended_at` NULL) so it naturally sits
+ * out of the merged baseline until `index.ts` marks it merged at end-of-change.
+ * `base_sha`/`repo` come from git best-effort (NULL / dir-name fallback); the
+ * whole thing is wrapped so a git or DB fault never throws into the engine (D9).
+ */
+async function insertChangeDimension(
+  config: LoopyConfig,
+  deps: OrchestratorDeps,
+): Promise<void> {
+  const db = deps.telemetry;
+  if (db === undefined) return;
+  try {
+    const baseSha = (await deps.git?.revParseHead()) ?? null;
+    const origin = (await deps.git?.remoteOriginUrl()) ?? null;
+    insertChange(db, {
+      change_id: telemetryChangeId(config),
+      name: deriveChange(config).id,
+      repo: repoNameFrom(origin, deps.root),
+      base_sha: baseSha,
+      pipeline_version: pipelineFingerprint(config.pipeline),
+      created_at: new Date((deps.now ?? Date.now)()).toISOString(),
+    });
+  } catch {
+    // Best-effort: telemetry never throws into the engine (D9).
   }
 }
 
@@ -1409,6 +1461,11 @@ export async function runLoop(
       ...(t.deps.length > 0 && { deps: t.deps }),
     });
   }
+
+  // C-0017 (D2/D26): register the `change` dimension (INSERT OR IGNORE) before
+  // any task runs, so `task.change_id` (T-006) resolves. No-op when `metrics:`
+  // is off; best-effort otherwise. Marked `merged` at end-of-change by index.ts.
+  await insertChangeDimension(config, deps);
 
   // Stable iteration index per task (1-based position in the backlog, AD-4).
   const iterationIndex = new Map<string, number>();

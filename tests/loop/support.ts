@@ -171,6 +171,7 @@ export function makeDeps(parts: {
   readonly ui?: UiPort;
   readonly logger?: LoggerPort;
   readonly telemetry?: OrchestratorDeps["telemetry"];
+  readonly git?: OrchestratorDeps["git"];
   readonly now?: () => number;
 }): OrchestratorDeps {
   return {
@@ -182,6 +183,7 @@ export function makeDeps(parts: {
     logger: parts.logger ?? makeLogger(),
     markDone: parts.markDone,
     telemetry: parts.telemetry,
+    git: parts.git,
     now: parts.now,
   };
 }

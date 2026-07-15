@@ -597,6 +597,8 @@ describe("runLoop — on_merge_conflict policy", () => {
         const ok = opts.retryMergeOk ?? true;
         return { ok, conflict: !ok };
       },
+      revParseHead: async () => null,
+      remoteOriginUrl: async () => null,
     };
   }
 

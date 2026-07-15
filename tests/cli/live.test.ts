@@ -7,10 +7,22 @@
  * (`isGitRepo` / `initGitRepo` / `approve` / `runLive`) to exercise ALL the CLI
  * logic deterministically without an agent (AD-6: real agent runs are manual/e2e).
  */
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { run, type RunHooks, type RunLiveArgs } from "../../src/index";
 import type { RunLoopResult } from "../../src/loop/orchestrator";
+import { openDb } from "../../src/telemetry/db";
+import { bootstrap } from "../../src/telemetry/schema";
+import { insertChange } from "../../src/telemetry/write";
 
 /** The committed example target project (loopy.yml + tasks/todo.md: T-002/T-003 pending). */
 const PROJECT = fileURLToPath(new URL("../fixtures/project", import.meta.url));
@@ -254,5 +266,128 @@ describe("run — first-run git setup (not a repo)", () => {
     expect(code).toBe(0);
     expect(initCalls).toHaveLength(1);
     expect(liveCalls).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// End-of-change merge gate (C-0017 / T-005): when `metrics:` is on and the
+// backlog re-parses to zero pending, the change is marked `merged`. This is the
+// same trigger that persisted the change report before T-003 removed it.
+// ---------------------------------------------------------------------------
+describe("run — end-of-change merge gate (C-0017 / T-005)", () => {
+  const temps: string[] = [];
+  const TODO_REL = ".harn/devy/changes/C-0017-x/todo.md";
+  const CHANGE_ID = "C-0017";
+
+  afterEach(() => {
+    for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  /** A temp target project whose backlog lives under a `C-\d+` change dir. */
+  function tempProject(opts: { metrics: boolean }): {
+    dir: string;
+    todoAbs: string;
+    dbPath: string;
+  } {
+    const dir = mkdtempSync(join(tmpdir(), "loopy-mergegate-"));
+    temps.push(dir);
+    const yml =
+      readFileSync(join(PROJECT, "loopy.yml"), "utf8").replace(
+        'todo: "tasks/todo.md"',
+        `todo: "${TODO_REL}"`,
+      ) + (opts.metrics ? "\nmetrics: {}\n" : "\n");
+    writeFileSync(join(dir, "loopy.yml"), yml);
+
+    const todoAbs = join(dir, TODO_REL);
+    mkdirSync(dirname(todoAbs), { recursive: true });
+    writeFileSync(todoAbs, "# Backlog\n\n- [ ] T-001: Only task\n      Do it.\n");
+
+    return { dir, todoAbs, dbPath: join(dir, ".db", "telemetry.db") };
+  }
+
+  /** Seed a `.db` with an open (in-progress) change row, as run start would. */
+  async function seedOpenChange(dbPath: string): Promise<void> {
+    mkdirSync(dirname(dbPath), { recursive: true });
+    const db = await openDb(dbPath);
+    await bootstrap(db);
+    insertChange(db, {
+      change_id: CHANGE_ID,
+      name: "C-0017-x",
+      repo: "acp-agentic-loop",
+      base_sha: "abc",
+      pipeline_version: "sha256:x",
+      created_at: "2026-07-14T00:00:00.000Z",
+    });
+    db.close();
+  }
+
+  /** Read a change row's status/ended_at from a `.db`. */
+  async function readChange(
+    dbPath: string,
+  ): Promise<{ status: string | null; ended_at: string | null } | undefined> {
+    const db = await openDb(dbPath);
+    const row = db
+      .prepare("SELECT status, ended_at FROM change WHERE change_id = :id")
+      .get<{ status: string | null; ended_at: string | null }>({
+        id: CHANGE_ID,
+      });
+    db.close();
+    return row;
+  }
+
+  it("marks the change merged once the backlog re-parses to zero pending", async () => {
+    const { dir, dbPath } = tempProject({ metrics: true });
+    const cap = capture();
+    const { hooks } = recordingHooks({
+      runLive: async (args) => {
+        // Simulate the loop completing the backlog + populating the `.db`.
+        writeFileSync(args.todoPath, "# Backlog\n\n- [x] T-001: Only task\n");
+        await seedOpenChange(dbPath);
+        return OK_RESULT;
+      },
+    });
+
+    const code = await run([dir], cap.io, hooks);
+    expect(code).toBe(0);
+
+    const row = await readChange(dbPath);
+    expect(row?.status).toBe("merged");
+    expect(row?.ended_at).not.toBeNull();
+  });
+
+  it("leaves the change open when tasks remain pending after the run", async () => {
+    const { dir, dbPath } = tempProject({ metrics: true });
+    const cap = capture();
+    const { hooks } = recordingHooks({
+      runLive: async () => {
+        // Backlog NOT completed (todo untouched → T-001 still pending).
+        await seedOpenChange(dbPath);
+        return OK_RESULT;
+      },
+    });
+
+    await run([dir], cap.io, hooks);
+
+    const row = await readChange(dbPath);
+    expect(row?.status).toBeNull();
+    expect(row?.ended_at).toBeNull();
+  });
+
+  it("does NOT touch the change when `metrics:` is absent (opt-in gate, AD-1)", async () => {
+    const { dir, dbPath } = tempProject({ metrics: false });
+    const cap = capture();
+    const { hooks } = recordingHooks({
+      runLive: async (args) => {
+        writeFileSync(args.todoPath, "# Backlog\n\n- [x] T-001: Only task\n");
+        await seedOpenChange(dbPath);
+        return OK_RESULT;
+      },
+    });
+
+    await run([dir], cap.io, hooks);
+
+    // No `metrics:` → the gate never runs, so the change stays open.
+    const row = await readChange(dbPath);
+    expect(row?.status).toBeNull();
   });
 });

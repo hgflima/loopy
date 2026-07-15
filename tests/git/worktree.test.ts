@@ -399,3 +399,40 @@ describe("createGit — isParentClean (require_clean_parent)", () => {
     expect(await g.isParentClean()).toBe(false);
   });
 });
+
+describe("createGit — revParseHead (C-0017 base_sha)", () => {
+  it("returns the parent HEAD sha", async () => {
+    const g = createGit({ root });
+    const expected = await git(root, ["rev-parse", "HEAD"]);
+    expect(await g.revParseHead()).toBe(expected);
+  });
+
+  it("returns null in a repo with no commits yet (best-effort)", async () => {
+    const empty = realpathSync(mkdtempSync(join(tmpdir(), "loopy-git-empty-")));
+    await git(empty, ["init", "-b", "main"]);
+    const g = createGit({ root: empty });
+    // `rev-parse HEAD` fails with no commits — degrades to null, never throws.
+    expect(await g.revParseHead()).toBeNull();
+    await rm(empty, { recursive: true, force: true });
+  });
+});
+
+describe("createGit — remoteOriginUrl (C-0017 repo)", () => {
+  it("returns the configured origin url", async () => {
+    const g = createGit({ root });
+    await git(root, [
+      "remote",
+      "add",
+      "origin",
+      "git@github.com:hgflima/acp-agentic-loop.git",
+    ]);
+    expect(await g.remoteOriginUrl()).toBe(
+      "git@github.com:hgflima/acp-agentic-loop.git",
+    );
+  });
+
+  it("returns null when no origin remote is configured (best-effort)", async () => {
+    const g = createGit({ root });
+    expect(await g.remoteOriginUrl()).toBeNull();
+  });
+});

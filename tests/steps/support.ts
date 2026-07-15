@@ -124,6 +124,8 @@ const inertGit: GitPort = {
   isParentClean: async () => true,
   isMergeInProgress: async () => false,
   rebaseOnto: async () => ({ ok: true, conflict: false }),
+  revParseHead: async () => null,
+  remoteOriginUrl: async () => null,
 };
 
 const inertChecks: ChecksRunnerPort = {
