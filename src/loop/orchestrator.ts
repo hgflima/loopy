@@ -50,7 +50,7 @@ import {
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
 import type { TelemetryDb } from "../telemetry/db";
-import { createVisitRecorder, insertChange } from "../telemetry/write";
+import { createVisitRecorder, insertChange, insertTask } from "../telemetry/write";
 import type { StoreEvent } from "../tui/store";
 import type { Mutex } from "./mutex";
 import { guarded } from "./mutex";
@@ -59,6 +59,7 @@ import type {
   AgentSession,
   CheckpointPort,
   ChecksRunnerPort,
+  DiffNumstat,
   EscalationAction,
   GitPort,
   LoggerPort,
@@ -663,6 +664,7 @@ const notWiredGit: GitPort = {
   rebaseOnto: notWired("git.rebaseOnto"),
   revParseHead: notWired("git.revParseHead"),
   remoteOriginUrl: notWired("git.remoteOriginUrl"),
+  diffNumstat: notWired("git.diffNumstat"),
 };
 
 /**
@@ -858,13 +860,17 @@ function safeEmit(deps: OrchestratorDeps, event: StoreEvent): void {
  * out of the merged baseline until `index.ts` marks it merged at end-of-change.
  * `base_sha`/`repo` come from git best-effort (NULL / dir-name fallback); the
  * whole thing is wrapped so a git or DB fault never throws into the engine (D9).
+ *
+ * Returns the captured `base_sha` (the run-start parent HEAD) so the loop can
+ * reuse it as the diff base for each task's `size_*` churn (T-006). `null` when
+ * telemetry is off or the git lookup failed.
  */
 async function insertChangeDimension(
   config: LoopyConfig,
   deps: OrchestratorDeps,
-): Promise<void> {
+): Promise<string | null> {
   const db = deps.telemetry;
-  if (db === undefined) return;
+  if (db === undefined) return null;
   try {
     const baseSha = (await deps.git?.revParseHead()) ?? null;
     const origin = (await deps.git?.remoteOriginUrl()) ?? null;
@@ -875,6 +881,67 @@ async function insertChangeDimension(
       base_sha: baseSha,
       pipeline_version: pipelineFingerprint(config.pipeline),
       created_at: new Date((deps.now ?? Date.now)()).toISOString(),
+    });
+    return baseSha;
+  } catch {
+    // Best-effort: telemetry never throws into the engine (D9).
+    return null;
+  }
+}
+
+/**
+ * Snapshot the task branch's churn (`git diff --numstat base_sha..branch`) — the
+ * source of `task.size_*` (C-0017 / T-006). Called from {@link runTaskPipeline}
+ * while the branch is still alive (before the `always`/`cleanup` step deletes
+ * it). No-op (`null`) when telemetry is off, git is unwired, or there is no base
+ * to diff against; wrapped so a git fault never throws into the engine (D9).
+ */
+async function captureSizeChurn(
+  branch: string,
+  baseSha: string | null | undefined,
+  deps: OrchestratorDeps,
+): Promise<DiffNumstat | null> {
+  if (deps.telemetry === undefined || deps.git === undefined || !baseSha) {
+    return null;
+  }
+  try {
+    return await deps.git.diffNumstat(baseSha, branch);
+  } catch {
+    // Best-effort: telemetry never throws into the engine (D9).
+    return null;
+  }
+}
+
+/**
+ * Insert the terminal `task` fact row (C-0017 / T-006) — the sole task writer.
+ * `merged` carries the captured `size_*` churn; `failed` records size_* NULL (a
+ * failed task never merged, so its churn is not meaningful). No-op when
+ * `metrics:` is off; best-effort otherwise (a DB or FK fault is swallowed, D9).
+ * Paused / skipped / cancelled tasks are intentionally NOT recorded here.
+ */
+function recordTaskRow(
+  config: LoopyConfig,
+  task: Task,
+  deps: OrchestratorDeps,
+  status: "merged" | "failed",
+  createdAt: string,
+  sizeChurn: DiffNumstat | null | undefined,
+): void {
+  const db = deps.telemetry;
+  if (db === undefined) return;
+  try {
+    const churn = status === "merged" ? (sizeChurn ?? null) : null;
+    insertTask(db, {
+      task_id: telemetryTaskId(config, task),
+      change_id: telemetryChangeId(config),
+      task_number: task.id,
+      name: task.title,
+      created_at: createdAt,
+      ended_at: new Date((deps.now ?? Date.now)()).toISOString(),
+      status,
+      size_files: churn?.files ?? null,
+      size_added: churn?.added ?? null,
+      size_removed: churn?.removed ?? null,
     });
   } catch {
     // Best-effort: telemetry never throws into the engine (D9).
@@ -961,6 +1028,7 @@ async function runTaskPipeline(
   iteration: number,
   deps: OrchestratorDeps,
   resumePoint?: ResumePoint,
+  baseSha?: string | null,
 ): Promise<PipelineOutcome> {
   const { pipeline, stop_conditions, policies } = config;
   const maxStepVisits = stop_conditions.max_step_visits;
@@ -1028,6 +1096,18 @@ async function runTaskPipeline(
   const executedSteps = new Set<string>();
   let checksReport = "";
 
+  // C-0017 (T-006): the task branch's churn, captured while the branch is still
+  // alive. `undefined` = not yet captured; memoized so only the first snapshot
+  // spends a git call. The canonical `cleanup` (`always: true`) runs as the last
+  // PC step on success and deletes the branch, so the snapshot must precede it —
+  // hence the trigger below fires just before the first `always` step executes.
+  let sizeChurn: DiffNumstat | null | undefined;
+  const captureChurnOnce = async (): Promise<void> => {
+    if (sizeChurn === undefined) {
+      sizeChurn = await captureSizeChurn(task.branch, baseSha, deps);
+    }
+  };
+
   /** Resolve the next PC (on_success goto or sequential), save checkpoint. */
   const resolveNextPc = (step: StepConfig): number => {
     const next = step.on_success
@@ -1094,6 +1174,11 @@ async function runTaskPipeline(
       pc += 1;
       continue;
     }
+
+    // C-0017 (T-006): before a teardown step (canonically `cleanup`, which
+    // deletes the worktree/branch) runs, snapshot the branch's churn while it
+    // still resolves. Memoized — only the first `always` step triggers it.
+    if (step.always ?? false) await captureChurnOnce();
 
     // Resolve agent binding and get the session for this step's agent.
     const binding = resolveAgentBinding(step, config.resolvedAgents);
@@ -1201,6 +1286,12 @@ async function runTaskPipeline(
   // PC past last step → terminal success.
   terminal ??= { ok: true };
 
+  // C-0017 (T-006): if the pipeline succeeded without any `always` step running
+  // in the PC loop (e.g. a pipeline with no `cleanup`), the branch is still
+  // alive here — snapshot now (memoized no-op if already captured). A failed
+  // task records size_* NULL, so skip the git call on failure.
+  if (terminal.ok) await captureChurnOnce();
+
   // --- Teardown: run unexecuted always steps (best-effort, linear, no PC/goto). ---
   // Suppressed when escalation + keep_worktree (worktree preserved for inspection).
   if (terminal.ok || !keepWorktree) {
@@ -1251,7 +1342,9 @@ async function runTaskPipeline(
     }
   }
 
-  return terminal;
+  // Thread the captured churn out to `launchTask`, which stamps it onto the
+  // `merged` task row (T-006). `undefined` (failure, never captured) → null.
+  return { ...terminal, sizeChurn: sizeChurn ?? null };
 }
 
 // ---------------------------------------------------------------------------
@@ -1465,7 +1558,9 @@ export async function runLoop(
   // C-0017 (D2/D26): register the `change` dimension (INSERT OR IGNORE) before
   // any task runs, so `task.change_id` (T-006) resolves. No-op when `metrics:`
   // is off; best-effort otherwise. Marked `merged` at end-of-change by index.ts.
-  await insertChangeDimension(config, deps);
+  // The returned run-start parent HEAD is the diff base for each task's `size_*`
+  // churn (T-006); `null` when telemetry is off or the git lookup failed.
+  const changeBaseSha = await insertChangeDimension(config, deps);
 
   // Stable iteration index per task (1-based position in the backlog, AD-4).
   const iterationIndex = new Map<string, number>();
@@ -1561,6 +1656,13 @@ export async function runLoop(
     safeEmit(deps, { type: "task_started", taskId: task.id });
     checkpoint?.setStatus(task.id, "running");
     const resumePoint = resumeMap?.get(task.id);
+    // C-0017 (T-006): the terminal `task` row's `created_at` — stamped when the
+    // task starts, so it brackets the pipeline's lifetime. Only when `metrics:`
+    // is on: like the change dimension, a telemetry-off run consumes no clock
+    // tick, keeping `RunLoopResult` byte-identical (AD-1). Unused when off.
+    const taskCreatedAt = deps.telemetry
+      ? new Date(clock()).toISOString()
+      : "";
 
     const promise = (async (): Promise<TaskSignal> => {
       const outcome = await runTaskPipeline(
@@ -1569,6 +1671,7 @@ export async function runLoop(
         iteration,
         deps,
         resumePoint,
+        changeBaseSha,
       );
 
       if (outcome.ok) {
@@ -1586,6 +1689,9 @@ export async function runLoop(
         checkpoint?.clearTask(task.id);
         completed.push(task.id);
         status.set(task.id, "done");
+        // C-0017 (T-006): the task merged → one `task` row with its `size_*`
+        // churn (captured before teardown). Best-effort; no-op when metrics off.
+        recordTaskRow(config, task, deps, "merged", taskCreatedAt, outcome.sizeChurn);
         safeEmit(deps, { type: "task_finished", taskId: task.id, status: "done" });
         deps.logger.info(
           `[orchestrator] task ${task.id} concluída e marcada [x]`,
@@ -1617,6 +1723,8 @@ export async function runLoop(
       if (decideEscalation(policy.action) === "stop") {
         escalated.push(task.id);
         status.set(task.id, "escalated");
+        // C-0017 (T-006): a failed (escalated) task → one `task` row, size_* NULL.
+        recordTaskRow(config, task, deps, "failed", taskCreatedAt, null);
         safeEmit(deps, {
           type: "task_finished", taskId: task.id,
           status: "escalated", reason: outcome.reason,
@@ -1638,6 +1746,8 @@ export async function runLoop(
         // skip_task
         escalated.push(task.id);
         status.set(task.id, "escalated");
+        // C-0017 (T-006): a failed (escalated) task → one `task` row, size_* NULL.
+        recordTaskRow(config, task, deps, "failed", taskCreatedAt, null);
         safeEmit(deps, {
           type: "task_finished", taskId: task.id,
           status: "escalated", reason: outcome.reason,

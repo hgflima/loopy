@@ -599,6 +599,7 @@ describe("runLoop — on_merge_conflict policy", () => {
       },
       revParseHead: async () => null,
       remoteOriginUrl: async () => null,
+      diffNumstat: async () => null,
     };
   }
 

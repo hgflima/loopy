@@ -192,6 +192,30 @@ export function createGit(options: CreateGitOptions): Git {
       // Best-effort (C-0017 repo): null when no `origin` remote is configured.
       return tryRunOut(["remote", "get-url", "origin"]);
     },
+
+    async diffNumstat(base, head) {
+      // `git diff --numstat A B` prints one "<added>\t<removed>\t<path>" line
+      // per changed file (C-0017 size_*). Best-effort: null on a missing ref /
+      // spawn error, empty output ⇒ no diff ⇒ all zeroes.
+      const out = await tryRunOut(["diff", "--numstat", base, head]);
+      if (out === null) return null;
+      if (out === "") return { files: 0, added: 0, removed: 0 };
+      let files = 0;
+      let added = 0;
+      let removed = 0;
+      for (const line of out.split("\n")) {
+        if (line.trim() === "") continue;
+        files += 1;
+        // A binary file shows "-\t-\t<path>": the "-" parses to NaN and is
+        // skipped, so it counts toward `files` but not the line deltas.
+        const [a, r] = line.split("\t");
+        const av = Number.parseInt(a ?? "", 10);
+        const rv = Number.parseInt(r ?? "", 10);
+        if (Number.isFinite(av)) added += av;
+        if (Number.isFinite(rv)) removed += rv;
+      }
+      return { files, added, removed };
+    },
   };
 }
 

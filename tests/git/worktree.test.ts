@@ -436,3 +436,54 @@ describe("createGit — remoteOriginUrl (C-0017 repo)", () => {
     expect(await g.remoteOriginUrl()).toBeNull();
   });
 });
+
+describe("createGit — diffNumstat (C-0017 size_*)", () => {
+  it("sums added/removed lines and counts files across a task branch", async () => {
+    const g = createGit({ root });
+    const base = await git(root, ["rev-parse", "HEAD"]);
+    const path = worktreePath(root, "T-050");
+    await g.addWorktree(path, "loopy/T-050", "main");
+
+    // One modified file (+1/−1) and one brand-new file (+2/−0).
+    await writeFile(join(path, "file.txt"), "changed\n");
+    await writeFile(join(path, "new.txt"), "one\ntwo\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "task work"]);
+
+    const churn = await g.diffNumstat(base, "loopy/T-050");
+
+    expect(churn).toEqual({ files: 2, added: 3, removed: 1 });
+  });
+
+  it("returns zeroes when the two refs have no diff", async () => {
+    const g = createGit({ root });
+    const base = await git(root, ["rev-parse", "HEAD"]);
+
+    expect(await g.diffNumstat(base, "HEAD")).toEqual({
+      files: 0,
+      added: 0,
+      removed: 0,
+    });
+  });
+
+  it("counts a binary file toward files but not the line deltas", async () => {
+    const g = createGit({ root });
+    const base = await git(root, ["rev-parse", "HEAD"]);
+    const path = worktreePath(root, "T-051");
+    await g.addWorktree(path, "loopy/T-051", "main");
+
+    // A NUL byte makes git treat the file as binary (numstat "-\t-").
+    await writeFile(join(path, "blob.bin"), Buffer.from([0, 1, 2, 0, 255]));
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "add binary"]);
+
+    const churn = await g.diffNumstat(base, "loopy/T-051");
+
+    expect(churn).toEqual({ files: 1, added: 0, removed: 0 });
+  });
+
+  it("returns null for a missing ref (best-effort, never throws)", async () => {
+    const g = createGit({ root });
+    expect(await g.diffNumstat("does-not-exist", "HEAD")).toBeNull();
+  });
+});
