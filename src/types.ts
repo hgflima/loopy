@@ -405,6 +405,15 @@ export interface PipelineOutcome {
     readonly stepId: string;
     readonly visits: number;
   };
+  /**
+   * The task branch's churn (`git diff --numstat base_sha..branch`), captured
+   * BEFORE a teardown (`always`) step deletes the branch (C-0017 / T-006). Set
+   * on a successful pipeline (the only path to a `merged` task row); `null` when
+   * the git lookup was unavailable or the pipeline failed (a failed task's
+   * `size_*` is NULL by design). Optional so telemetry-off runs and the frozen
+   * `RunLoopResult` are byte-identical (AD-1).
+   */
+  readonly sizeChurn?: DiffNumstat | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -542,6 +551,18 @@ export interface MergeResult {
   readonly conflict: boolean;
 }
 
+/**
+ * Total churn of a `git diff --numstat` between two commits, summed across
+ * files (drives `task.size_*`, C-0017): `files` counts every changed file
+ * (binary files included), `added`/`removed` sum the line deltas of the text
+ * files (binary files contribute nothing to those two).
+ */
+export interface DiffNumstat {
+  readonly files: number;
+  readonly added: number;
+  readonly removed: number;
+}
+
 /** Git worktree + merge operations on the workspace. */
 export interface GitPort {
   addWorktree(
@@ -582,6 +603,13 @@ export interface GitPort {
    * or the command fails.
    */
   remoteOriginUrl(): Promise<string | null>;
+  /**
+   * `git diff --numstat <base> <head>` — the churn a task branch introduces
+   * over `base`, summed across files (`task.size_*`, C-0017). Captured before
+   * teardown deletes the branch. Best-effort: `null` when a ref is missing, the
+   * command fails, or the output is unparseable.
+   */
+  diffNumstat(base: string, head: string): Promise<DiffNumstat | null>;
 }
 
 /** Runs check commands and aggregates a `ChecksReport`. */

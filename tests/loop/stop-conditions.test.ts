@@ -112,6 +112,7 @@ function gitWithParentClean(clean: () => boolean | Promise<boolean>): GitPort {
     rebaseOnto: nope,
     revParseHead: nope,
     remoteOriginUrl: nope,
+    diffNumstat: nope,
   };
 }
 

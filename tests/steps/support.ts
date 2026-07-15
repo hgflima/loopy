@@ -126,6 +126,7 @@ const inertGit: GitPort = {
   rebaseOnto: async () => ({ ok: true, conflict: false }),
   revParseHead: async () => null,
   remoteOriginUrl: async () => null,
+  diffNumstat: async () => null,
 };
 
 const inertChecks: ChecksRunnerPort = {

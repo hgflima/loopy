@@ -69,6 +69,26 @@ export interface StepRow {
 }
 
 /**
+ * A row inserted into the `task` fact table — insert-only, one per terminal
+ * task (T-006). Written after the task settles (`merged` or `failed`); paused /
+ * skipped / cancelled tasks are never recorded. `size_*` carry the branch churn
+ * for a `merged` task (captured before teardown) and are NULL for a `failed`
+ * one. Requires its `change` dimension row to already exist (FK, D2).
+ */
+export interface TaskRow {
+  readonly task_id: string;
+  readonly change_id: string;
+  readonly task_number: string;
+  readonly name: string;
+  readonly created_at: string;
+  readonly ended_at: string;
+  readonly status: "merged" | "abandoned" | "failed";
+  readonly size_files: number | null;
+  readonly size_added: number | null;
+  readonly size_removed: number | null;
+}
+
+/**
  * A row inserted into the `change` dimension (INSERT OR IGNORE at run start,
  * D2/D26). `ended_at`/`status` are absent here — they start NULL ("in progress")
  * and are set once by {@link markChangeMerged} (or the CLI) when the change
@@ -172,6 +192,26 @@ export function markChangeMerged(
  */
 export function insertStep(db: TelemetryDb, row: StepRow): void {
   safeRun(db, STEP_INSERT, { step_id: randomUUID(), ...row });
+}
+
+const TASK_INSERT = `
+INSERT INTO task (
+  task_id, change_id, task_number, name, created_at, ended_at, status,
+  size_files, size_added, size_removed
+) VALUES (
+  :task_id, :change_id, :task_number, :name, :created_at, :ended_at, :status,
+  :size_files, :size_added, :size_removed
+)`;
+
+/**
+ * Insert one terminal `task` fact row (T-006) — the sole writer of the `task`
+ * table. `merged` carries the captured `size_*` churn; `failed` records size_*
+ * NULL. Insert-only (never updated). Best-effort: a closed db, a CHECK/FK
+ * violation (e.g. a missing `change` row) drops the row silently rather than
+ * throwing into the engine (D9).
+ */
+export function insertTask(db: TelemetryDb, row: TaskRow): void {
+  safeRun(db, TASK_INSERT, { ...row });
 }
 
 /** The immutable per-Visit facts a {@link VisitRecorder} is closed over. */

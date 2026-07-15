@@ -10,10 +10,12 @@ import {
   insertAgentConfig,
   insertChange,
   insertStep,
+  insertTask,
   markChangeMerged,
   type AgentConfigRow,
   type ChangeRow,
   type StepRow,
+  type TaskRow,
 } from "../../src/telemetry/write";
 
 // A complete non-agent step row; each test overrides only what it exercises.
@@ -286,6 +288,96 @@ describe("telemetry write — change dimension (D2)", () => {
     db.close();
     expect(() => insertChange(db, changeRow())).not.toThrow();
     expect(() => markChangeMerged(db, "C-0017", "t")).not.toThrow();
+  });
+});
+
+// A complete `task` fact row; each test overrides only what it exercises. The
+// change dimension it references is seeded by the enclosing describe (FK).
+function taskRow(over: Partial<TaskRow> = {}): TaskRow {
+  return {
+    task_id: "C-0017/T-006",
+    change_id: "C-0017",
+    task_number: "T-006",
+    name: "Linha task + size_* via git diff --numstat",
+    created_at: "2026-07-14T00:00:00.000Z",
+    ended_at: "2026-07-14T00:05:00.000Z",
+    status: "merged",
+    size_files: 3,
+    size_added: 42,
+    size_removed: 7,
+    ...over,
+  };
+}
+
+describe("telemetry write — insertTask (terminal task fact, T-006)", () => {
+  let dir: string;
+  let db: TelemetryDb;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), "loopy-task-"));
+    db = await openDb(join(dir, "telemetry.db"));
+    await bootstrap(db);
+    // The task FK needs its change dimension to exist first (D2).
+    insertChange(db, changeRow());
+  });
+
+  afterEach(() => {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("inserts a merged task carrying its size_* churn", () => {
+    insertTask(db, taskRow());
+    const row = db.prepare("SELECT * FROM task").get<Record<string, unknown>>();
+    expect(row?.task_id).toBe("C-0017/T-006");
+    expect(row?.change_id).toBe("C-0017");
+    expect(row?.task_number).toBe("T-006");
+    expect(row?.status).toBe("merged");
+    expect(row?.size_files).toBe(3);
+    expect(row?.size_added).toBe(42);
+    expect(row?.size_removed).toBe(7);
+  });
+
+  it("inserts a failed task with size_* NULL", () => {
+    insertTask(db, taskRow({
+      task_id: "C-0017/T-007",
+      task_number: "T-007",
+      status: "failed",
+      size_files: null,
+      size_added: null,
+      size_removed: null,
+    }));
+    const row = db
+      .prepare("SELECT status, size_files, size_added, size_removed FROM task")
+      .get<Record<string, unknown>>();
+    expect(row?.status).toBe("failed");
+    expect(row?.size_files).toBeNull();
+    expect(row?.size_added).toBeNull();
+    expect(row?.size_removed).toBeNull();
+  });
+
+  it("SUM(step.cost_usd) matches v_task.cost_usd for the task (D-0008)", () => {
+    insertTask(db, taskRow());
+    // Three per-attempt-ish step rows with known costs summing to 0.30.
+    for (const [name, cost] of [["a", 0.1], ["b", 0.15], ["c", 0.05]] as const) {
+      insertStep(db, stepRow({ task_id: "C-0017/T-006", name, cost_usd: cost }));
+    }
+    const agg = db
+      .prepare("SELECT cost_usd FROM v_task WHERE task_id = 'C-0017/T-006'")
+      .get<{ cost_usd: number }>();
+    expect(agg?.cost_usd).toBeCloseTo(0.3, 6);
+  });
+
+  it("never throws when the write fails (best-effort, safeEmit style)", () => {
+    db.close();
+    expect(() => insertTask(db, taskRow())).not.toThrow();
+  });
+
+  it("never throws on an FK violation (unknown change_id)", () => {
+    expect(() =>
+      insertTask(db, taskRow({ task_id: "X/T-1", change_id: "MISSING" })),
+    ).not.toThrow();
+    expect(db.all("SELECT * FROM task WHERE change_id = 'MISSING'")).toHaveLength(0);
   });
 });
 

@@ -32,6 +32,8 @@ import {
   createNonAgentRegistry,
   createStepRegistry,
 } from "../../src/steps/index";
+import { openDb, type TelemetryDb } from "../../src/telemetry/db";
+import { bootstrap } from "../../src/telemetry/schema";
 import type { RunShellCommand } from "../../src/steps/shell";
 import {
   emptyState,
@@ -1074,7 +1076,7 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     await git(["config", "commit.gpgsign", "false"]);
     writeFileSync(
       join(root, ".gitignore"),
-      ".worktrees/\n.loopy/\n.loopy.stop\n",
+      ".worktrees/\n.loopy/\n.loopy.stop\n.db/\n",
     );
     mkdirSync(join(root, "tasks"), { recursive: true });
     writeFileSync(join(root, "tasks", "todo.md"), TODO_MD);
@@ -1142,6 +1144,56 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     expect(log.stdout).toContain("conclui T-100");
     // Parent working tree is clean after a successful run.
     expect(await g.isParentClean()).toBe(true);
+  });
+
+  it("populates a merged task row with real git diff --numstat size_* (T-006)", { timeout: 30_000 }, async () => {
+    const config = parseConfig(E2E_YML);
+    const todoPath = join(root, "tasks", "todo.md");
+    const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+    const tasks = pendingTasks(
+      parseBacklog(readFileSync(todoPath, "utf8"), backlogOptions),
+    );
+    const g = createGit({ root });
+    mkdirSync(join(root, ".db"), { recursive: true });
+    const db: TelemetryDb = await openDb(join(root, ".db", "telemetry.db"));
+    await bootstrap(db);
+
+    const deps: OrchestratorDeps = {
+      root,
+      flags: { ...DEFAULT_FLAGS, yes: true },
+      registry: createNonAgentRegistry(),
+      checks: passingChecks,
+      ui: { requestApproval: async () => true },
+      logger: makeLogger(),
+      markDone: createMarkDonePort({
+        todoPath,
+        commit: g.commitPaths,
+        backlogOptions,
+      }),
+      git: g,
+      telemetry: db,
+    };
+
+    const result = await runLoop(config, tasks, deps);
+    expect(result.completed).toEqual(["T-100"]);
+
+    // The real `cleanup` step deleted the branch during the run, yet the churn
+    // was captured before it: the merged task row still carries size_* (the
+    // `implement` step adds feature.txt = one new line). This is the acceptance
+    // "teardown não zera o churn" against a real branch deletion.
+    const row = db
+      .prepare("SELECT status, size_files, size_added, size_removed FROM task")
+      .get<{
+        status: string;
+        size_files: number | null;
+        size_added: number | null;
+        size_removed: number | null;
+      }>();
+    db.close();
+    expect(row?.status).toBe("merged");
+    expect(row?.size_files).toBe(1);
+    expect(row?.size_added).toBe(1);
+    expect(row?.size_removed).toBe(0);
   });
 });
 
