@@ -205,6 +205,16 @@ pub fn read_baseline(dir: String) -> Result<Vec<Value>, String> {
     query_view(&dir, "SELECT * FROM v_change_baseline", [])
 }
 
+/// Whether `<dir>/.db/telemetry.db` exists. The read commands degrade a missing
+/// file AND an empty `v_change` to the same empty response (OQ3), so the tab
+/// needs this to tell them apart: "no telemetry file yet" and "a `.db` with no
+/// recorded change" get different empty-state messages — the second must never
+/// claim the file is absent when it is not.
+#[tauri::command]
+pub fn telemetry_db_exists(dir: String) -> bool {
+    telemetry_db_path(&dir).exists()
+}
+
 // ---------------------------------------------------------------------------
 // Write side — one-shot `loopy` CLI invocations (D6/D20)
 // ---------------------------------------------------------------------------
@@ -459,6 +469,31 @@ mod tests {
             Vec::<Value>::new()
         );
         assert_eq!(read_baseline(d).unwrap(), Vec::<Value>::new());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// `telemetry_db_exists` is what lets the tab distinguish "no `.db` file"
+    /// from "a `.db` whose views return zero rows" — the reads alone cannot.
+    #[test]
+    fn db_exists_tells_missing_file_from_empty_views() {
+        let dir = temp_dir("exists");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_string_lossy().to_string();
+
+        assert!(!telemetry_db_exists(d.clone()));
+
+        // Schema-only db (the stale-engine / killed-run case): file exists,
+        // v_change is empty — reads stay empty but existence flips to true.
+        let db_dir = dir.join(".db");
+        fs::create_dir_all(&db_dir).unwrap();
+        let conn = Connection::open(db_dir.join("telemetry.db")).unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        drop(conn);
+
+        assert!(telemetry_db_exists(d.clone()));
+        assert_eq!(read_change_list(d).unwrap(), Vec::<Value>::new());
 
         let _ = fs::remove_dir_all(&dir);
     }

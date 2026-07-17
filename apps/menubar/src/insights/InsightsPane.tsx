@@ -130,16 +130,28 @@ export function InsightsPane({ dir }: InsightsPaneProps) {
     [dir, changeId, runWriteBack],
   );
 
-  // Sem `.db` (ou fora do Tauri): degrada para "sem telemetria" (OQ3).
-  if (status === "idle" || status === "empty") {
+  // Degrada para "sem telemetria" (OQ3) — com a causa certa: `missing` (ou
+  // fora do Tauri) = não há `.db`; `empty` = o arquivo existe mas nenhuma
+  // change foi registrada nele. A aba nunca afirma que o arquivo falta
+  // quando ele está lá.
+  if (status === "idle" || status === "missing" || status === "empty") {
     return (
       <div className="insights" data-testid="insights-pane">
         <div className="insights__empty" data-testid="insights-empty">
           <p className="insights__empty-title">Sem telemetria</p>
-          <p className="insights__empty-hint">
-            Esta pasta não tem <code>.db/telemetry.db</code>. Rode uma change com o bloco{" "}
-            <code>metrics:</code> no <code>loopy.yml</code> para popular a aba.
-          </p>
+          {status === "empty" ? (
+            <p className="insights__empty-hint" data-testid="insights-empty-norows">
+              O <code>.db/telemetry.db</code> existe, mas nenhuma change foi registrada
+              nele. Rode uma change com o bloco <code>metrics:</code> no{" "}
+              <code>loopy.yml</code> — e confira se o <code>loopy</code> que executa o
+              loop está atualizado.
+            </p>
+          ) : (
+            <p className="insights__empty-hint" data-testid="insights-empty-missing">
+              Esta pasta não tem <code>.db/telemetry.db</code>. Rode uma change com o
+              bloco <code>metrics:</code> no <code>loopy.yml</code> para popular a aba.
+            </p>
+          )}
         </div>
       </div>
     );

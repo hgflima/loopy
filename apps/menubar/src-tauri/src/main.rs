@@ -13,6 +13,7 @@ use sidecar::SidecarState;
 use telemetry::{
     insights_add_bug, insights_set_change_status, insights_set_verdict, read_baseline,
     read_change_insights, read_change_list, read_step_insights, read_task_insights,
+    telemetry_db_exists,
 };
 use tauri::{
     image::Image,
@@ -312,6 +313,7 @@ fn main() {
             read_task_insights,
             read_step_insights,
             read_baseline,
+            telemetry_db_exists,
             insights_set_verdict,
             insights_add_bug,
             insights_set_change_status,

@@ -146,6 +146,7 @@ function seed(data: {
   baseline?: BaselineRow[];
   tasks?: TaskRow[];
   steps?: StepRow[];
+  dbExists?: boolean;
 }) {
   mockInvoke.mockImplementation(async (cmd: string) => {
     switch (cmd) {
@@ -157,6 +158,8 @@ function seed(data: {
         return data.tasks ?? [];
       case "read_step_insights":
         return data.steps ?? [];
+      case "telemetry_db_exists":
+        return data.dbExists ?? true;
       default:
         return "ok"; // write commands
     }
@@ -176,10 +179,27 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("degradação sem telemetria (OQ3)", () => {
-  it("mostra 'sem telemetria' quando não há changes", async () => {
-    seed({ changes: [] });
+  it("sem `.db`: diz que o arquivo não existe", async () => {
+    seed({ changes: [], dbExists: false });
+    const { findByTestId, queryByTestId } = render(<InsightsPane dir="/proj" />);
+    expect(await findByTestId("insights-empty-missing")).toBeTruthy();
+    expect(queryByTestId("insights-empty-norows")).toBeNull();
+  });
+
+  it("`.db` existe mas sem changes: NÃO afirma que o arquivo falta", async () => {
+    seed({ changes: [], dbExists: true });
+    const { findByTestId, queryByTestId } = render(<InsightsPane dir="/proj" />);
+    expect(await findByTestId("insights-empty-norows")).toBeTruthy();
+    expect(queryByTestId("insights-empty-missing")).toBeNull();
+  });
+
+  it("shell antigo sem o comando `telemetry_db_exists` degrada para 'sem arquivo' (legado)", async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === "telemetry_db_exists") throw new Error("unknown command");
+      return [];
+    });
     const { findByTestId } = render(<InsightsPane dir="/proj" />);
-    expect(await findByTestId("insights-empty")).toBeTruthy();
+    expect(await findByTestId("insights-empty-missing")).toBeTruthy();
   });
 });
 

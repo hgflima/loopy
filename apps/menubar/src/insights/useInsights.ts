@@ -5,9 +5,11 @@
  * **Leitura** (SELECT-only pelo Rust `rusqlite`, D19): carrega a lista de changes
  * (`v_change`), o baseline histórico (`v_change_baseline`) e as tasks da change em
  * foco (`v_task`) por comandos Tauri. Degrada graciosamente (OQ3): sem `.db` — ou
- * fora do Tauri (dev:web) — tudo volta vazio e o status vira `empty`/`idle`, então
- * a aba mostra "sem telemetria" em vez de quebrar. Funciona **em idle** (revisão
- * fria) e **durante o run** — é só leitura de um arquivo.
+ * fora do Tauri (dev:web) — tudo volta vazio e o status vira `missing`/`idle`;
+ * um `.db` que existe mas não registra nenhuma change vira `empty` (o
+ * `telemetry_db_exists` desambigua — os reads sozinhos não conseguem, e a aba
+ * não pode afirmar que o arquivo falta quando ele está lá). Funciona **em idle**
+ * (revisão fria) e **durante o run** — é só leitura de um arquivo.
  *
  * **Escrita** (write-back, D6/D20): veredito e bug **nunca** tocam o `.db` daqui —
  * são invocações one-shot do CLI `loopy` (os comandos Rust `insights_*` da T-009).
@@ -22,8 +24,18 @@ import { isTauri, invoke } from "@tauri-apps/api/core";
 import type { ChangeRow, BaselineRow, TaskRow, StepRow } from "./rows";
 import { pickDefaultThisChange } from "./selection";
 
-/** Estado da carga do índice (lista + baseline + tasks da change em foco). */
-export type InsightsStatus = "idle" | "loading" | "ready" | "empty" | "error";
+/**
+ * Estado da carga do índice (lista + baseline + tasks da change em foco).
+ * `missing` = não há `.db/telemetry.db`; `empty` = o arquivo existe, mas
+ * `v_change` não tem linhas (schema-only: run morto cedo ou motor sem C-0017).
+ */
+export type InsightsStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "empty"
+  | "missing"
+  | "error";
 
 /** O que o hook devolve para a `InsightsPane`. */
 export interface UseInsights {
@@ -69,9 +81,12 @@ export function useInsights(dir: string | undefined, changeId: string | null): U
 
     void (async () => {
       try {
-        const [changes, baselineRows] = await Promise.all([
+        const [changes, baselineRows, dbExists] = await Promise.all([
           invoke<ChangeRow[]>("read_change_list", { dir }),
           invoke<BaselineRow[]>("read_baseline", { dir }),
+          // Um shell antigo sem o comando não pode derrubar a aba: na dúvida,
+          // cai no comportamento legado ("sem arquivo").
+          invoke<boolean>("telemetry_db_exists", { dir }).catch(() => false),
         ]);
         // A change em foco: a selecionada pelo pai ou, antes dele sincronizar, o
         // default (a mais recente). Carregar as tasks aqui — na MESMA carga das
@@ -87,7 +102,9 @@ export function useInsights(dir: string | undefined, changeId: string | null): U
         setBaseline(baselineRows[0] ?? null);
         setTasks(taskRows);
         setError(undefined);
-        setStatus(changes.length === 0 ? "empty" : "ready");
+        setStatus(
+          changes.length > 0 ? "ready" : dbExists ? "empty" : "missing",
+        );
       } catch (err) {
         if (reqRef.current !== myReq) return;
         setError(err instanceof Error ? err.message : String(err));
