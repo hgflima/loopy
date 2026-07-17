@@ -1,0 +1,65 @@
+{
+  "skill_name": "loopy",
+  "notes": "Fixtures são projetos-alvo sintéticos criados no workspace da sessão (repo git + package.json com scripts typecheck/test + lockfile + .harn/devy/changes/C-0001-<slug>/{spec,plan,todo}.md). Como subagents não têm usuário para responder, cada prompt declara as respostas pré-aprovadas do usuário simulado e pede PERGUNTAS.md como evidência do que a skill teria perguntado. O gerador dos fixtures é make_fixtures.py no workspace.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "happy-path-default-approval",
+      "prompt": "Prepara essa change (C-0001) pra rodar no loopy. Pode considerar que eu aprovo a proposta default sem mudanças — mas registre num arquivo PERGUNTAS.md as perguntas que você teria me feito.",
+      "expected_output": "loopy.yml válido na raiz: concurrency auto + max_concurrency 3, metrics: {}, agentes detectados via which+probe, checks derivados dos scripts reais do package.json, pipeline com os gotchas encodados (prompts proibindo commit, --allow-empty, git add -A -- ., cleanup idempotente via wrapper, review sem mode:plan+expect). Dry-run passa.",
+      "files": ["fixture: projeto com todo.md bem-formado (3 tasks T-001..T-003, Deps lineares) e scripts typecheck/test"],
+      "expectations": [
+        "loopy.yml existe na raiz do projeto-alvo e `npx -y @hgflima/loopy@latest . --dry-run` sai com exit 0",
+        "loopy.yml define concurrency: auto e max_concurrency: 3",
+        "loopy.yml contém o bloco metrics: (telemetria opt-in habilitada)",
+        "Registry de agentes só contém agentes validados na máquina (evidência de which/probe: .loopy/capabilities.json no projeto-alvo ou registro explícito em NOTES.md/PERGUNTAS.md)",
+        "Prompts dos steps de agente que implementam proíbem explicitamente o agente de commitar",
+        "Step de commit usa `git add -A -- .` e `git commit` com `--allow-empty`",
+        "Nenhum step de agente com expect: usa mode: plan (Verdict seria 'ausente' — G1)",
+        "Cleanup de worktree é idempotente (wrapper sh tolerante a re-execução: || true / worktree prune / show-ref antes de branch -D)",
+        "PERGUNTAS.md existe e registra as perguntas que teriam sido feitas ao usuário",
+        "Checks derivados dos scripts reais do package.json (npm run typecheck e npm test referenciados)",
+        "O dry-run mostra as 3 tasks pendentes (T-001, T-002, T-003) com dependências lineares T-001→T-002→T-003"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "todo-md-document-format",
+      "prompt": "cria o loopy.yml pra essa change. Se o backlog tiver problema, corrige antes — considere que eu aprovo suas correções e a proposta final.",
+      "expected_output": "Skill detecta que o todo.md está em formato documento (### headers, sem '- [ ]') e que a linha Deps tem texto após os ids (D-0001); converte para checklist com marcadores corretos e Deps isoladas; task_id_pattern derivado do arquivo real; só então gera o yml e o dry-run encontra todas as tasks.",
+      "files": ["fixture: todo.md como documento (### T1.1 ...) com linha 'Deps: T1.1, T1.2. Files: src/x.ts'"],
+      "expectations": [
+        "loopy.yml existe na raiz do projeto-alvo e `npx -y @hgflima/loopy@latest . --dry-run` sai com exit 0",
+        "loopy.yml define concurrency: auto e max_concurrency: 3",
+        "loopy.yml contém o bloco metrics: (telemetria opt-in habilitada)",
+        "Registry de agentes só contém agentes validados na máquina (evidência de which/probe: .loopy/capabilities.json no projeto-alvo ou registro explícito em NOTES.md/PERGUNTAS.md)",
+        "Prompts dos steps de agente que implementam proíbem explicitamente o agente de commitar",
+        "Step de commit usa `git add -A -- .` e `git commit` com `--allow-empty`",
+        "Nenhum step de agente com expect: usa mode: plan (Verdict seria 'ausente' — G1)",
+        "todo.md foi convertido para checklist parseável: as 3 tasks (T1.1, T1.2, T1.3) com marcador '- [ ]'",
+        "A linha Deps de T1.3 está isolada — sem texto após os ids (evita o D-0001, que engoliria a última dep)",
+        "task_id_pattern no loopy.yml casa com os ids dotted (ex.: T\\d+\\.\\d+)",
+        "O dry-run encontra as 3 tasks e mostra T1.3 dependendo de T1.1 E de T1.2 (nenhuma dep engolida)"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "parallel-collision-analysis",
+      "prompt": "configura o loopy pra essa change com o máximo de paralelismo que der. Considere aprovadas as suas recomendações de segurança.",
+      "expected_output": "Skill nota que T-001 e T-002 declaram mexer no mesmo arquivo sem aresta Deps entre si, e serializa (adiciona Deps ou justifica concurrency menor) em vez de liberar auto às cegas. O yml final reflete a decisão e o dry-run mostra o DAG resultante.",
+      "files": ["fixture: todo.md com 3 tasks independentes, duas citando o mesmo src/store.ts no corpo"],
+      "expectations": [
+        "loopy.yml existe na raiz do projeto-alvo e `npx -y @hgflima/loopy@latest . --dry-run` sai com exit 0",
+        "loopy.yml define concurrency: auto e max_concurrency: 3 (ou concorrência menor com justificativa explícita)",
+        "loopy.yml contém o bloco metrics: (telemetria opt-in habilitada)",
+        "Registry de agentes só contém agentes validados na máquina (evidência de which/probe: .loopy/capabilities.json no projeto-alvo ou registro explícito em NOTES.md/PERGUNTAS.md)",
+        "Prompts dos steps de agente que implementam proíbem explicitamente o agente de commitar",
+        "Step de commit usa `git add -A -- .` e `git commit` com `--allow-empty`",
+        "Nenhum step de agente com expect: usa mode: plan (Verdict seria 'ausente' — G1)",
+        "A colisão T-001×T-002 (ambas editam src/store.ts) foi detectada e neutralizada: aresta Deps entre elas no todo.md OU concorrência explicitamente reduzida a 1, com justificativa registrada",
+        "T-003 (arquivos disjuntos) permanece paralelizável — a solução não serializa tudo desnecessariamente (a menos que justificado)",
+        "O dry-run reflete a decisão: DAG e concorrência efetiva coerentes com a análise registrada em NOTES.md/PERGUNTAS.md"
+      ]
+    }
+  ]
+}
