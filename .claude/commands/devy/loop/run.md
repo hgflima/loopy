@@ -10,7 +10,7 @@ preparar e colocar o loop rodando **onde o usuário consegue interagir**.
 
 ## 1. Preflight rápido
 
-- `loopy.yml` existe na raiz? Se não: oriente `/devy:loop-setup` e pare.
+- `loopy.yml` existe na raiz? Se não: oriente `/devy:loop:setup` e pare.
 - `npx -y @hgflima/loopy@latest . --dry-run` passa? Se não: reporte o erro e
   ofereça corrigir (provavelmente re-invocando a skill `loopy`).
 - Parent limpo (`git status`)? Se sujo: mostre o que está pendente de commit e
@@ -28,7 +28,7 @@ e rode o loopy numa **tab nova da primeira workspace**:
   resultante com `herdr pane run`.
 - Informe ao usuário onde o loop está rodando e que os Gates de Aprovação
   aparecem lá. Não fique bloqueado esperando o run terminar; ofereça
-  `/devy:loop-status` para acompanhar.
+  `/devy:loop:status` para acompanhar.
 
 **b) GUI menubar** — se o app estiver instalado (verifique
 `/Applications/Loopy.app` e `~/Applications/Loopy.app`), ofereça abri-lo:

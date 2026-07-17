@@ -68,12 +68,12 @@ Dialetos típicos (confirme sempre pela sondagem):
 > Nenhum agente de código utilizável foi encontrado. Tentei: claude (which:
 > ✗/✓, probe: …), codex (…), opencode (…). Instale e autentique ao menos um:
 > Claude Code (`npm i -g @anthropic-ai/claude-code` + login), Codex CLI
-> (`codex login`), ou OpenCode. Depois rode /devy:loop-setup de novo.
+> (`codex login`), ou OpenCode. Depois rode /devy:loop:setup de novo.
 
 Um agente que passa no `which` mas falha no probe (ex.: sem login) **não
 entra no yml** — registre no relatório do preflight o motivo.
 
-## 4. Checklist de "rodar redondo" (usado pelo /devy:loop-setup)
+## 4. Checklist de "rodar redondo" (usado pelo /devy:loop:setup)
 
 Cada item abaixo já causou um run quebrado em produção; verifique todos.
 

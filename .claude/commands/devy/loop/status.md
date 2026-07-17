@@ -31,7 +31,7 @@ houver telemetria).
   `touch .loopy.stop` (o motor encerra a Run graciosamente ao vê-lo).
   Lembre de removê-lo antes do próximo run.
 - **Retomar run pausado**: o usuário re-roda o comando do loop
-  (`/devy:run-loop`) — o checkpoint em `.loopy/state.json` retoma de onde
+  (`/devy:loop:run`) — o checkpoint em `.loopy/state.json` retoma de onde
   parou. Se a pausa veio de um step de cleanup/merge quebrado, inspecione o
   worktree preservado (`keep_worktree: true`) antes de retomar.
 - **Limpar órfãos**: worktree/branch sem checkpoint correspondente —

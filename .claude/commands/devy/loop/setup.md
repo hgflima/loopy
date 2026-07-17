@@ -22,4 +22,4 @@ Depois que a skill salvar o `loopy.yml`, complete o setup do repo:
    `.gitignore`, os inputs da change, lockfile, harness. Proponha a mensagem
    de commit, mas **deixe o usuário decidir** — não commite sem pedido.
 
-Encerre indicando o próximo passo: `/devy:run-loop` para executar.
+Encerre indicando o próximo passo: `/devy:loop:run` para executar.

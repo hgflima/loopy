@@ -8,7 +8,7 @@ description: >-
   aprovação explícita do usuário. Use sempre que o usuário pedir para criar,
   configurar, revisar ou ajustar um loopy.yml, "preparar a change para o
   loopy", "setup do loop", "rodar o loopy nessa change", ou quando
-  /devy:loop-setup for invocado — mesmo que ele não mencione "loopy.yml"
+  /devy:loop:setup for invocado — mesmo que ele não mencione "loopy.yml"
   explicitamente.
 ---
 
@@ -142,7 +142,7 @@ conversa até lá.
 
 - **Não executa o run vivo.** Rodar o loop é do usuário (a TUI precisa de TTY
   e o Gate de Aprovação do merge é interativo). Quem orquestra execução é o
-  comando `/devy:run-loop`.
+  comando `/devy:loop:run`.
 - **Não inventa comportamento de loop fora do yml.** Se o usuário quer que o
   loop faça algo diferente, a resposta é sempre editar o `loopy.yml`.
 
