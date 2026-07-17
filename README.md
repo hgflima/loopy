@@ -1,7 +1,7 @@
 # loopy — Motor de Loop Agêntico Config-Driven via ACP
 
 `loopy` é um CLI em TypeScript/Node que executa um **loop agêntico de dois
-níveis** sobre um diretório local, dirigindo um **agente de código via ACP
+níveis** sobre um diretório local, dirigindo **agentes de código via ACP
 (Agent Client Protocol)** até concluir um backlog de tasks.
 
 **Diferencial central:** `loopy` é um **motor genérico que interpreta o
@@ -11,11 +11,13 @@ e gates) é **100% definido no `loopy.yml`**; o código só implementa a mecâni
 Esse é o invariante do projeto (**AD-1**): trocar o comportamento do loop é
 editar o yml, nunca o motor.
 
-Em uma frase: `loopy .` lê `loopy.yml` + os inputs (`SPEC.md` / `tasks/plan.md` /
-`tasks/todo.md`) e, para cada task pendente do backlog, executa o `pipeline`
+Em uma frase: `loopy .` lê `loopy.yml` + os inputs (`spec.md` / `plan.md` /
+`todo.md`) e, para cada task pendente do backlog, executa o `pipeline`
 declarado no yml — tipicamente cria um worktree isolado, faz o agente implementar
 até os checks passarem, simplifica, audita (read-only), commita, faz merge (com
-aprovação humana) e limpa — mostrando tudo numa **TUI ao vivo (Ink)**.
+aprovação humana) e limpa — mostrando tudo numa **TUI ao vivo (Ink)**, ou, sob
+`--emit-events`, numa **GUI nativa de menubar**
+([`apps/menubar/`](apps/menubar/)) que roda o motor como sidecar.
 
 > **Novo por aqui?** Comece pelo tutorial
 > [Meu primeiro loop](docs/tutorials/meu-primeiro-loop.md) — 15 minutos, do zero
@@ -25,13 +27,20 @@ aprovação humana) e limpa — mostrando tudo numa **TUI ao vivo (Ink)**.
 
 ## Instalação
 
-Requer **Node ≥ 20**.
+Requer **Node ≥ 22.13** (a telemetria usa `node:sqlite`).
+
+Pelo npm (o CLI publicado):
+
+```
+npm install -g @hgflima/loopy
+```
+
+Do código-fonte:
 
 ```
 npm install
+npm run build      # tsup → dist/ (o bin `loopy` + os subpath exports)
 ```
-
-Não há build step no MVP: o CLI roda via `tsx`.
 
 ## Uso
 
@@ -48,16 +57,26 @@ npm run dev -- <dir> --dry-run      # via script
 
 ### Flags
 
-| Flag                   | Efeito                                                                                                                      |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `-c, --config <path>`  | Caminho alternativo do `loopy.yml` (default: `<dir>/loopy.yml`).                                                            |
-| `--dry-run`            | Planeja e imprime o pipeline **resolvido** (com interpolação), **sem** nenhuma escrita/commit/merge (Success Criterion #8). |
-| `-t, --task <id>`      | Roda apenas a task com este id (ex.: `T-004`). Avisa — sem bloquear — se houver tasks pendentes anteriores.                 |
-| `--max-iterations <n>` | Sobrescreve o teto do loop externo (`stop_conditions.max_iterations`).                                                      |
-| `-y, --yes`            | Auto-aprova os gates de aprovação (não-interativo / CI).                                                                    |
-| `--no-tui`             | Força logs de linha (sem Ink). Também degrada automaticamente sem TTY.                                                      |
-| `--verbose`            | Inclui o tráfego ACP no log.                                                                                                |
-| `-V, --version`        | Mostra a versão.                                                                                                            |
+| Flag                      | Efeito                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `-c, --config <path>`     | Caminho alternativo do `loopy.yml` (default: `<dir>/loopy.yml`).                                                                     |
+| `--dry-run`               | Planeja e imprime o pipeline **resolvido** (com interpolação) e o DAG, **sem** nenhuma escrita/commit/merge (Success Criterion #8).  |
+| `-t, --task <id>`         | Roda apenas a task com este id (ex.: `T-004`); força `concurrency = 1`. Avisa — sem bloquear — se houver tasks pendentes anteriores. |
+| `--clean [id]`            | Teardown (worktree + branch + checkpoint) e sai. Sem `id`, usa a task com checkpoint pausado/em-progresso.                           |
+| `--concurrency <n\|auto>` | Sobrescreve o pool de tasks paralelas; `auto` deriva do DAG ([ADR-0009](docs/adrs/0009-concorrencia-derivada-do-dag.md)).            |
+| `--max-iterations <n>`    | Sobrescreve o teto do loop externo (`stop_conditions.max_iterations`).                                                               |
+| `-y, --yes`               | Auto-aprova os gates de aprovação (não-interativo / CI).                                                                             |
+| `--no-tui`                | Força logs de linha (sem Ink). Também degrada automaticamente sem TTY.                                                               |
+| `--emit-events`           | O stdout vira canal NDJSON para a GUI ([ADR-0007](docs/adrs/0007-transport-ndjson-duplex-native-ui.md)); texto vai pro stderr.       |
+| `--verbose`               | Inclui o tráfego ACP no log.                                                                                                         |
+| `-V, --version`           | Mostra a versão.                                                                                                                     |
+
+Há também subcomandos: `loopy probe-agent <nome>` sonda as capabilities de um
+agente ([ADR-0008](docs/adrs/0008-capabilities-de-agente-por-descoberta.md)), e
+`loopy verdict` / `loopy bug` / `loopy change` gravam anotações humanas na
+telemetria ([ADR-0011](docs/adrs/0011-telemetria-sqlite-insert-only-e-granularidade-por-tentativa.md)).
+A referência completa — flags e subcomandos — está em
+[`docs/reference/cli.md`](docs/reference/cli.md).
 
 > **Nota:** os checks (`typecheck` / `lint` / `test`) rodados **dentro do loop**
 > são os comandos do **projeto-alvo**, definidos em `loopy.yml` — não os comandos
@@ -80,30 +99,41 @@ touch .loopy.stop
 
 ## Configuração (`loopy.yml`)
 
-Todo o comportamento do loop vive no `loopy.yml` (veja o exemplo comentado na
-raiz do repo). O resumo abaixo é um mapa; a **referência completa** de cada bloco,
+Todo o comportamento do loop vive no `loopy.yml` (o exemplo canônico e comentado
+vive em [`examples/loopy.yml`](examples/loopy.yml)). O resumo abaixo é um mapa; a **referência completa** de cada bloco,
 chave, tipo e default está em [`docs/reference/`](docs/reference/README.md). Para
 um passo a passo de como pôr o `loopy` para rodar num projeto existente (inclusive
 com concorrência N), veja o guia
 [Configurar um projeto-alvo](docs/how-to/configurar-projeto-alvo.md). Blocos:
 
 - **`workspace`** — `root`, `parent_branch` (destino do merge), `worktrees_dir`.
-- **`acp`** — mecânica do subprocesso ACP (`command`, timeout, `permissions`).
-- **`inputs`** — caminhos de `spec` / `plan` / `todo` + regras do `backlog`.
+- **`acp`** — mecânica do subprocesso ACP (`command`, timeout, `permissions`) —
+  o modo legado de agente único.
+- **`agents`** — o Registry de agentes nomeados
+  ([ADR-0006](docs/adrs/0006-multi-agente-acp.md)): `preset` do Catálogo (ou
+  `command` literal), `model`/`effort` no dialeto do agente. Mutuamente
+  exclusivo com `acp.command`.
+- **`inputs`** — caminhos de `spec` / `plan` / `todo` + regras do `backlog`
+  (inclusive `deps_pattern`, que lê as arestas do DAG).
 - **`checks`** — listas nomeadas e reutilizáveis de comandos do projeto-alvo.
 - **`pipeline`** — a lista de steps tipados (o loop em si). A ordem declarada é o fluxo default; Desvios (`on_fail: { goto }` / `on_success: { goto }`) sobrepõem-na, permitindo saltos e ciclos (fix-loop).
 - **`stop_conditions`** — `max_iterations`, `max_step_visits` (teto de visitas por step por task, default 10) + `stop_signal_file`.
-- **`concurrency`** — sequencial no v1 (`1`); o data-model é parallel-ready.
+- **`concurrency`** — o pool de tasks paralelas: inteiro (default `1`) ou `auto`
+  = `min(largura do DAG, max_concurrency)`
+  ([ADR-0004](docs/adrs/0004-concorrencia-n-dag-de-tasks-secao-critica-e-skip-transitivo.md),
+  [ADR-0009](docs/adrs/0009-concorrencia-derivada-do-dag.md)).
 - **`policies`** — `escalation` (pause / skip_task / abort_loop + `keep_worktree`)
-  e `git.require_clean_parent`.
+  e `git` (`require_clean_parent`, `on_merge_conflict: escalate | rebase`).
 - **`logging`** — `dir`, `per_task`, `capture_acp_traffic`.
+- **`metrics`** — telemetria opt-in em SQLite (`.db/telemetry.db`), ligada pela
+  **presença** do bloco ([ADR-0011](docs/adrs/0011-telemetria-sqlite-insert-only-e-granularidade-por-tentativa.md)).
 
 ### Primitivas de step
 
 Cada item de `pipeline` é uma das 4 primitivas, validadas por **zod** no _shape_:
 
-| `type`     | Papel                            | Campos                                                                                                                                              |
-| ---------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`     | Papel                            | Campos                                                                                                                                            |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `agent`    | Um turno do agente ACP           | `prompt`, `retry_prompt`, `mode`, `clear_context` (default `true`), `verify:{run,max_attempts}` (loop interno), `expect`, `on_fail`, `on_success` |
 | `shell`    | Comandos externos (execa)        | `run:[…]`, `always`, `on_fail`, `on_success`                                                                                                      |
 | `checks`   | Roda uma lista nomeada de checks | `run` (referência a `checks:`), `on_fail`, `on_success`                                                                                           |
@@ -111,7 +141,9 @@ Cada item de `pipeline` é uma das 4 primitivas, validadas por **zod** no _shape
 
 ### Os dois loops
 
-- **Loop externo** — o motor itera as tasks `- [ ]` do backlog em ordem e, para
+- **Loop externo** — o motor consome as tasks `- [ ]` do backlog — sob
+  `concurrency > 1`, quem escolhe as próximas é o **Scheduler** (o _ready set_
+  do DAG de `Deps:`), com a ordem do arquivo como desempate — e, para
   cada uma, executa o `pipeline` via **Program counter (PC)**: a ordem declarada
   é o default, mas Desvios (`on_fail: { goto }` / `on_success: { goto }`)
   saltam para outro step pelo `id`, permitindo ciclos intencionais (fix-loop).
@@ -132,6 +164,7 @@ ${worktree.path} ${worktree.diff}
 ${iteration} ${attempt} ${checks.report}
 ${inputs.spec|plan|todo}
 ${workspace.root|parent_branch|worktrees_dir}
+${change.id} ${change.dir}
 ```
 
 Uma variável **desconhecida** aborta a run (fail-fast, com nome da variável +
@@ -152,14 +185,31 @@ Todos devem estar no `.gitignore` (este repo já ignora `.worktrees/`, `.loopy/`
 nenhum worktree/branch temporário sobra — exceto os preservados por escalonamento
 (`keep_worktree: true`).
 
+## GUI nativa (menubar)
+
+Além da TUI, este repo é um monorepo (`workspaces: ["apps/*"]`) que hospeda
+[`apps/menubar/`](apps/menubar/) — um app macOS de menubar (Tauri v2 + React)
+que spawna o motor como sidecar (`loopy --no-tui --emit-events`) e conversa com
+ele por NDJSON duplex
+([ADR-0007](docs/adrs/0007-transport-ndjson-duplex-native-ui.md)). Ele renderiza
+o mesmo estado da TUI (Kanban, grafo, streams), edita o `loopy.yml` visualmente
+e hospeda a aba **Insights** da telemetria
+([ADR-0011](docs/adrs/0011-telemetria-sqlite-insert-only-e-granularidade-por-tentativa.md)).
+
+```
+npm run dev -w apps/menubar   # roda a GUI em dev
+npm run menubar               # empacota o .app (tauri build)
+```
+
 ## Comandos de desenvolvimento (do próprio repo)
 
 ```
 npm run dev -- <dir>     # roda o CLI via tsx
-npm run typecheck        # tsc --noEmit
+npm run build            # tsup → dist/ (bin + subpath exports)
+npm run typecheck        # tsc --noEmit (raiz + apps/menubar)
 npm run lint             # eslint .
 npm run format           # prettier --write .
-npm test                 # vitest run
+npm test                 # vitest run (só a raiz; o app: npm test -w apps/menubar)
 npm run test:watch       # vitest
 ```
 

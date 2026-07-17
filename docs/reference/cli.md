@@ -19,25 +19,26 @@ e, para cada task pendente do backlog, executa o `pipeline` declarado.
 
 ## Argumento
 
-| Argumento | Default | Descrição |
-|-----------|---------|-----------|
-| `[dir]` | `.` | Diretório do projeto-alvo. Onde ficam o `loopy.yml`, os inputs e os artefatos de runtime (worktrees, `.loopy/`, logs). |
+| Argumento | Default | Descrição                                                                                                              |
+| --------- | ------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `[dir]`   | `.`     | Diretório do projeto-alvo. Onde ficam o `loopy.yml`, os inputs e os artefatos de runtime (worktrees, `.loopy/`, logs). |
 
 ## Flags
 
-| Flag | Valor | Default | Descrição |
-|------|-------|---------|-----------|
-| `-c, --config <path>` | caminho | `<dir>/loopy.yml` | Caminho alternativo do `loopy.yml`. |
-| `--dry-run` | — | `false` | Planeja e imprime o pipeline resolvido para as tasks pendentes; **zero escrita, commit ou merge**. |
-| `-t, --task <id>` | id da task | — | Roda apenas a task com esse `id` (ex.: `T-004`). Avisa (sem bloquear) sobre tasks pendentes anteriores no backlog. |
-| `--max-iterations <n>` | inteiro > 0 | config | Sobrescreve o teto do loop externo (`stop_conditions.max_iterations`). |
-| `-y, --yes` | — | `false` | Auto-aprova os Gates de Aprovação (uso não-interativo / CI). |
-| `--clean [id]` | id opcional | — | Faz teardown (worktree + branch + checkpoint) e sai. Sem `id`, usa a task com checkpoint pausado/em-progresso. |
-| `--concurrency <n\|auto>` | inteiro > 0 ou `auto` | config | Sobrescreve o pool de tasks paralelas (`concurrency`). `auto` calcula pelo DAG — ver [concurrency](configuration.md#concurrency). |
-| `--no-tui` | — | TUI ligada | Força logs de linha (sem Ink). |
-| `--verbose` | — | `false` | Inclui o tráfego ACP no log. |
-| `-V, --version` | — | — | Mostra a versão e sai. |
-| `-h, --help` | — | — | Mostra a ajuda e sai. |
+| Flag                      | Valor                 | Default           | Descrição                                                                                                                                                                                                      |
+| ------------------------- | --------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-c, --config <path>`     | caminho               | `<dir>/loopy.yml` | Caminho alternativo do `loopy.yml`.                                                                                                                                                                            |
+| `--dry-run`               | —                     | `false`           | Planeja e imprime o pipeline resolvido para as tasks pendentes; **zero escrita, commit ou merge**.                                                                                                             |
+| `-t, --task <id>`         | id da task            | —                 | Roda apenas a task com esse `id` (ex.: `T-004`); força `concurrency = 1`. Avisa (sem bloquear) sobre tasks pendentes anteriores no backlog.                                                                    |
+| `--max-iterations <n>`    | inteiro > 0           | config            | Sobrescreve o teto do loop externo (`stop_conditions.max_iterations`).                                                                                                                                         |
+| `-y, --yes`               | —                     | `false`           | Auto-aprova os Gates de Aprovação (uso não-interativo / CI).                                                                                                                                                   |
+| `--clean [id]`            | id opcional           | —                 | Faz teardown (worktree + branch + checkpoint) e sai. Sem `id`, usa a task com checkpoint pausado/em-progresso.                                                                                                 |
+| `--concurrency <n\|auto>` | inteiro > 0 ou `auto` | config            | Sobrescreve o pool de tasks paralelas (`concurrency`). `auto` calcula pelo DAG — ver [concurrency](configuration.md#concurrency).                                                                              |
+| `--no-tui`                | —                     | TUI ligada        | Força logs de linha (sem Ink).                                                                                                                                                                                 |
+| `--emit-events`           | —                     | `false`           | O stdout vira o canal NDJSON do Transport (motor→UI); todo texto de log vai para o stderr. É como a GUI menubar roda o motor como sidecar — ver [ADR-0007](../adrs/0007-transport-ndjson-duplex-native-ui.md). |
+| `--verbose`               | —                     | `false`           | Inclui o tráfego ACP no log.                                                                                                                                                                                   |
+| `-V, --version`           | —                     | —                 | Mostra a versão e sai.                                                                                                                                                                                         |
+| `-h, --help`              | —                     | —                 | Mostra a ajuda e sai.                                                                                                                                                                                          |
 
 ## Notas
 
@@ -68,14 +69,14 @@ O agente pode ser dito de **duas formas**: pelo `<nome>` no Registry do
 registry — é o que a GUI usa para sondar um agente que ainda é só um rascunho
 (recém-criado, ou com o preset acabado de trocar).
 
-| Argumento / Flag | Descrição |
-|------------------|-----------|
-| `<nome>` | Nome do agente no Registry `agents:` do `loopy.yml`. Dispensável com `--command`. |
-| `--json` | Emite o resultado em JSON (para consumo programático / GUI). |
-| `--model <id>` | Sonda **com este model aplicado**. Default: o `model` do agente no Registry. |
+| Argumento / Flag      | Descrição                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `<nome>`              | Nome do agente no Registry `agents:` do `loopy.yml`. Dispensável com `--command`.                                      |
+| `--json`              | Emite o resultado em JSON (para consumo programático / GUI).                                                           |
+| `--model <id>`        | Sonda **com este model aplicado**. Default: o `model` do agente no Registry.                                           |
 | `--command <argv...>` | Argv literal do adapter — sonda **sem** passar pelo Registry nem pelo yml salvo. **Deve vir por último** (ver abaixo). |
-| `--env K=V` | Env do adapter (repetível). Só faz sentido com `--command`. |
-| `-c, --config <path>` | Caminho alternativo do `loopy.yml`. |
+| `--env K=V`           | Env do adapter (repetível). Só faz sentido com `--command`.                                                            |
+| `-c, --config <path>` | Caminho alternativo do `loopy.yml`.                                                                                    |
 
 **`--command` consome o resto da linha.** O argv de um adapter é opaco para o
 motor e carrega flags que não são nossas (`npx -y …` é o argv de todo preset npm
@@ -103,7 +104,7 @@ antes de escrevê-los no `loopy.yml`. Ver
 #### Por que a sondagem aplica um `model`
 
 Nem toda Capability é estática. O **OpenCode** deriva o `effort` do **model
-corrente**: os níveis são as *variants* daquele model, então ele só anuncia
+corrente**: os níveis são as _variants_ daquele model, então ele só anuncia
 `thought_level` quando o model tem variants — e a lista **muda com o model**
 (`zai-coding-plan/glm-5.2` → `high, max`; `openai/gpt-5` → `minimal, low,
 medium, high`; um model sem variants → nenhum). Claude e Codex anunciam
@@ -142,12 +143,12 @@ Registra o veredito humano de uma task (tri-estado `pass` / `fail` / não-avalia
 `set` é upsert (muda `by`/`at` a cada mudança); `clear` apaga a linha, voltando ao
 estado "não avaliada".
 
-| Flag | Descrição |
-|------|-----------|
-| `--task <id>` | Id da task na telemetria (ex.: `C-0016/T-002`). Obrigatório. |
-| `--pass` / `--fail` | O veredito. Exatamente **um** dos dois em `set`. |
-| `--note <texto>` | **Opcional.** Nota livre. |
-| `--by <autor>` | **Opcional.** Autor. Default: `git config user.name` → `$USER`. |
+| Flag                | Descrição                                                       |
+| ------------------- | --------------------------------------------------------------- |
+| `--task <id>`       | Id da task na telemetria (ex.: `C-0016/T-002`). Obrigatório.    |
+| `--pass` / `--fail` | O veredito. Exatamente **um** dos dois em `set`.                |
+| `--note <texto>`    | **Opcional.** Nota livre.                                       |
+| `--by <autor>`      | **Opcional.** Autor. Default: `git config user.name` → `$USER`. |
 
 #### `bug add` — registra um bug ligado a uma task
 
@@ -158,12 +159,12 @@ loopy bug add --task <id> --severity <low|medium|high|critical> --title <t> [--d
 Insere um bug com FK para a task. **Sem restrição de change** — um bug encontrado
 numa change posterior, ligado a uma task de change anterior, é o caso normal.
 
-| Flag | Descrição |
-|------|-----------|
-| `--task <id>` | Id da task na telemetria. Obrigatório. |
-| `--severity <nível>` | `low` · `medium` · `high` · `critical`. Obrigatório. |
-| `--title <texto>` | Título curto do bug. Obrigatório. |
-| `--detail <texto>` | **Opcional.** Descrição. |
+| Flag                  | Descrição                                                             |
+| --------------------- | --------------------------------------------------------------------- |
+| `--task <id>`         | Id da task na telemetria. Obrigatório.                                |
+| `--severity <nível>`  | `low` · `medium` · `high` · `critical`. Obrigatório.                  |
+| `--title <texto>`     | Título curto do bug. Obrigatório.                                     |
+| `--detail <texto>`    | **Opcional.** Descrição.                                              |
 | `--found-in <change>` | **Opcional.** Id da change onde o bug foi encontrado (ex.: `C-0017`). |
 
 #### `change --abandoned` / `--failed` — fecha a dimensão change
@@ -176,10 +177,10 @@ Fecha a dimensão `change` **fora** do caminho `merged` (que fecha sozinho ao ze
 o backlog). É o único `UPDATE` da telemetria fora do `INSERT OR IGNORE` inicial da
 change.
 
-| Flag | Descrição |
-|------|-----------|
-| `--abandoned` / `--failed` | O status terminal. Exatamente um dos dois. |
-| `--change <id>` | **Opcional.** Id da change. Default: a única change aberta no `.db`. |
+| Flag                       | Descrição                                                            |
+| -------------------------- | -------------------------------------------------------------------- |
+| `--abandoned` / `--failed` | O status terminal. Exatamente um dos dois.                           |
+| `--change <id>`            | **Opcional.** Id da change. Default: a única change aberta no `.db`. |
 
 ## Ver também
 
