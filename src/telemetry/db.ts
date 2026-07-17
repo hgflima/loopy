@@ -72,8 +72,14 @@ const BOOTSTRAP_PRAGMAS =
  */
 export async function openDb(path: string): Promise<TelemetryDb> {
   const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+  // `strict: true` is load-bearing: without it, bun:sqlite leaves bare-named
+  // keys (`{ id: 1 }` for `:id`) UNBOUND — every INSERT hits NOT NULL, safeRun
+  // swallows it, and the compiled sidecar records zero telemetry. node:sqlite
+  // binds bare names natively (`allowBareNamedParameters`), so only bun needs it.
   const raw: RawDb = isBun
-    ? (new (await import("bun:sqlite")).Database(path) as unknown as RawDb)
+    ? (new (await import("bun:sqlite")).Database(path, {
+        strict: true,
+      }) as unknown as RawDb)
     : (new (await import("node:sqlite")).DatabaseSync(path) as unknown as RawDb);
 
   // WAL 1× at bootstrap (D8) — busy_timeout does NOT protect this pragma, and

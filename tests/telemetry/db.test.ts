@@ -1,9 +1,27 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { openDb } from "../../src/telemetry/db";
+
+// Virtual mock of Bun's built-in driver (absent under Node): captures the
+// constructor options so the bun branch's contract is testable from vitest.
+const bunSqlite = vi.hoisted(() => ({
+  ctorCalls: [] as { path: string | undefined; options: unknown }[],
+}));
+vi.mock("bun:sqlite", () => ({
+  Database: class {
+    constructor(path?: string, options?: unknown) {
+      bunSqlite.ctorCalls.push({ path, options });
+    }
+    exec(): void {}
+    prepare(): never {
+      throw new Error("not exercised by this test");
+    }
+    close(): void {}
+  },
+}));
 
 describe("openDb — runtime-guarded SQLite adapter", () => {
   let dir: string;
@@ -86,5 +104,22 @@ describe("openDb — runtime-guarded SQLite adapter", () => {
     const db = await openDb(dbPath);
     db.close();
     expect(() => db.close()).not.toThrow();
+  });
+
+  it("bun branch opens with strict:true — bare named params bind instead of dying on NOT NULL in silence", async () => {
+    // Without `strict: true`, bun:sqlite silently leaves `{ id: 1 }` unbound
+    // for a `:id` placeholder → every INSERT hits NOT NULL → safeRun swallows
+    // → the compiled sidecar (the GUI's runs) records zero telemetry.
+    vi.stubGlobal("Bun", { version: "test" });
+    try {
+      const db = await openDb(dbPath);
+      db.close();
+      expect(bunSqlite.ctorCalls).toHaveLength(1);
+      expect(bunSqlite.ctorCalls[0]?.path).toBe(dbPath);
+      expect(bunSqlite.ctorCalls[0]?.options).toEqual({ strict: true });
+    } finally {
+      vi.unstubAllGlobals();
+      bunSqlite.ctorCalls.length = 0;
+    }
   });
 });

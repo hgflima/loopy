@@ -10,7 +10,12 @@
  */
 declare module "bun:sqlite" {
   export class Database {
-    constructor(filename?: string);
+    /**
+     * `strict` must be passed as `true` by `openDb`: without it bun:sqlite
+     * leaves bare-named params (`{ id: 1 }` for `:id`) unbound instead of
+     * throwing, and every telemetry INSERT dies on NOT NULL in silence.
+     */
+    constructor(filename?: string, options?: { strict?: boolean });
     exec(sql: string): void;
     prepare(sql: string): {
       run(params?: unknown): {
