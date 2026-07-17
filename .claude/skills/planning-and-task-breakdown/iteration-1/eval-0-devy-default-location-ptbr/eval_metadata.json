@@ -1,0 +1,16 @@
+{
+  "eval_id": 0,
+  "eval_name": "devy-default-location-ptbr",
+  "prompt": "Tenho a spec pronta em .harn/devy/changes/C-0042-csv-export/spec.md. Quebra ela em tasks implementáveis pra eu rodar no loop — tem coisa aí que dá pra fazer em paralelo.",
+  "assertions": [
+    "plan.md and todo.md are created next to spec.md in .harn/devy/changes/C-0042-csv-export/ with exactly those names",
+    "All task ids match T-XXX (zero-padded 3 digits) and increment sequentially from T-001",
+    "Every task has a dedicated Deps: line containing only task ids or 'none' (no trailing text, no other fields)",
+    "Every task has Size: on its own line with value XS/S/M/L (no XL)",
+    "Every task has Risk: on its own line with value S/M/L/XL",
+    "All Deps references point to existing tasks and the dependency graph is acyclic",
+    "Tasks touching shared files (capabilities/default.json, src/ui/index.ts) are serialized via Deps edges",
+    "plan.md contains a dependency graph, phases with checkpoints, and a risks/mitigations section",
+    "Both files are written in Portuguese (the spec language) while Deps:/Files:/Size:/Risk: labels stay in English"
+  ]
+}

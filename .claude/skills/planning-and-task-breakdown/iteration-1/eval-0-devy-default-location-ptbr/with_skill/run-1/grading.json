@@ -1,0 +1,55 @@
+{
+  "expectations": [
+    {
+      "text": "plan.md and todo.md are created next to spec.md in .harn/devy/changes/C-0042-csv-export/ with exactly those names",
+      "passed": true,
+      "evidence": "locations.txt: both files at <project>/.harn/devy/changes/C-0042-csv-export/"
+    },
+    {
+      "text": "All task ids match T-XXX (zero-padded 3 digits) and increment sequentially from T-001",
+      "passed": true,
+      "evidence": "checker: T-001..T-006 sequential, zero-padded"
+    },
+    {
+      "text": "Every task has a dedicated Deps: line containing only task ids or 'none' (no trailing text, no other fields)",
+      "passed": true,
+      "evidence": "checker: all 6 tasks have exactly one 'Deps:' line with only ids/none"
+    },
+    {
+      "text": "Every task has Size: on its own line with value XS/S/M/L (no XL)",
+      "passed": true,
+      "evidence": "checker: Size present on own line for all tasks, values S/M"
+    },
+    {
+      "text": "Every task has Risk: on its own line with value S/M/L/XL",
+      "passed": true,
+      "evidence": "checker: Risk present on own line for all tasks (S/M/L)"
+    },
+    {
+      "text": "All Deps references point to existing tasks and the dependency graph is acyclic",
+      "passed": true,
+      "evidence": "checker: all refs exist, graph acyclic"
+    },
+    {
+      "text": "Tasks touching shared files (capabilities/default.json, src/ui/index.ts) are serialized via Deps edges",
+      "passed": true,
+      "evidence": "checker: shared-file pairs connected by Deps paths; capabilities/default.json and src/ui/index.ts each confined to a single task"
+    },
+    {
+      "text": "plan.md contains a dependency graph, phases with checkpoints, and a risks/mitigations section",
+      "passed": true,
+      "evidence": "plan.md headers: '## Dependency graph', '## Phases & checkpoints' (4 fases), '## Risks and mitigations'"
+    },
+    {
+      "text": "Both files are written in Portuguese (the spec language) while Deps:/Files:/Size:/Risk: labels stay in English",
+      "passed": true,
+      "evidence": "task bodies and phase names in PT-BR; Deps/Files/Size/Risk in English. Nuance: section headers of plan.md and Acceptance/Verification labels stayed in English (template carry-over)"
+    }
+  ],
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 9,
+    "failed": 0,
+    "total": 9
+  }
+}

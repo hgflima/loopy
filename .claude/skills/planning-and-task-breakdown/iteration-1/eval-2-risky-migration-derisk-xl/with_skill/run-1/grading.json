@@ -1,0 +1,50 @@
+{
+  "expectations": [
+    {
+      "text": "plan.md and todo.md are created next to spec.md in .harn/devy/changes/C-0108-user-prefs-schema-v2/ with exactly those names",
+      "passed": true,
+      "evidence": "locations.txt: both files in C-0108-user-prefs-schema-v2/"
+    },
+    {
+      "text": "All task ids match T-XXX (zero-padded 3 digits) and increment sequentially from T-001",
+      "passed": true,
+      "evidence": "checker: T-001..T-010 sequential"
+    },
+    {
+      "text": "Every task has a dedicated Deps: line containing only task ids or 'none' (no trailing text, no other fields)",
+      "passed": true,
+      "evidence": "checker: all Deps ids-only/none"
+    },
+    {
+      "text": "Every task has Size: on its own line with value XS/S/M/L (no XL)",
+      "passed": true,
+      "evidence": "checker: Size own line, no XL"
+    },
+    {
+      "text": "Every task has Risk: on its own line with value S/M/L/XL",
+      "passed": true,
+      "evidence": "checker: Risk own line"
+    },
+    {
+      "text": "All Deps references point to existing tasks and the dependency graph is acyclic",
+      "passed": true,
+      "evidence": "checker: refs exist, acyclic"
+    },
+    {
+      "text": "The persisted-schema migration is de-risked: a cheap spike/confirmation task exists and the migration implementation depends on it via Deps",
+      "passed": true,
+      "evidence": "T-002 'Spike — atomic write primitive proven crash-safe by fault injection' + T-001 fixture corpus in Phase 1 (De-risk); runner T-005 Deps: T-002, T-004"
+    },
+    {
+      "text": "The migration-related task(s) carry a high Risk rating (L or XL), and high-risk tasks are scheduled in early phases",
+      "passed": true,
+      "evidence": "migration runner T-005 Risk L; de-risk phase is Phase 1 of 6. Nuance: rated residual (post-mitigation) risk — no XL survives, by design"
+    }
+  ],
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  }
+}

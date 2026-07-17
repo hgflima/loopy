@@ -1,0 +1,50 @@
+{
+  "expectations": [
+    {
+      "text": "plan.md and todo.md are created in docs/specs/ (next to webhook-retry-spec.md), not in a default/other location",
+      "passed": true,
+      "evidence": "locations.txt: docs/specs/plan.md and docs/specs/todo.md"
+    },
+    {
+      "text": "All task ids match T-XXX (zero-padded 3 digits) and increment sequentially from T-001",
+      "passed": true,
+      "evidence": "checker: T-001..T-008 sequential"
+    },
+    {
+      "text": "Every task has a dedicated Deps: line containing only task ids or 'none' (no trailing text, no other fields)",
+      "passed": true,
+      "evidence": "checker: all Deps lines ids-only/none"
+    },
+    {
+      "text": "Every task has Size: on its own line with value XS/S/M/L (no XL)",
+      "passed": true,
+      "evidence": "checker: Size on own line, no XL"
+    },
+    {
+      "text": "Every task has Risk: on its own line with value S/M/L/XL",
+      "passed": true,
+      "evidence": "checker: Risk on own line (S/M/L)"
+    },
+    {
+      "text": "All Deps references point to existing tasks and the dependency graph is acyclic",
+      "passed": true,
+      "evidence": "checker: refs exist, acyclic"
+    },
+    {
+      "text": "Tasks editing the shared config src/config/index.ts are serialized via Deps edges",
+      "passed": true,
+      "evidence": "checker: tasks sharing src/config/index.ts and src/webhooks/retry.ts connected by Deps paths"
+    },
+    {
+      "text": "plan.md contains a dependency graph, phases with checkpoints, and a risks/mitigations section",
+      "passed": true,
+      "evidence": "headers: '## Dependency graph', '## Phases & checkpoints' (3 phases), '## Risks and mitigations'"
+    }
+  ],
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 8,
+    "failed": 0,
+    "total": 8
+  }
+}

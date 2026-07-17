@@ -1,0 +1,2 @@
+/Users/henriquelima/dev/personal/acp-agentic-loop/.claude/skills/planning-and-task-breakdown-workspace/iteration-1/eval-1-custom-spec-location-english/with_skill/project/docs/specs/plan.md
+/Users/henriquelima/dev/personal/acp-agentic-loop/.claude/skills/planning-and-task-breakdown-workspace/iteration-1/eval-1-custom-spec-location-english/with_skill/project/docs/specs/todo.md
