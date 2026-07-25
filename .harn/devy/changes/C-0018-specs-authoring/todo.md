@@ -14,7 +14,7 @@
 
 ## Fase 1 — Fundação: contrato de fio e os puros
 
-- [ ] T-001: Frames da Entrevista no Transport NDJSON
+- [x] T-001: Frames da Entrevista no Transport NDJSON
     `src/tui/transport.ts`: estender `ControlFrame` (hoje 3 variantes, `:28-37`) com as **seis**
     da spec — `phase_started` (`phase`, `command`, `changeDir?`), `change_resolved` (`changeDir`),
     `question_asked` (`questionId`, `phase`, `prompt`, `options?`, `otherLabel?`, `finding?`,
@@ -161,7 +161,7 @@
 
 ## Fase 3 — A ponte Rust
 
-- [ ] T-007: `changes.rs` — listar e descartar Changes
+- [x] T-007: `changes.rs` — listar e descartar Changes
     `apps/menubar/src-tauri/src/changes.rs` (novo): `ChangeSummary { id, slug, has_spec,
     has_plan, has_todo, task_count, done_count }` (serde snake_case, como o resto de
     `project_fs.rs`).
