@@ -9,23 +9,45 @@
  *
  * Two classes of frame (discriminated by `frame`):
  * - **`"event"`** — wraps an existing {@link StoreEvent} (inline spread).
- * - **`"control"`** — envelope-only frames that exist solely for the transport
- *   (`run_started`, `run_finished`, `approval_requested`).
+ * - **`"control"`** — envelope-only frames that exist solely for the transport.
+ *   The **Run** direction has `run_started`, `run_finished`, `approval_requested`;
+ *   the **Interview** direction (C-0018) adds `phase_started`, `change_resolved`,
+ *   `question_asked`, `agent_activity`, `phase_finished`, `interview_failed`.
  *
  * A third class exists on the **command** (stdin) direction:
- * - **`"command"`** — `approval_decision` sent by the app back to the motor.
+ * - **`"command"`** — the Run's `approval_decision`, plus the Interview's
+ *   `question_answer`, `phase_wrap_up`, `interview_cancel`, sent by the app back
+ *   to the motor.
  *
  * {@link parseTransportLine} handles all three directions and returns an
- * error-value on malformed input (AD-5 — never throws).
+ * error-value on malformed input (AD-5 — never throws) — it is generic over the
+ * frame payload, so new control/command variants need no parser change.
  */
 
 import type { StoreEvent } from "./store";
+
+// ---------------------------------------------------------------------------
+// Interview wire vocabulary (C-0018) — declared here because it appears inside
+// the frames below; this barrel is the subpath export the GUI consumes.
+// ---------------------------------------------------------------------------
+
+/** The three authoring phases of the Interview (`/devy:spec|refine|plan`). */
+export type Phase = "spec" | "refine" | "plan";
+
+/** One recommended-answer option carried by a `question_asked` control frame. */
+export interface AskOption {
+  readonly label: string;
+  readonly detail?: string;
+  readonly recommended?: boolean;
+  readonly why?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Control frames (motor → app, transport-only envelope)
 // ---------------------------------------------------------------------------
 
 export type ControlFrame =
+  // --- Run direction ---
   | { readonly control: "run_started" }
   | { readonly control: "run_finished"; readonly result: unknown }
   | {
@@ -34,17 +56,60 @@ export type ControlFrame =
       readonly taskId: string;
       readonly stepId: string;
       readonly summary: string;
-    };
+    }
+  // --- Interview direction (C-0018) ---
+  // `changeDir` is optional here **only** because a brand-new Change's `spec`
+  // phase does not know it yet (D10); `change_resolved` delivers it later.
+  | {
+      readonly control: "phase_started";
+      readonly phase: Phase;
+      readonly command: string;
+      readonly changeDir?: string;
+    }
+  | { readonly control: "change_resolved"; readonly changeDir: string }
+  | {
+      readonly control: "question_asked";
+      readonly questionId: string;
+      readonly phase: Phase;
+      readonly prompt: string;
+      readonly options?: readonly AskOption[];
+      readonly otherLabel?: string;
+      readonly finding?: string;
+      readonly source?: string;
+    }
+  | {
+      readonly control: "agent_activity";
+      readonly phase: Phase;
+      readonly text: string;
+    }
+  | {
+      readonly control: "phase_finished";
+      readonly phase: Phase;
+      readonly changeDir: string;
+      readonly files: readonly string[];
+    }
+  | { readonly control: "interview_failed"; readonly reason: string };
 
 // ---------------------------------------------------------------------------
 // Command frames (app → motor, stdin)
 // ---------------------------------------------------------------------------
 
-export type CommandFrame = {
-  readonly command: "approval_decision";
-  readonly requestId: string;
-  readonly approved: boolean;
-};
+export type CommandFrame =
+  // --- Run direction ---
+  | {
+      readonly command: "approval_decision";
+      readonly requestId: string;
+      readonly approved: boolean;
+    }
+  // --- Interview direction (C-0018) ---
+  | {
+      readonly command: "question_answer";
+      readonly questionId: string;
+      readonly text: string;
+      readonly attachments?: readonly string[];
+    }
+  | { readonly command: "phase_wrap_up" }
+  | { readonly command: "interview_cancel" };
 
 // ---------------------------------------------------------------------------
 // Parse result (AD-5 — errors as values)
