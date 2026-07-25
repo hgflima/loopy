@@ -24,9 +24,9 @@ acp:
     default_mode: acceptEdits
     on_request: allow
 inputs:
-  spec: .harn/devy/changes/C-0017-telemetry-and-change-insights/spec.md
-  plan: .harn/devy/changes/C-0017-telemetry-and-change-insights/plan.md
-  todo: .harn/devy/changes/C-0017-telemetry-and-change-insights/todo.md
+  spec: .harn/devy/changes/C-0018-specs-authoring/spec.md
+  plan: .harn/devy/changes/C-0018-specs-authoring/plan.md
+  todo: .harn/devy/changes/C-0018-specs-authoring/todo.md
   backlog:
     pending_marker: "- [ ]"
     done_marker: "- [x]"
