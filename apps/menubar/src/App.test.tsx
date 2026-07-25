@@ -619,3 +619,53 @@ describe("App — launch popover + auto-save + dirty guard (T-014)", () => {
     expect(mockLoad).toHaveBeenCalledWith("/other");
   });
 });
+
+// ---------------------------------------------------------------------------
+// T-015 (D11) — "Abrir o board" repoints inputs.{spec,plan,todo} in the draft
+// (SC8). The App owns the patch (it holds configDraft); the view switch to Kanban
+// lives in the ViewSwitcher (mocked here). Patch, not disk — the save bar goes
+// dirty and the yml only changes on Salvar.
+// ---------------------------------------------------------------------------
+
+describe("App — 'Abrir o board' patches inputs (T-015/D11)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    viewSwitcherProps = {};
+  });
+
+  it("forwards an onOpenBoard handler to the ViewSwitcher", () => {
+    setMockDraftLoaded();
+    render(<App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />);
+    expect(typeof viewSwitcherProps.onOpenBoard).toBe("function");
+  });
+
+  it("patches the three inputs.* to the new Change dir (patch, not disk)", () => {
+    setMockDraftLoaded();
+    const patch = vi.fn();
+    mockDraftState = { ...mockDraftState, patch };
+    render(<App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />);
+
+    const onOpenBoard = viewSwitcherProps.onOpenBoard as (dir: string) => void;
+    act(() => onOpenBoard(".harn/devy/changes/C-0018-x"));
+
+    // Three individual patches — never a single `inputs` object, which would
+    // clobber inputs.backlog. Patching inputs.todo re-reads the new backlog.
+    expect(patch).toHaveBeenCalledWith("inputs.spec", ".harn/devy/changes/C-0018-x/spec.md");
+    expect(patch).toHaveBeenCalledWith("inputs.plan", ".harn/devy/changes/C-0018-x/plan.md");
+    expect(patch).toHaveBeenCalledWith("inputs.todo", ".harn/devy/changes/C-0018-x/todo.md");
+    // Never the whole-object form (would drop inputs.backlog).
+    expect(patch).not.toHaveBeenCalledWith("inputs", expect.anything());
+  });
+
+  it("strips a trailing slash from the Change dir before composing the paths", () => {
+    setMockDraftLoaded();
+    const patch = vi.fn();
+    mockDraftState = { ...mockDraftState, patch };
+    render(<App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />);
+
+    const onOpenBoard = viewSwitcherProps.onOpenBoard as (dir: string) => void;
+    act(() => onOpenBoard(".harn/devy/changes/C-0018-x/"));
+
+    expect(patch).toHaveBeenCalledWith("inputs.todo", ".harn/devy/changes/C-0018-x/todo.md");
+  });
+});

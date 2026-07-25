@@ -244,6 +244,23 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     [configDraft.draft],
   );
 
+  // "Abrir o board" (D11, T-015): the Interview's saved screen repoints the board
+  // at the just-written Change. Patch the three inputs.* to the new folder — one
+  // path each, never a single `inputs` object (that would drop inputs.backlog).
+  // `patch` operates on the raw draft and deep-clones, so backlog survives;
+  // patching inputs.todo re-reads the new backlog. This dirties the global save
+  // bar; disk changes only on Salvar (SC8). The view switch to Kanban lives in the
+  // ViewSwitcher, which owns `view`.
+  const handleOpenBoard = useCallback(
+    (changeDir: string) => {
+      const base = changeDir.replace(/\/+$/, "");
+      configDraft.patch("inputs.spec", `${base}/spec.md`);
+      configDraft.patch("inputs.plan", `${base}/plan.md`);
+      configDraft.patch("inputs.todo", `${base}/todo.md`);
+    },
+    [configDraft],
+  );
+
   // Stream height — draggable divider, persisted in localStorage (T-011).
   const streamHeight = useStreamHeight();
 
@@ -427,6 +444,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
               onRemoveStep={isIdle ? handleRemoveStep : undefined}
               onReorderStep={isIdle ? handleReorderStep : undefined}
               orphanRefs={isIdle ? idleOrphanRefs : undefined}
+              onOpenBoard={handleOpenBoard}
             />
             {/* The todo hint is about a present-but-empty backlog — only when a
                 config actually loaded (idleStore synthesised), never on no-yml. */}
