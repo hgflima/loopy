@@ -1,0 +1,453 @@
+/**
+ * specs.css — the one stylesheet for the Specs Interview components (C-0018).
+ *
+ * A single file **on purpose** (plan AD-6): the five Interview components share
+ * it, so splitting them into parallel tasks would collide here at merge.
+ *
+ * Rules this file obeys, without exception:
+ *  - No literal colors. Every hue, radius, spacing and font comes from
+ *    `ui/tokens.css`. The magenta accent means exactly three things —
+ *    interactive, alive, and the human gate — and the `RECOMENDADA` badge is
+ *    the third (it steers a human choice).
+ *  - Every animation collapses under `prefers-reduced-motion: reduce`.
+ */
+
+/* ======================================================================== *
+ * Attachable — paste / drag-drop / 📎, and the resulting chips
+ * ======================================================================== */
+
+.spec-attach {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.spec-attach.is-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--r-md);
+}
+.spec-attach__overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  font: 600 13px/1 var(--font-ui);
+  pointer-events: none;
+}
+
+.spec-attach__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+/* The 📎 trigger is the ghost Button primitive, tightened to a pill. */
+.spec-attach__btn.btn {
+  padding: 6px 11px;
+  border-radius: var(--r-pill);
+  font-size: 12px;
+}
+.spec-attach__btn.btn:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+.spec-attach__hint {
+  font: 11px/1.4 var(--font-ui);
+  color: var(--ink-tertiary);
+}
+/* The real file input stays hidden; the 📎 Button clicks it. */
+.spec-attach__input {
+  display: none;
+}
+
+.spec-attach__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.spec-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  max-width: 260px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 4px 6px 4px 4px;
+}
+.spec-chip__thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: var(--r-sm);
+  flex: none;
+}
+.spec-chip__glyph {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-elevated);
+  color: var(--ink-tertiary);
+  font-size: 13px;
+}
+.spec-chip__name {
+  font: 12px/1.3 var(--font-ui);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spec-chip__size {
+  font: 11px/1 var(--font-ui);
+  color: var(--ink-tertiary);
+  white-space: nowrap;
+}
+.spec-chip__x {
+  border: none;
+  background: transparent;
+  color: var(--ink-tertiary);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.spec-chip__x:hover {
+  color: var(--state-failed-ink);
+}
+
+/* ======================================================================== *
+ * QuestionCard — one question, its options, the finding, the escape hatch
+ * ======================================================================== */
+
+.spec-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  max-width: 760px;
+  width: 100%;
+}
+.spec-card__prompt {
+  margin: 0;
+  color: var(--ink);
+}
+
+/* A refine/spec question the agent answered itself by reading the repo (D10). */
+.spec-finding {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-lg);
+}
+.spec-finding__text {
+  margin: 0;
+  font: 13px/1.6 var(--font-ui);
+  color: var(--ink);
+}
+.spec-finding__source {
+  margin: 0;
+  font: 11px/1.5 var(--font-ui);
+  color: var(--ink-tertiary);
+}
+
+.spec-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+.spec-option {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-md);
+  transition:
+    border-color 0.12s ease-out,
+    background-color 0.12s ease-out;
+}
+.spec-option:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-elevated);
+}
+.spec-option:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+/* The recommendation reads as a labelled badge plus a hairline border, never a
+   filled card: the accent stays reserved for "you are the one who decides". */
+.spec-option.is-recommended {
+  border-color: var(--accent);
+}
+.spec-option.is-recommended:hover:not(:disabled) {
+  background: var(--accent-subtle);
+}
+.spec-option__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-sm);
+  flex-wrap: wrap;
+}
+.spec-option__label {
+  font: 600 14px/1.35 var(--font-ui);
+  color: var(--ink);
+}
+/* The RECOMENDADA badge is the accent Pill primitive, sized down to a tag. */
+.spec-option__head .status-pill {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+}
+.spec-option__detail {
+  font: 12px/1.5 var(--font-ui);
+  color: var(--ink-secondary);
+}
+/* The "Porquê:" line is separated from the option by a hairline — the reason
+   is subordinate to the choice, not part of its label. */
+.spec-option__why {
+  font: 12px/1.5 var(--font-ui);
+  color: var(--ink-tertiary);
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  margin-top: 2px;
+}
+.spec-option__why strong {
+  color: var(--ink-secondary);
+  font-weight: 600;
+}
+
+.spec-escape {
+  align-self: flex-start;
+  font: 12px/1 var(--font-ui);
+  color: var(--ink-tertiary);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.spec-escape:hover:not(:disabled) {
+  color: var(--accent-text);
+}
+.spec-escape:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.spec-textarea {
+  width: 100%;
+  resize: vertical;
+  font: 14px/1.6 var(--font-ui);
+  color: var(--ink);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-md);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.spec-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: transparent;
+}
+
+.spec-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-sm);
+}
+
+/* ======================================================================== *
+ * PhaseGate — the human gate between Phases (D12)
+ * ======================================================================== */
+
+.spec-gate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  max-width: 760px;
+  width: 100%;
+}
+.spec-gate__summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: var(--sp-lg);
+}
+.spec-gate__title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin: 0;
+  color: var(--ink);
+}
+.spec-gate__check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--r-pill);
+  background: var(--state-done-subtle);
+  color: var(--state-done-ink);
+  font-size: 13px;
+}
+.spec-gate__dir {
+  margin: 0;
+  color: var(--ink-tertiary);
+  word-break: break-all;
+}
+.spec-gate__files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.spec-gate__file {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+.spec-gate__file-name {
+  color: var(--ink-secondary);
+}
+.spec-gate__open.btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.spec-gate__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-sm);
+}
+
+/* ======================================================================== *
+ * ActivityLine — proof of life + collapsible transcript (D14)
+ * ======================================================================== */
+
+.spec-activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  max-width: 760px;
+  width: 100%;
+}
+.spec-activity__line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  min-width: 0;
+}
+.spec-activity__text {
+  font: 13px/1.5 var(--font-ui);
+  color: var(--ink-secondary);
+  min-width: 0;
+}
+.spec-activity__transcript {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.spec-activity__toggle {
+  cursor: pointer;
+  padding: var(--sp-sm) var(--sp-md);
+  font: 12px/1 var(--font-ui);
+  color: var(--ink-tertiary);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.spec-activity__toggle:hover {
+  color: var(--accent-text);
+}
+.spec-activity__body {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 0 var(--sp-md) var(--sp-md);
+  border-top: 1px solid var(--border);
+}
+
+/* ======================================================================== *
+ * Handoff — the bug/debt terminal (D4/D24)
+ * ======================================================================== */
+
+.spec-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  max-width: 760px;
+  width: 100%;
+}
+.spec-handoff__cmd-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+}
+.spec-handoff__cmd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.spec-handoff__ctx {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--sp-md);
+}
+.spec-handoff__ctx dt {
+  font: 600 10px/1 var(--font-ui);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-tertiary);
+  margin-bottom: 5px;
+}
+.spec-handoff__ctx dd {
+  margin: 0;
+  font: 12px/1.5 var(--font-ui);
+  color: var(--ink-secondary);
+}
+.spec-handoff__note {
+  margin: 0;
+  font: 12px/1.55 var(--font-ui);
+  color: var(--ink-tertiary);
+  max-width: 62ch;
+}
+
+/* ======================================================================== *
+ * Motion — never animate at someone who asked for stillness
+ * ======================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .spec-option,
+  .spec-attach.is-over,
+  .spec-textarea {
+    transition: none;
+  }
+}
