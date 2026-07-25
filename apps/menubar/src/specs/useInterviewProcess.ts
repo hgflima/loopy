@@ -83,6 +83,12 @@ export interface InterviewStartOptions {
   readonly change?: string;
   /** The Phase to run. A new-Change flow starts at `spec` (the engine default). */
   readonly phase?: Phase;
+  /**
+   * The free-text demand from the DESCRIBE stage — seeds the spec phase's turn 1
+   * (`/devy:spec <demand>`, `phaseCommand` in the engine). Only the `spec` phase
+   * reads it; `refine`/`plan` ignore it (they re-read the written `.md`).
+   */
+  readonly demand?: string;
   /** The probed agent preset (D16). */
   readonly agent?: string;
   /** The probed model (D18, best-effort). */
@@ -104,6 +110,11 @@ export function buildInterviewArgs(opts: InterviewStartOptions): string[] {
   if (opts.agent) args.push("--agent", opts.agent);
   if (opts.model) args.push("--model", opts.model);
   if (opts.effort) args.push("--effort", opts.effort);
+  // Appended last so the flag order of the other spawns is unchanged. The demand
+  // is one argv element (Rust spawns argv directly, no shell — spaces and
+  // newlines survive intact); an empty demand yields no flag (engine defaults to
+  // a bare `/devy:spec`).
+  if (opts.demand) args.push("--demand", opts.demand);
   return args;
 }
 
