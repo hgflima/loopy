@@ -284,7 +284,7 @@
     Size: L
     Risk: L
 
-- [ ] T-012: `Interview.tsx` — o fluxo montado
+- [x] T-012: `Interview.tsx` — o fluxo montado
     `apps/menubar/src/specs/Interview.tsx`: monta o fluxo inteiro sobre o redutor (T-009), a
     ponte (T-010) e os componentes (T-011) — triagem ("O que vamos desenvolver hoje?": Nova
     feature RECOMENDADA · Bug · Débito técnico · Outro…) → descrição em texto livre com anexos →
