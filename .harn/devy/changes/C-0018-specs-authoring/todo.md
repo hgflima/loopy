@@ -40,7 +40,7 @@
     Size: S
     Risk: M
 
-- [ ] T-002: `parse-ask.ts` — turno do Agente → ask | change | done | open
+- [x] T-002: `parse-ask.ts` — turno do Agente → ask | change | done | open
     `src/interview/parse-ask.ts`: função **pura** (AD-6) que lê o texto de um turno e devolve
     o que ele pede, exatamente pela tabela da spec: `<loopy-ask>{json válido}</loopy-ask>` →
     `{kind:"ask", question}`; `<loopy-change dir="…"/>` → `{kind:"change", dir}` — **pode
@@ -58,7 +58,7 @@
     Size: S
     Risk: L
 
-- [ ] T-003: `envelope.ts` + `phases.ts` — a instrução de forma e a única tabela do motor
+- [x] T-003: `envelope.ts` + `phases.ts` — a instrução de forma e a única tabela do motor
     `src/interview/envelope.ts`: `fullEnvelope(phase, changeDir?)`, `reminder()` e `wrapUp()` —
     **puros**, com o texto literal da seção "O envelope" da `spec.md`. O envelope fala de
     **forma**, nunca de conteúdo (AD-1). Turno 1 leva o texto completo; turnos seguintes, só o
@@ -184,7 +184,7 @@
     Size: M
     Risk: M
 
-- [ ] T-008: `interview_process.rs` — o segundo processo gerenciado
+- [x] T-008: `interview_process.rs` — o segundo processo gerenciado
     `apps/menubar/src-tauri/src/interview_process.rs` (novo): `InterviewState` espelhando o
     `SidecarState` (`sidecar.rs:184-311`) — `start(app, dir, args)`, `send_command(payload)`
     (uma linha NDJSON no stdin), `stop()` idempotente — com eventos
