@@ -21,7 +21,11 @@ import {
   type LoopySession,
   type SessionDeps,
 } from "../../src/acp/session";
-import type { SessionConfigOption, SessionConfigOptionCategory } from "@agentclientprotocol/sdk";
+import type {
+  ContentBlock,
+  SessionConfigOption,
+  SessionConfigOptionCategory,
+} from "@agentclientprotocol/sdk";
 import type { AcpTrafficEntry } from "../../src/logging/logger";
 import type { LoggerPort, StopReason } from "../../src/types";
 import type { FakeScenario } from "../fixtures/fake-agent";
@@ -161,6 +165,89 @@ describe("buildSession / session pool (against the fake agent)", () => {
 
     await session.prompt("two");
     expect(session.readText()).toBe("second turn");
+
+    session.dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // C-0018 T-004: promptBlocks — a turn made of ContentBlock[] (text + anexos)
+  // -------------------------------------------------------------------------
+
+  it("promptBlocks resolves with the stopReason and leaves readText with the full turn", async () => {
+    const session = await startSession({
+      defaultTurn: { text: ["Looked at ", "the screenshot."], stopReason: "end_turn" },
+    });
+
+    const blocks: ContentBlock[] = [
+      { type: "text", text: "here is the error" },
+      { type: "resource_link", name: "erro.png", uri: "file:///tmp/erro.png" },
+    ];
+    const reason = await session.promptBlocks(blocks);
+    expect(reason).toBe("end_turn");
+    // Same OQ3 buffer guarantee as prompt(): synchronous read after resolve.
+    expect(session.readText()).toBe("Looked at the screenshot.");
+
+    session.dispose();
+  });
+
+  it("promptBlocks carries the blocks in the session/prompt traffic payload", async () => {
+    const traffic: Array<{ entry: AcpTrafficEntry; sessionId: string }> = [];
+    handle = await openAgent({
+      command: fakeCommand({ defaultTurn: { text: ["ok"], stopReason: "end_turn" } }),
+      cwd: PROJECT_ROOT,
+      permissions: { on_request: "allow" },
+    });
+    const deps: SessionDeps = {
+      ctx: handle.ctx,
+      text: handle.text,
+      cost: handle.cost,
+      onTraffic: (entry, sessionId) => traffic.push({ entry, sessionId }),
+    };
+    const session = await buildSession(deps, PROJECT_ROOT).start();
+
+    const blocks: ContentBlock[] = [
+      { type: "text", text: "veja o anexo" },
+      { type: "resource_link", name: "log.txt", uri: "file:///tmp/log.txt" },
+    ];
+    await session.promptBlocks(blocks);
+
+    const promptSend = traffic.find(
+      (t) => t.entry.direction === "send" && t.entry.method === "session/prompt",
+    );
+    expect(promptSend).toBeDefined();
+    // Block turns carry `prompt` (not `text`) — mirrors the ACP request shape.
+    const payload = promptSend!.entry.payload as Record<string, unknown>;
+    expect(payload.prompt).toEqual(blocks);
+    expect(payload.text).toBeUndefined();
+
+    session.dispose();
+  });
+
+  it("promptBlocks accumulates usage like prompt (shared runTurn path)", async () => {
+    const session = await startSession({
+      turns: [
+        {
+          text: ["t1"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+        },
+        {
+          text: ["t2"],
+          stopReason: "end_turn",
+          usage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
+        },
+      ],
+    });
+
+    // Interleave a text prompt with a block prompt — both feed the same accumulator.
+    await session.prompt("first");
+    await session.promptBlocks([{ type: "text", text: "second" }]);
+
+    const usage = session.drainUsage();
+    expect(usage).not.toBeNull();
+    expect(usage!.inputTokens).toBe(300);
+    expect(usage!.outputTokens).toBe(130);
+    expect(usage!.totalTokens).toBe(430);
 
     session.dispose();
   });
