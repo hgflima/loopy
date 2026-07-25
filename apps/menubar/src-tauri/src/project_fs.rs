@@ -160,7 +160,10 @@ const BACKUP_SUFFIX: &str = ".yml";
 /// The check is **lexical** (no filesystem access): a path is rejected when it
 /// is absolute or carries any `..` component. That keeps a hand-edited
 /// `inputs.todo` from turning the webview into an arbitrary file reader.
-fn resolve_within(base: &Path, rel: &str) -> Result<PathBuf, String> {
+///
+/// `pub(crate)` so `changes::discard_change` shares this guard instead of
+/// duplicating it (C-0018 / T-007).
+pub(crate) fn resolve_within(base: &Path, rel: &str) -> Result<PathBuf, String> {
     let candidate = Path::new(rel);
     for component in candidate.components() {
         match component {
