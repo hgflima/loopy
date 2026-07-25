@@ -315,7 +315,11 @@ impl SidecarState {
 // ---------------------------------------------------------------------------
 
 /// Read from a pipe using [`LineFramer`] and emit each line as a Tauri event.
-fn emit_lines<R: Read>(mut pipe: R, app: &AppHandle, event: &str) {
+///
+/// Shared with [`crate::interview_process`] so the sidecar and the interview
+/// process frame their streams identically — same reason the two reuse
+/// [`LineFramer`], [`resolve_sidecar_path`] and [`login_shell_path`].
+pub(crate) fn emit_lines<R: Read>(mut pipe: R, app: &AppHandle, event: &str) {
     let mut framer = LineFramer::new();
     let mut buf = [0u8; 4096];
     loop {
