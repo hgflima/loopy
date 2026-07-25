@@ -307,23 +307,6 @@ function Root() {
   );
 }
 
-// --------------------------------------------------------------------------
-// PROTOTYPE gate (throwaway — remove with src/authoring-prototype/)
-// --------------------------------------------------------------------------
-// `?proto=authoring` mounts the spec/plan authoring variants instead of the
-// app. Dev-only and lazy, so a stray merge can neither ship it nor bundle it.
-// (`import.meta.env` is Vite-only and this tsconfig has no vite/client types.)
-const IS_PROTOTYPE =
-  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true &&
-  new URLSearchParams(window.location.search).get("proto") === "authoring";
-const PrototypeRoute = IS_PROTOTYPE
-  ? React.lazy(() =>
-      import("./authoring-prototype/PrototypeRoute").then((m) => ({
-        default: m.PrototypeRoute,
-      })),
-    )
-  : null;
-
 // The About window mirrors the popover routing (window label → dedicated
 // component), but branches ABOVE Root: it needs none of Root's BridgeState, and
 // Root's tray-badge/NDJSON-feed effects would clobber the tray and attach idle
@@ -331,15 +314,7 @@ const PrototypeRoute = IS_PROTOTYPE
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary label={WINDOW_LABEL}>
-      {PrototypeRoute ? (
-        <React.Suspense fallback={null}>
-          <PrototypeRoute />
-        </React.Suspense>
-      ) : IS_ABOUT ? (
-        <About />
-      ) : (
-        <Root />
-      )}
+      {IS_ABOUT ? <About /> : <Root />}
     </ErrorBoundary>
   </React.StrictMode>,
 );
