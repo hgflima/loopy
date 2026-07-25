@@ -50,6 +50,16 @@ vi.mock("../insights/InsightsPane", () => ({
   },
 }));
 
+// SpecsPane pulls in useAgentCapabilities/Interview (heavy, Tauri-bound) — mock it
+// and only assert the forwarded props (T-014 wires it up; T-013 owns its behaviour).
+let specsPaneProps: Record<string, unknown> = {};
+vi.mock("../specs/SpecsPane", () => ({
+  SpecsPane: (props: Record<string, unknown>) => {
+    specsPaneProps = props;
+    return <div data-testid="specs-pane" />;
+  },
+}));
+
 const { ViewSwitcher } = await import("./ViewSwitcher");
 
 // ---------------------------------------------------------------------------
@@ -62,6 +72,7 @@ afterEach(() => {
   depsFlowProps = {};
   configPaneProps = {};
   insightsPaneProps = {};
+  specsPaneProps = {};
 });
 
 function makeStore(taskIds: string[] = ["T-001"]): StoreState {
@@ -322,5 +333,144 @@ describe("ViewSwitcher — global save bar", () => {
 
     fireEvent.click(getByTestId("btn-save"));
     expect(draft.save).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Specs tab (T-014, D20) — the fifth segment, always mounted, reachable with or
+// without a loopy.yml (authoring precedes the yml).
+// ---------------------------------------------------------------------------
+
+describe("ViewSwitcher — Specs tab (T-014, D20)", () => {
+  function draftWith(
+    over: Partial<import("../config/useConfigDraft").ConfigDraftAPI> = {},
+  ): import("../config/useConfigDraft").ConfigDraftAPI {
+    return {
+      draft: { workspace: { root: "." }, concurrency: 1 },
+      errors: [],
+      dirty: false,
+      tasks: [],
+      hasConfig: true,
+      load: vi.fn(),
+      patch: vi.fn(),
+      save: vi.fn(),
+      seedFromTemplate: vi.fn(),
+      ...over,
+    } as unknown as import("../config/useConfigDraft").ConfigDraftAPI;
+  }
+
+  it("renders a Specs segment that switches to the SpecsPane", () => {
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} dir="/meu/projeto" />,
+    );
+
+    const specsButton = getByRole("radio", { name: "Specs" });
+    expect(specsButton).toBeTruthy();
+
+    fireEvent.click(specsButton);
+
+    expect(getByTestId("specs-pane")).toBeTruthy();
+    // The pane needs `dir` (the header's single source of truth, D6) to list Changes.
+    expect(specsPaneProps.dir).toBe("/meu/projeto");
+  });
+
+  it("all five panes stay mounted when switching to Specs (state preserved)", () => {
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draftWith()} />,
+    );
+
+    fireEvent.click(getByRole("radio", { name: "Specs" }));
+
+    expect(getByTestId("kanban-board")).toBeTruthy();
+    expect(getByTestId("deps-flow")).toBeTruthy();
+    expect(getByTestId("config-pane")).toBeTruthy();
+    expect(getByTestId("insights-pane")).toBeTruthy();
+    expect(getByTestId("specs-pane")).toBeTruthy();
+  });
+
+  it("Specs is reachable without a loopy.yml (SC15) — even with no configDraft", () => {
+    // No configDraft (as during a run) must not hide Specs — it is always mounted.
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} dir="/x" />,
+    );
+    fireEvent.click(getByRole("radio", { name: "Specs" }));
+    expect(getByTestId("specs-pane")).toBeTruthy();
+  });
+
+  it("forwards runActive to SpecsPane (D22 warning is the pane's, the flag is ours)", () => {
+    render(<ViewSwitcher store={makeStore()} tick={0} dir="/x" runActive />);
+    expect(specsPaneProps.runActive).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Empty-state hosted in the Config tab (T-014, D20) — the EmptyState no longer
+// replaces the whole ViewSwitcher; it degrades the Config tab instead, so the
+// tab bar (and Specs) stays reachable in a project without a loopy.yml.
+// ---------------------------------------------------------------------------
+
+describe("ViewSwitcher — empty-state in the Config tab (T-014, D20)", () => {
+  function draftNoConfig(): import("../config/useConfigDraft").ConfigDraftAPI {
+    return {
+      draft: null,
+      errors: [],
+      dirty: false,
+      tasks: [],
+      hasConfig: false,
+      load: vi.fn(),
+      patch: vi.fn(),
+      save: vi.fn(),
+      seedFromTemplate: vi.fn(),
+    } as unknown as import("../config/useConfigDraft").ConfigDraftAPI;
+  }
+
+  it("shows EmptyState (not ConfigPane) in the Config tab when hasConfig is false", () => {
+    const draft = draftNoConfig();
+    const { getByTestId, queryByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draft} />,
+    );
+
+    fireEvent.click(getByRole("radio", { name: "Config" }));
+
+    expect(getByTestId("empty-state")).toBeTruthy();
+    expect(queryByTestId("config-pane")).toBeNull();
+  });
+
+  it("the whole tab bar stays visible with no loopy.yml (SC15)", () => {
+    const draft = draftNoConfig();
+    const { getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draft} />,
+    );
+    for (const name of ["Kanban", "Deps", "Config", "Insights", "Specs"]) {
+      expect(getByRole("radio", { name })).toBeTruthy();
+    }
+  });
+
+  it("'Criar a partir do template' in the empty Config tab seeds the draft (D20)", () => {
+    const draft = draftNoConfig();
+    const { getByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draft} />,
+    );
+
+    fireEvent.click(getByRole("radio", { name: "Config" }));
+    fireEvent.click(getByTestId("btn-create-from-template"));
+
+    expect(draft.seedFromTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows ConfigPane (not EmptyState) once hasConfig is true", () => {
+    const draft = {
+      ...draftNoConfig(),
+      draft: { workspace: { root: "." }, concurrency: 1 },
+      hasConfig: true,
+    } as unknown as import("../config/useConfigDraft").ConfigDraftAPI;
+    const { getByTestId, queryByTestId, getByRole } = render(
+      <ViewSwitcher store={makeStore()} tick={0} configDraft={draft} />,
+    );
+
+    fireEvent.click(getByRole("radio", { name: "Config" }));
+
+    expect(getByTestId("config-pane")).toBeTruthy();
+    expect(queryByTestId("empty-state")).toBeNull();
   });
 });

@@ -18,7 +18,6 @@ import {
   reorderStep as reorderStepPure,
   orphanRefs as computeOrphanRefs,
 } from "./config/pipeline-edit";
-import { EmptyState } from "./config/EmptyState";
 import { Pill, Button, type Tone } from "./ui";
 // Brand wordmark (pink loop + text). Dark text for light surfaces, white text
 // for dark surfaces — the visible one is chosen by theme in App.css.
@@ -65,6 +64,7 @@ function countByStatus(tasks: readonly { status: TaskStatus }[]) {
 function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   const { store, ui } = state;
   const isIdle = ui.runStatus === "idle";
+  const isRunning = ui.runStatus === "running";
   const currentApproval = headApproval(ui);
   const runPill = RUN_PILL[ui.runStatus];
   const { done, running, total } = countByStatus(store.tasks);
@@ -255,9 +255,6 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     [effectiveTaskId, activeStore.tasks],
   );
 
-  const showEmptyState = isIdle && configDraft.hasConfig === false;
-  const showBoard = !isIdle || idleStore != null;
-
   // Step editor drawer (idle only)
   const editingStepIndex =
     isIdle && editingStepId && configDraft.draft
@@ -281,7 +278,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
         <div className="app-header__brand">
           <img className="app-header__logo app-header__logo--on-light" src={logoOnLight} alt="Loopy" />
           <img className="app-header__logo app-header__logo--on-dark" src={logoOnDark} alt="Loopy" />
-          <Pill tone={runPill.tone} pulse={ui.runStatus === "running"}>
+          <Pill tone={runPill.tone} pulse={isRunning}>
             {runPill.label}
           </Pill>
         </div>
@@ -406,75 +403,73 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
         </div>
       )}
 
-      {showEmptyState ? (
-        <EmptyState onCreateFromTemplate={configDraft.seedFromTemplate} />
-      ) : showBoard ? (
-        <div className="app-body">
-          <div
-            className={`app-body__left${streamHeight.dragging ? " app-body__left--dragging" : ""}`}
-            style={{ "--stream-h": fractionToPercent(streamHeight.fraction) } as React.CSSProperties}
-          >
-            <div className="app-main">
-              <ViewSwitcher
-                store={activeStore}
-                tick={tick}
-                selectedTaskId={selectedTaskId}
-                onSelectTask={handleSelectTask}
-                concurrency={configDraft.draft?.concurrency}
-                maxConcurrency={configDraft.draft?.max_concurrency}
-                configDraft={isIdle ? configDraft : undefined}
-                dir={dir || undefined}
-                onEditStep={isIdle ? handleEditStep : undefined}
-                onAddStep={isIdle ? handleAddStep : undefined}
-                onRemoveStep={isIdle ? handleRemoveStep : undefined}
-                onReorderStep={isIdle ? handleReorderStep : undefined}
-                orphanRefs={isIdle ? idleOrphanRefs : undefined}
-              />
-              {isIdle && configDraft.tasks.length === 0 && (
-                <p className="t-label u-muted app-todo-hint" data-testid="todo-hint">
-                  Nenhuma task encontrada — verifique o <code>todo.md</code> no diretório-alvo.
-                </p>
-              )}
-            </div>
-            {!isIdle && (
-              <>
-                <div
-                  className="resize-divider"
-                  role="separator"
-                  aria-orientation="horizontal"
-                  aria-label="Redimensionar painel de streams"
-                  onMouseDown={streamHeight.onDragStart}
-                  onDoubleClick={streamHeight.onReset}
-                  data-testid="resize-divider"
-                >
-                  <span className="resize-divider__handle" />
-                </div>
-                <StreamPanel store={store} transcript={state.transcript} />
-              </>
+      {/* The tab bar is always visible (D20) — never replaced by the EmptyState.
+          Without a yml: Kanban/Deps/Insights degrade to their own empty, the
+          Config tab hosts "criar a partir do template", and Specs works normally. */}
+      <div className="app-body">
+        <div
+          className={`app-body__left${streamHeight.dragging ? " app-body__left--dragging" : ""}`}
+          style={{ "--stream-h": fractionToPercent(streamHeight.fraction) } as React.CSSProperties}
+        >
+          <div className="app-main">
+            <ViewSwitcher
+              store={activeStore}
+              tick={tick}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={handleSelectTask}
+              concurrency={configDraft.draft?.concurrency}
+              maxConcurrency={configDraft.draft?.max_concurrency}
+              configDraft={isIdle ? configDraft : undefined}
+              dir={dir || undefined}
+              runActive={isRunning}
+              onEditStep={isIdle ? handleEditStep : undefined}
+              onAddStep={isIdle ? handleAddStep : undefined}
+              onRemoveStep={isIdle ? handleRemoveStep : undefined}
+              onReorderStep={isIdle ? handleReorderStep : undefined}
+              orphanRefs={isIdle ? idleOrphanRefs : undefined}
+            />
+            {/* The todo hint is about a present-but-empty backlog — only when a
+                config actually loaded (idleStore synthesised), never on no-yml. */}
+            {isIdle && idleStore != null && configDraft.tasks.length === 0 && (
+              <p className="t-label u-muted app-todo-hint" data-testid="todo-hint">
+                Nenhuma task encontrada — verifique o <code>todo.md</code> no diretório-alvo.
+              </p>
             )}
           </div>
-          {stepEditorElement}
-          {effectiveTask && (
-            <CardDetail
-              taskId={effectiveTask.id}
-              title={effectiveTask.title}
-              onClose={handleCloseDrawer}
-              description={effectiveTask.description}
-              deps={effectiveTask.deps}
-              tasks={activeStore.tasks}
-              transcript={state.transcript}
-              steps={effectiveTask.steps}
-              approval={currentApproval}
-              queueSize={approvals}
-              onApprovalDecision={onApprovalDecision}
-            />
+          {!isIdle && (
+            <>
+              <div
+                className="resize-divider"
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Redimensionar painel de streams"
+                onMouseDown={streamHeight.onDragStart}
+                onDoubleClick={streamHeight.onReset}
+                data-testid="resize-divider"
+              >
+                <span className="resize-divider__handle" />
+              </div>
+              <StreamPanel store={store} transcript={state.transcript} />
+            </>
           )}
         </div>
-      ) : (
-        <div className="app-scroll app-idle-empty">
-          <p className="t-label u-muted">Selecione um diretório com <code>loopy.yml</code> para visualizar o board.</p>
-        </div>
-      )}
+        {stepEditorElement}
+        {effectiveTask && (
+          <CardDetail
+            taskId={effectiveTask.id}
+            title={effectiveTask.title}
+            onClose={handleCloseDrawer}
+            description={effectiveTask.description}
+            deps={effectiveTask.deps}
+            tasks={activeStore.tasks}
+            transcript={state.transcript}
+            steps={effectiveTask.steps}
+            approval={currentApproval}
+            queueSize={approvals}
+            onApprovalDecision={onApprovalDecision}
+          />
+        )}
+      </div>
     </main>
   );
 }

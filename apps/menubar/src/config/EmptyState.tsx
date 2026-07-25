@@ -1,5 +1,9 @@
 /**
- * EmptyState — shown when a directory has no `loopy.yml`.
+ * EmptyState — the empty of the **Config tab** when a directory has no `loopy.yml`.
+ *
+ * Since D20 (C-0018) the tab bar is always visible: this no longer replaces the
+ * whole `ViewSwitcher`, it degrades the Config tab, so `Specs` stays reachable in
+ * a project that has no yml yet (authoring precedes the yml).
  *
  * Offers a single action: "Criar a partir do template" which seeds the
  * in-memory draft from `initialConfigTemplate` (R1). The file is NOT

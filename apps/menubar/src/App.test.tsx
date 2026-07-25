@@ -228,13 +228,15 @@ describe("App — idle shows board (T-006)", () => {
     expect(onStartRun).toHaveBeenCalledWith("/sample", { yes: false, taskId: "", verbose: false });
   });
 
-  it("shows empty state when draft is not loaded", () => {
-    resetMockDraft(); // draft = null
-    const { queryByTestId, container } = render(
+  it("keeps the tab bar visible even when the draft is not loaded (D20)", () => {
+    resetMockDraft(); // draft = null, hasConfig = null
+    const { getByTestId, container } = render(
       <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
     );
-    expect(queryByTestId("view-switcher")).toBeNull();
-    expect(container.querySelector(".app-idle-empty")).toBeTruthy();
+    // The tab bar (ViewSwitcher) is always present in idle now — never replaced.
+    expect(getByTestId("view-switcher")).toBeTruthy();
+    // The old full-screen "select a dir" fallback is gone.
+    expect(container.querySelector(".app-idle-empty")).toBeNull();
   });
 
   it("feeds the board with tasks from configToStore", () => {
@@ -397,32 +399,30 @@ describe("App — graph selection opens CardDetail (T-007)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// T-015 — Empty-state + template + todo hint
+// T-014 (D20) — the tab bar is always visible; the EmptyState no longer replaces
+// the ViewSwitcher, it degrades the Config tab (tested against the real
+// ViewSwitcher in ViewSwitcher.test.tsx). Here we assert App-level wiring.
 // ---------------------------------------------------------------------------
 
-describe("App — empty-state (T-015)", () => {
+describe("App — tab bar always visible (T-014/D20)", () => {
   beforeEach(() => {
     localStorage.clear();
+    viewSwitcherProps = {};
     mockSeedFromTemplate.mockClear();
   });
 
-  it("shows EmptyState when hasConfig is false (dir without loopy.yml)", () => {
+  it("keeps the tab bar visible with no loopy.yml and forwards the empty draft (SC15)", () => {
     setMockDraftEmpty();
-    const { getByTestId, queryByTestId } = render(
+    const { getByTestId, container } = render(
       <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
     );
-    expect(getByTestId("empty-state")).toBeTruthy();
-    expect(getByTestId("btn-create-from-template")).toBeTruthy();
-    expect(queryByTestId("view-switcher")).toBeNull();
-  });
-
-  it("clicking 'Criar a partir do template' calls seedFromTemplate", () => {
-    setMockDraftEmpty();
-    const { getByTestId } = render(
-      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
-    );
-    fireEvent.click(getByTestId("btn-create-from-template"));
-    expect(mockSeedFromTemplate).toHaveBeenCalledTimes(1);
+    // The bar is present — never swapped for a full-screen EmptyState.
+    expect(getByTestId("view-switcher")).toBeTruthy();
+    expect(container.querySelector(".app-idle-empty")).toBeNull();
+    // The draft (hasConfig false) reaches the ViewSwitcher so the Config tab can
+    // host the empty state and Specs can run an Interview.
+    const draft = viewSwitcherProps.configDraft as { hasConfig: boolean };
+    expect(draft.hasConfig).toBe(false);
   });
 
   it("shows todo hint when config loaded but 0 tasks", () => {
@@ -433,6 +433,16 @@ describe("App — empty-state (T-015)", () => {
     expect(getByTestId("todo-hint")).toBeTruthy();
   });
 
+  it("does NOT show todo hint when there is no loaded config (hasConfig false)", () => {
+    setMockDraftEmpty();
+    const { queryByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />,
+    );
+    // No synthetic board → the todo hint (which is about a present-but-empty
+    // backlog) must not appear; the empty Config tab owns that message.
+    expect(queryByTestId("todo-hint")).toBeNull();
+  });
+
   it("does NOT show todo hint when tasks exist", () => {
     setMockDraftLoaded();
     const { queryByTestId } = render(
@@ -441,12 +451,27 @@ describe("App — empty-state (T-015)", () => {
     expect(queryByTestId("todo-hint")).toBeNull();
   });
 
-  it("does NOT show EmptyState when running (even if hasConfig is false)", () => {
+  it("shows the board (no full-screen empty state) when running even if hasConfig is false", () => {
     setMockDraftEmpty();
-    const { queryByTestId } = render(
+    const { getByTestId, container } = render(
       <App state={makeBridgeState({ runStatus: "running" })} onStartRun={vi.fn()} />,
     );
-    expect(queryByTestId("empty-state")).toBeNull();
+    expect(getByTestId("view-switcher")).toBeTruthy();
+    expect(container.querySelector(".app-idle-empty")).toBeNull();
+    // In a run the ViewSwitcher gets no configDraft (edits are idle-only).
+    expect(viewSwitcherProps.configDraft).toBeUndefined();
+  });
+
+  it("forwards runActive=true to the ViewSwitcher while running (D22)", () => {
+    setMockDraftLoaded();
+    render(<App state={makeBridgeState({ runStatus: "running" })} onStartRun={vi.fn()} />);
+    expect(viewSwitcherProps.runActive).toBe(true);
+  });
+
+  it("forwards runActive=false to the ViewSwitcher while idle", () => {
+    setMockDraftLoaded();
+    render(<App state={makeBridgeState({ runStatus: "idle" })} onStartRun={vi.fn()} />);
+    expect(viewSwitcherProps.runActive).toBe(false);
   });
 });
 
