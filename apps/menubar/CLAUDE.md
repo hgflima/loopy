@@ -1,7 +1,7 @@
 # menubar — a GUI nativa do loopy (Tauri v2 + React), a "Native UI"
 
 ## Purpose & Scope
-App macOS de menubar (`@hgflima/loopy-menubar`, privado) que **observa e dirige um Run** do motor: dispara `loopy`, mostra Kanban/grafo/streams ao vivo e resolve o Gate de Aprovação. É a **Native UI** do ADR-0007 — e ela **não é um renderer alternativo dentro do processo**: roda **fora**, como app, com o motor de **sidecar** (`loopy --no-tui --emit-events <dir>`), falando **NDJSON duplex** por stdin/stdout. Desde a C-0018 também **autora Changes**: a **5ª aba `Specs`** conduz uma **Entrevista** (`loopy interview`, ADR-0012) que grava `spec.md`/`plan.md`/`todo.md` — a etapa antes do Backlog.
+App macOS de menubar (`@hgflima/loopy-menubar`, privado) que **observa e dirige um Run** do motor: dispara `loopy`, mostra Kanban/grafo/streams ao vivo e resolve o Gate de Aprovação. É a **Native UI** do ADR-0007 — e ela **não é um renderer alternativo dentro do processo**: roda **fora**, como app, com o motor de **sidecar** (`loopy --no-tui --emit-events <dir>`), falando **NDJSON duplex** por stdin/stdout. Desde a C-0018 também **autora Changes**: a Aba **`Specs`** conduz uma **Entrevista** (`loopy interview`, ADR-0012) — num **Processo de Entrevista** separado, que nunca mata o Sidecar do Run — e grava `spec.md`/`plan.md`/`todo.md`, a etapa antes do Backlog.
 
 NÃO é: parte do motor (não decide nada do loop — AD-1), nem dona do domínio (Task/Step/Status vêm do motor).
 

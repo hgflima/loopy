@@ -35,7 +35,8 @@ Uma unidade de trabalho do Backlog (id `T-NNN`, título, corpo), processada isol
 _Avoid_: item, ticket, tarefa, issue
 
 **Spec**:
-O documento de especificação (`SPEC.md`) — o "o quê" que a implementação deve satisfazer.
+O documento de especificação (`spec.md`, na pasta da Change) — o "o quê" que a implementação deve satisfazer.
+_Avoid_: `SPEC.md` (o nome do arquivo é minúsculo, como `plan.md`/`todo.md` — ver _Change_)
 
 **Plan**:
 O documento de plano (`plan.md`) — o "como" derivado da Spec. Distinto do **Modo plan** do Agente (ver _Modo_); nunca use "plan" sozinho para o modo.
@@ -179,7 +180,7 @@ Um arquivo criado pelo operador que encerra a Run graciosamente após a Task cor
 _Avoid_: kill, interrupção
 
 **Gate**:
-Um ponto de controle que bloqueia a continuação até uma condição ser satisfeita. Os Gates do domínio são: o Gate de Aprovação (humano, no Merge) e o Gate de veredito (Expect). Sempre qualifique qual.
+Um ponto de controle que bloqueia a continuação até uma condição ser satisfeita. Os Gates do domínio são **três**: o **Gate de Aprovação** (humano, no Merge — ver _Aprovação_), o **Gate de veredito** (textual, o Expect) e o **Gate de Fase** (humano, entre as Fases da Entrevista — ver _Fase_). Sempre qualifique qual.
 _Avoid_: usar "gate" sem qualificar
 
 **Aprovação** (_approval_):
@@ -292,7 +293,7 @@ A configuração do Agente que precisa estar commitada na Parent branch para alc
 _Avoid_: config do agente (ambíguo com a Configuração do loop)
 
 **Artefato**:
-Uma saída de runtime gerada no projeto-alvo — Worktrees, logs (`.loopy/logs/<id>.log`), o Stop signal. Todos ignorados pelo git.
+Uma saída de runtime gerada no projeto-alvo, sempre ignorada pelo git. São eles: os Worktrees (`.worktrees/`), o Stop signal (`.loopy.stop`), o banco de Telemetria (`.db/telemetry.db`) e **todo o conteúdo de `.loopy/`** — logs (`logs/<id>.log`), checkpoint de resume (`state.json`), cache de Capabilities (`capabilities.json`) e Anexos da Entrevista (`attachments/`). A lista cresce a cada feature que persiste estado; o que a fixa é a regra, não a enumeração: **saída de runtime ⇒ gitignored**.
 _Avoid_: output, arquivo gerado
 
 **Dry-run**:
@@ -328,17 +329,21 @@ _Avoid_: Verdict (o do Agente), veredito (sozinho — qualifique "humano")
 Uma Task `status='merged'` **com** `human_verdict='fail'` — mergeou, passou no review do Agente, e é reprovada pelo humano. O sinal de "onde o review deixou passar defeito?"; badge/filtro dedicado na aba Insights (bônus quando tem `bug` aberto ligado).
 _Avoid_: bug (o `bug` é uma linha própria; o defeito escapado é a **condição** da Task)
 
-**Insights** (a aba):
-A 4ª aba da GUI menubar (4º segmento do `ViewSwitcher`) e a **única leitura** da telemetria: lê o `.db` por comando Rust `rusqlite` SELECT-only nas views e compara a Change contra a média±desvio das merged e contra outra Change escolhida (Δ%, absoluto↔normalizado por churn). Funciona em idle (revisão fria) e durante o Run.
-_Avoid_: Relatório de execução, Relatório de change (aposentados); dashboard (é a TUI de execução)
+**Insights** (a Aba):
+A **Aba** `Insights` da Native UI e a **única leitura** da telemetria: lê o `.db` por comando Rust `rusqlite` SELECT-only nas views e compara a Change contra a média±desvio das merged e contra outra Change escolhida (Δ%, absoluto↔normalizado por churn). Funciona em idle (revisão fria) e durante o Run.
+_Avoid_: Relatório de execução, Relatório de change (aposentados); dashboard (é a TUI de execução); identificá-la por ordinal ("a 4ª aba" — ver _Aba_)
 
 **Change**:
 O conjunto `spec.md`/`plan.md`/`todo.md` de uma unidade de trabalho, na pasta `.harn/devy/changes/<id>-<slug>/`. Termo do **devy**, com **dois papéis** no motor:
 
-- **Derivado** (telemetria/interpolação): par de config `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. `${change.*}` interpola e a telemetria agrega por ele; quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`.
+- **Derivado** (interpolação): par de config `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. É o que `${change.*}` resolve; quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`. **Não é a chave da telemetria** — essa é o _Id de Change_, abaixo.
 - **Criado** (C-0018, ADR-0012): a **Entrevista** (`loopy interview`) agora **produz** uma Change — grava os três `.md` na pasta. Foi essa promoção que tirou "puramente derivado do path" do conceito.
 
 _Avoid_: reduzir "change" a "só um path derivado" — desde a C-0018 o motor também a **cria** (ver _Entrevista_)
+
+**Id de Change** (`change_id`):
+O identificador **estável** de uma Change: o prefixo `C-NNNN` do nome da pasta (`telemetryChangeId`). É a chave por que a Telemetria agrega e o prefixo do `task_id` (`C-0017/T-004`) — que é também a forma qualificada aceita por `--task`. Sobrevive a renomear o slug da pasta, e é por isso que é ele, e não `${change.id}`, que vira chave no `.db`. Sem um prefixo `C-NNNN` reconhecível, cai para o `change.id` derivado.
+_Avoid_: confundir com **`${change.id}`** — a var é o **nome da pasta inteiro** (`C-0017-telemetry-and-change-insights`); o Id de Change é só `C-0017`. Os dois coexistem de propósito: não os unifique, e nunca diga "id da change" sem qualificar qual.
 
 ## Dashboard e TUI de execução (ADR-0005)
 
@@ -363,6 +368,10 @@ _Avoid_: layout (sozinho), coordenadas; `layoutGraph` (é o wrapper — a fonte 
 **Native UI** (redefinida no C-0009 — ADR-0007):
 O app **GUI de menubar do macOS** (`apps/menubar/`: Tauri v2 + React + React Flow) que roda o motor como subprocesso (`--no-tui --emit-events`) e renderiza o mesmo estado fora do terminal. É o **segundo renderer** do `store` + `computeDagreLayout` (consumidos via subpath export), **não** um substituto do Dashboard Ink — os dois coexistem. O protocolo entre os dois é o **Transport** (ver o cluster abaixo).
 _Avoid_: **OpenTUI, framebuffer, "TUI nativa"** — a definição anterior (uma TUI futura sobre OpenTUI) está **morta**: OpenTUI nunca entrou no código. A Native UI é uma GUI de janela, então **"GUI" é o termo correto** aqui.
+
+**Aba** (_tab_, um segmento do `ViewSwitcher`):
+Uma das **cinco** vistas da Native UI, alternadas pelo `ViewSwitcher` — que as mantém **todas montadas** (trocar de Aba só muda o `display`, então nenhuma perde estado). São elas: **`Kanban`** (o default — o board do Run), **`Deps`** (o Grafo de tasks navegável), **`Config`** (o editor visual do `loopy.yml`), **`Insights`** (a leitura da Telemetria) e **`Specs`** (a Entrevista). Identifique uma Aba **pelo nome, nunca pelo ordinal**: a ordem é do array `SEGMENTS`, e inserir uma no meio não pode invalidar o que está escrito aqui.
+_Avoid_: **Painel** (é a região do Dashboard Ink — ver _Painel_), tela, view (colide com `view.ts`); e **"a 4ª aba"** e afins (o ordinal apodrece)
 
 **Pulso** (_pulse_):
 A animação da Task `running`: alternância temporizada da ênfase do glyph no Painel de Grafo/Tasks. Pura em `view.ts` (`pulseFrame(tick)`); o relógio (`setInterval`) vive só no `.tsx`. **Só o Dashboard pulsa** (o fallback de linha, não).
@@ -409,12 +418,20 @@ A conversa dirigida por um **Agente** ACP que produz os inputs de uma **Change**
 _Avoid_: chat, wizard, autoria (a aba chama-se "Specs"; o conceito é a Entrevista)
 
 **Trilha** (_track_):
-O tipo de demanda que a Entrevista tria na abertura e que decide o desfecho: **`feature`** (e "outro tipo…", que cai em `feature` — D24) percorre as **Fases** e **produz arquivos**; **`bug`**/**`débito`** vai até um **hand-off** estático (monta um comando `/devy:debug` copiável) e **não grava nada** — nunca spawna processo.
-_Avoid_: tipo, categoria; e não use "modo" (colide com o Modo do Agente)
+O tipo de demanda que a Entrevista tria na abertura e que decide o desfecho: **`feature`** (e "outro tipo…", que cai em `feature` — D24) percorre as **Fases** e **produz arquivos**; **`bug`**/**`debt`** vai até um **hand-off** estático (monta um comando `/devy:debug` copiável) e **não grava nada** — nunca spawna processo.
+_Avoid_: tipo, categoria; e não use "modo" (colide com o Modo do Agente). O valor de `debt` é **`debt`** — "Débito técnico" é só o rótulo do select na GUI, não o literal.
+
+**Demanda** (_demand_):
+O texto livre com que o humano descreve o que quer, colhido no passo _describe_ (local — nenhum processo sobe ainda) e entregue ao motor por um **único canal: o argv `--demand`** do spawn. Vira o argumento do turno 1 (`/devy:spec <demanda>`); sem ela o `/devy:spec` subiria pelado e re-perguntaria o que o _describe_ já colheu. **Só a Fase `spec` a carrega** — `refine` e `plan` a ignoram por contrato (releem o `spec.md` do disco).
+_Avoid_: prompt (é o do Envelope), pedido, descrição; e não a confunda com a **Pergunta** — Demanda é o humano descrevendo, Pergunta é o Agente perguntando
 
 **Fase** (_phase_):
-Um dos três estágios da trilha `feature`: `spec` (`/devy:spec`), `refine` (`/devy:refine`) e `plan` (`/devy:plan spec.md`) — a única tabela fase→comando que o motor possui (`src/interview/phases.ts`). **Uma Sessão e um processo `loopy interview` por Fase** (D13): a Fase termina, o processo sai com 0, o próximo passo spawna outro — então o Gate humano entre Fases e a retomada após fechar o app são **o mesmo código**. Distinta de **Step** (unidade do Pipeline) e de **Fase de plano** (as fases do `plan.md`).
+Um dos três estágios da trilha `feature`: `spec` (`/devy:spec`), `refine` (`/devy:refine`) e `plan` (`/devy:plan spec.md`) — a única tabela fase→comando que o motor possui (`src/interview/phases.ts`). **Uma Sessão e um processo `loopy interview` por Fase** (D13): a Fase termina, o processo sai com 0, o próximo passo spawna outro — então o **Gate de Fase** (o gate humano entre duas Fases) e a retomada após fechar o app são **o mesmo código**. Distinta de **Step** (unidade do Pipeline) e de **Fase de plano** (as fases do `plan.md`).
 _Avoid_: etapa, estágio, Step (é do Pipeline)
+
+**Processo de Entrevista** (`InterviewState`):
+O subprocesso `loopy interview <dir> --emit-events` que a Native UI spawna para conduzir **uma Fase** — o **segundo** processo do motor sob a GUI, e deliberadamente **não** um Sidecar. A distinção é mecânica, não estilística: `SidecarState::start` **mata o Sidecar anterior** ("um Run por vez"), e a Entrevista jamais pode matar um Run em voo — por isso ela vive num estado gerenciado próprio, cujo `start`/`stop` só tocam o próprio processo. Fala o **mesmo** Transport NDJSON e reusa as primitivas de framing/PATH do Sidecar. Seu efeito sobre um Run concorrente é o de um **parent sujo** (D22), nunca o de um kill.
+_Avoid_: **Sidecar** (esse é o do Run — reusar a palavra reimporta o "mata o anterior", que é justamente o que este processo não pode fazer); "sidecar da entrevista"; daemon
 
 **Envelope** (_envelope_):
 A única instrução que o motor **prepende** ao comando `/devy:*` delegado. Fala de **forma** — encerre o turno com um bloco `<loopy-ask>`, uma pergunta por turno, `<loopy-done/>` ao terminar —, **nunca de conteúdo** (AD-1). Turno 1 leva o Envelope completo; turnos seguintes, só um lembrete de uma linha (D15); o wrap-up (D17) é o turno final que pede o encerramento. Puro e testável char-a-char (`src/interview/envelope.ts`).
@@ -423,3 +440,9 @@ _Avoid_: prompt, instrução de sistema, roteiro (o roteiro é do `/devy:*`, nã
 **Pergunta** (_ask_):
 O bloco `<loopy-ask>{json}</loopy-ask>` com que o Agente encerra um turno para pedir uma decisão: `prompt`, `options` (exatamente uma `recommended`, com o `why`), `otherLabel` e — quando leu o código em vez de perguntar — `finding`+`source` (D10). Um turno que **não** emite o bloco degrada para **pergunta aberta** (texto do Agente + campo livre — D3, o fallback, não o padrão). Parseada por `parseAsk` (puro, nunca lança — AD-5).
 _Avoid_: card, cartão (é a apresentação na GUI); question (use "Pergunta")
+
+**Anexo** (_attachment_):
+Um arquivo que o humano junta a uma resposta da Entrevista e que o Agente recebe como bloco ACP **`resource_link`** — nunca como bytes inline. Mora em `.loopy/attachments/<YYYYMMDD-HHmmss>-<nome>` (é Artefato): o prefixo de tempo impede que dois `print.png` colidam, e **Anexo nunca é apagado**, para que uma referência já gravada no `spec.md` não fique pendurada. Nome com `..` ou separador é rejeitado — o motor não deixa texto vindo da GUI andar na árvore.
+
+**Meio canal, hoje**: o de **paths** funciona ponta a ponta (`question_answer.attachments`, uma lista de caminhos → `attachmentBlocks`); o de **bytes** do webview para o motor **não existe na v1**. Por isso `writeAttachment` não tem chamador de produção e os anexos colhidos no card _describe_ **não viajam**. O conceito está implementado; o transporte, não.
+_Avoid_: upload, arquivo (genérico); e não presuma que anexar na GUI já entrega bytes ao Agente

@@ -217,7 +217,8 @@ npm run test:watch       # vitest
 
 ## Success Criteria — matriz de aceitação (Checkpoint E)
 
-Os oito critérios do `SPEC.md` são demonstráveis fim-a-fim; cada um é provado
+Os oito critérios do spec do MVP (`.harn/devy/changes/C-0001-MVP/spec.md`) são
+demonstráveis fim-a-fim; cada um é provado
 pelos testes abaixo (`npm test`). O invariante **AD-1** (motor **config-driven**,
 sem loop hardcoded) atravessa todos.
 
