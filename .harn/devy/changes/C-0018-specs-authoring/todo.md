@@ -377,7 +377,7 @@
 
 ## Fase 5 — Registro e limpeza
 
-- [ ] T-016: ADR-0012 — "Autoria de Change via Entrevista delegada"
+- [x] T-016: ADR-0012 — "Autoria de Change via Entrevista delegada"
     `docs/adrs/0012-autoria-de-change-via-entrevista.md`, no template de `docs/adrs/template.md`
     e no estilo dos 11 anteriores. O que **importa** registrar é o **porquê não uma tool MCP**
     (D2), com o custo real: o motor abre sessão via `ctx.buildSession(cwd).start()` do SDK e
