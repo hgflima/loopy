@@ -107,7 +107,12 @@ function logWebviewError(
   componentStack?: string,
 ): void {
   // Console first — visible in DevTools with "Preserve Log" on.
-  console.error(`[webview-error:${source}]`, message, stack ?? "", componentStack ?? "");
+  console.error(
+    `[webview-error:${source}]`,
+    message,
+    stack ?? "",
+    componentStack ?? "",
+  );
   // Then persist to the backend: the Rust stderr survives the webview crashing.
   if (IS_TAURI) {
     invoke("log_error", {
@@ -141,7 +146,10 @@ interface ErrorBoundaryState {
 }
 
 /** Top-level boundary: renders the stack instead of unmounting to a blank window. */
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -203,7 +211,9 @@ function Root() {
       // convention already used for an unknown exit code) so a failed launch
       // can't look identical to a successful one.
       const message = e instanceof Error ? e.message : String(e);
-      setState((prev) => applySidecarExit(applySidecarStderr(prev, message), -1));
+      setState((prev) =>
+        applySidecarExit(applySidecarStderr(prev, message), -1),
+      );
     });
   }, []);
 
@@ -289,9 +299,30 @@ function Root() {
   return IS_POPOVER ? (
     <Glance state={state} />
   ) : (
-    <App state={state} onStartRun={handleStartRun} onApprovalDecision={handleApprovalDecision} />
+    <App
+      state={state}
+      onStartRun={handleStartRun}
+      onApprovalDecision={handleApprovalDecision}
+    />
   );
 }
+
+// --------------------------------------------------------------------------
+// PROTOTYPE gate (throwaway — remove with src/authoring-prototype/)
+// --------------------------------------------------------------------------
+// `?proto=authoring` mounts the spec/plan authoring variants instead of the
+// app. Dev-only and lazy, so a stray merge can neither ship it nor bundle it.
+// (`import.meta.env` is Vite-only and this tsconfig has no vite/client types.)
+const IS_PROTOTYPE =
+  (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true &&
+  new URLSearchParams(window.location.search).get("proto") === "authoring";
+const PrototypeRoute = IS_PROTOTYPE
+  ? React.lazy(() =>
+      import("./authoring-prototype/PrototypeRoute").then((m) => ({
+        default: m.PrototypeRoute,
+      })),
+    )
+  : null;
 
 // The About window mirrors the popover routing (window label → dedicated
 // component), but branches ABOVE Root: it needs none of Root's BridgeState, and
@@ -300,7 +331,15 @@ function Root() {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary label={WINDOW_LABEL}>
-      {IS_ABOUT ? <About /> : <Root />}
+      {PrototypeRoute ? (
+        <React.Suspense fallback={null}>
+          <PrototypeRoute />
+        </React.Suspense>
+      ) : IS_ABOUT ? (
+        <About />
+      ) : (
+        <Root />
+      )}
     </ErrorBoundary>
   </React.StrictMode>,
 );
