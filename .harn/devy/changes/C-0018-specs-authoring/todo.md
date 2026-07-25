@@ -107,7 +107,7 @@
 
 ## Fase 2 — O subcomando `loopy interview`
 
-- [ ] T-005: `run.ts` — uma Fase da Entrevista, ponta a ponta
+- [x] T-005: `run.ts` — uma Fase da Entrevista, ponta a ponta
     `src/interview/run.ts`: orquestra **UMA** Fase e sai (D13 — o gate e a retomada viram o
     mesmo código). Um `createAgentProcessPool` com **um** Agente; **uma** Sessão em
     `cwd = <dir>` (não há worktree: a Entrevista escreve na árvore de trabalho).
@@ -252,7 +252,7 @@
     Size: M
     Risk: M
 
-- [ ] T-011: Componentes da Entrevista + `specs.css`
+- [x] T-011: Componentes da Entrevista + `specs.css`
     `apps/menubar/src/specs/`: `QuestionCard.tsx` (cartão de pergunta — opções com detalhe de
     uma linha, badge `RECOMENDADA` em **exatamente uma**, o bloco `Porquê:` separado por
     hairline, `finding` + `source` quando o Agente leu o código em vez de perguntar, e o escape
