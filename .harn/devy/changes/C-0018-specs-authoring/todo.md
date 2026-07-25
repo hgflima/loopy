@@ -161,7 +161,7 @@
 
 ## Fase 3 — A ponte Rust
 
-- [ ] T-007: `changes.rs` — listar e descartar Changes
+- [x] T-007: `changes.rs` — listar e descartar Changes
     `apps/menubar/src-tauri/src/changes.rs` (novo): `ChangeSummary { id, slug, has_spec,
     has_plan, has_todo, task_count, done_count }` (serde snake_case, como o resto de
     `project_fs.rs`).
