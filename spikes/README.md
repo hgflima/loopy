@@ -18,6 +18,11 @@ Arquivos:
   Read-only: nenhum prompt, nenhum turno.
 - **`acp-opencode-clear.ts`** — prova o `clear()` (reopen) e o caminho do turno
   contra o OpenCode. ⚠️ **consome turnos** (roda em `mode: plan`, não escreve).
+- **`acp-claude-interview-envelope.ts`** — prova o **envelope da Entrevista**
+  (C-0018, D2/D15) contra o Claude: o agente respeita "encerre o turno com um
+  bloco `<loopy-ask>`"? ⚠️ **consome um turno** e roda em `mode: acceptEdits`
+  (o agente *pode* escrever) — tira snapshot de `.harn/devy/changes/`
+  antes×depois e avisa se algo apareceu.
 
 ---
 
@@ -211,3 +216,64 @@ De quebra, esta spike exercita o **caminho completo de um turno** contra o
 OpenCode — `prompt` → `end_turn` → texto via `readText()` —, que é o que o step
 `agent` do motor faz. E a working tree ficou intacta depois de dois turnos, o que
 confirma na prática que o `mode: plan` aplicado por `set_mode` está mesmo ativo.
+
+---
+
+## `acp-claude-interview-envelope.ts` — o envelope da Entrevista (C-0018)
+
+⚠️ **Consome um turno** e roda em `mode: acceptEdits` — o mesmo modo da
+Entrevista. `mode: plan` não serve: o texto do turno iria para o artefato de
+plano não-bufferizado e a spike reportaria "sem bloco" quando o bloco existe
+(a mesma armadilha do veredito de `audit`). `npx tsx spikes/acp-claude-interview-envelope.ts`.
+
+A pergunta é a **OQ1** da `spec.md` da C-0018: toda a D2/D15 aposta que o Claude
+respeita "ENCERRE O TURNO emitindo exatamente um bloco `<loopy-ask>`". Se ele
+misturasse prosa e bloco o tempo todo, a **D3** (fallback para pergunta aberta)
+viraria o caminho **principal** em vez do degradado — e o desenho mereceria
+revisão, não mais instrução no envelope.
+
+O teste: um turno só, envelope completo da fase `spec` + `/devy:spec <demanda>`,
+e classificação da resposta pela tabela que o `parse-ask.ts` vai implementar.
+
+### Achado (claude-agent-acp 0.59.0 · SDK 0.29 · capturado 2026-07-25)
+
+**✔ O envelope sobreviveu.** Um bloco `<loopy-ask>`, JSON válido, exatamente uma
+opção com `"recommended": true`, e o `"why"` preenchido — a D2/D15 se sustenta e
+a D3 continua sendo o degradado, não o padrão.
+
+```
+stopReason: end_turn   (328s)          texto do turno: 3517 chars
+classificação: ask · blocos: 1 · JSON válido: true · recommended: 1 · why: true
+finding: true · <loopy-change dir>: (não reportado) · <loopy-done/>: false
+prosa fora do bloco: 1427 chars
+snapshot .harn/devy/changes: 18 antes → 18 depois (nada criado)
+```
+
+Três achados que **não** eram a pergunta e valem mais que ela:
+
+1. **`finding` + `source` vieram espontaneamente, já na fase `spec`.** O envelope
+   diz "se a resposta estiver no código, LEIA O CÓDIGO em vez de perguntar"; o
+   agente leu, e a pergunta que fez veio com o mapa do que já existe
+   (`openAgent` faz spawn+`initialize` sem abrir sessão; `acp.request_timeout_seconds`
+   é inerte) e a fonte em `arquivo:linha`. A spec só esperava isso do
+   `/devy:refine` — o **SC14** é alcançável desde o primeiro turno.
+
+2. **328 s (5,5 min) até a primeira pergunta.** O agente spawnou dois
+   sub-exploradores em background antes de perguntar. Consequência de produto: a
+   **D14 (linha de atividade + transcript) não é enfeite** — sem prova de vida o
+   humano encara uma tela parada por cinco minutos e conclui que travou. E o
+   timeout do processo da Entrevista precisa ser generoso.
+
+3. **1.427 chars de prosa fora do bloco, e ela é o *progresso* do agente**
+   ("Vou primeiro entender o código-base…", "Aguardo o segundo explorador…"),
+   **concatenada sem quebra de linha** entre mensagens. Confirma a **D25** (essa
+   prosa vive no transcript, nunca no card) e reforça que a linha viva da D14
+   tem de vir do `session/update` **ao vivo** — fatiar o texto final do turno
+   produz um blocão colado, não uma linha de atividade.
+
+**O que a spike NÃO provou**: o `<loopy-change dir="…"/>`. O turno 1 perguntou
+antes de criar qualquer pasta (`.harn/devy/changes`: 18 → 18), então o report do
+dir segue sem evidência — ele só aparece quando a fase for de fato gravar. É
+exatamente para essa incerteza que a **D10** carrega o fallback de snapshot
+antes×depois, e é o que o Checkpoint A do `plan.md` re-verifica com a fase
+completa.

@@ -580,10 +580,22 @@ Verificáveis. `[M]` = manual, `[A]` = automatizado.
 
 Não bloqueiam o início. Registrar aqui a decisão quando resolvidas.
 
-1. **O envelope sobrevive ao Agente real?** Toda a D2/D15 assume que o Claude
-   respeita "um bloco por turno" com razoável consistência. Se na prática ele
-   misturar prosa e bloco o tempo todo, a D3 vira o caminho principal em vez do
-   degradado — e aí o desenho merece revisão, não mais instrução no envelope.
+1. ~~**O envelope sobrevive ao Agente real?**~~ — **RESPONDIDA em 2026-07-25**,
+   antes de escrever código, pela spike `spikes/acp-claude-interview-envelope.ts`
+   (um turno real, `claude-agent-acp 0.59.0`, `mode: acceptEdits`): **sobrevive**.
+   Um único bloco `<loopy-ask>`, JSON válido, exatamente uma opção
+   `"recommended": true` com `"why"` preenchido — e `finding` + `source`
+   **espontâneos já na fase `spec`** (o SC14 é alcançável desde o primeiro turno).
+   A D3 segue sendo o degradado, não o padrão. Dois achados laterais que a
+   implementação precisa honrar: **328 s até a primeira pergunta** (o agente
+   spawna sub-exploradores antes de perguntar — a D14 não é enfeite) e **1.427
+   chars de prosa fora do bloco, concatenados sem quebra de linha** (a linha viva
+   da D14 tem de vir do `session/update` ao vivo, não de fatiar o texto final do
+   turno). Achados completos em `spikes/README.md`.
+   **Ainda não provado**: o `<loopy-change dir=…/>` — o turno 1 perguntou antes de
+   criar pasta alguma, então o report do dir só aparece quando a fase for gravar.
+   É o que o fallback de snapshot da D10 cobre, e o que o Checkpoint A do
+   `plan.md` re-verifica com a fase completa.
 2. **Quantas perguntas o `/devy:spec` de fato faz na GUI.** Com a delegação, quem
    decide é o Agente; o botão da D17 é a válvula. Vale medir na primeira
    Entrevista real se a trilha `feature` fica cansativa (a antiga OQ3).
