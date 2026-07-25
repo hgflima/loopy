@@ -395,7 +395,7 @@
     Size: S
     Risk: L
 
-- [ ] T-017: `CONTEXT.md` + intent nodes
+- [x] T-017: `CONTEXT.md` + intent nodes
     `CONTEXT.md` (o glossário canônico): **Change** deixa de ser "par derivado `{id,dir}`, não
     conceito do motor" — o motor agora **cria** Changes. Registrar **Entrevista** (a conversa
     dirigida por um Agente que produz os inputs de uma Change), **Trilha** (`feature` produz
