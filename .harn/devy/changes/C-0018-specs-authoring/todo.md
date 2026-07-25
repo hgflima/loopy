@@ -138,7 +138,7 @@
     Size: L
     Risk: H
 
-- [ ] T-006: Subcomando `loopy interview` no commander
+- [x] T-006: Subcomando `loopy interview` no commander
     `src/index.ts`: registrar `interview` ao lado do `probe-agent` (`:1593`) — o commander casa
     subcomando **antes** do `[dir]` posicional, então não há ambiguidade (mesma mecânica do
     T-008 original). Assinatura: `loopy interview <dir> --emit-events [--change <id>]
