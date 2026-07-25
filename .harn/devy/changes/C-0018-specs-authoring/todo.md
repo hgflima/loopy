@@ -184,7 +184,7 @@
     Size: M
     Risk: M
 
-- [ ] T-008: `interview_process.rs` — o segundo processo gerenciado
+- [x] T-008: `interview_process.rs` — o segundo processo gerenciado
     `apps/menubar/src-tauri/src/interview_process.rs` (novo): `InterviewState` espelhando o
     `SidecarState` (`sidecar.rs:184-311`) — `start(app, dir, args)`, `send_command(payload)`
     (uma linha NDJSON no stdin), `stop()` idempotente — com eventos
