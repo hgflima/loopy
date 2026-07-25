@@ -1,6 +1,6 @@
 # D-0007 — `on_fail: { goto }` num step `approval` renderiza `[object Object]` na mensagem de falha
 
-> **Status:** aberto · **Severidade:** baixa · **Área:** `src/steps/approval.ts`
+> **Status:** **resolvido** em 2026-07-24 (`approval.ts` passou a usar `formatOnFail`) · **Severidade:** baixa · **Área:** `src/steps/approval.ts`
 > **Descoberto em:** 2026-07-14 · **Origem:** sync do Intent Layer (`/write-agent-md sync`)
 
 ## Sintoma
@@ -40,3 +40,10 @@ Importar `formatOnFail` de `../loop/orchestrator` em `approval.ts` e aplicá-lo,
 
 ## Workaround atual
 Ignorar o `[object Object]` na mensagem — o comportamento do Desvio está correto.
+
+## Resolução (2026-07-24)
+`approval.ts` importa `formatOnFail` de `../loop/orchestrator` e o aplica na `reason`.
+A varredura pedida acima foi feita: `shell.ts` e `checks.ts` **não** interpolam `on_fail`
+em mensagem alguma — `agent.ts` e `approval.ts` eram os dois únicos sites, e ambos usam
+agora o formatador. Regressão travada por
+`tests/steps/approval.test.ts` ("renders an on_fail goto as 'goto <id>' …").

@@ -48,6 +48,7 @@ import {
 import { tokenizeCommand } from "./tokenize";
 import type { Mutex } from "../loop/mutex";
 import { guarded } from "../loop/mutex";
+import { formatOnFail } from "../loop/orchestrator";
 
 /** Options for {@link createApprovalStep}. */
 export interface CreateApprovalStepOptions {
@@ -151,7 +152,7 @@ export function createApprovalStep(
           const onFail = step.on_fail ?? "escalate";
           const head =
             `[approval:${step.id}] a ação falhou (exit ${failure.exitCode}): ` +
-            `${failure.command}. on_fail: ${onFail}.`;
+            `${failure.command}. on_fail: ${formatOnFail(onFail)}.`;
           const reason = withCommandDetail(head, failure);
           ctx.logger.error(reason);
           return { ok: false, reason, output };

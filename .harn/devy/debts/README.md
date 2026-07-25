@@ -69,7 +69,7 @@ histórico.
 | [D-0004](D-0004-check-events-never-emitted-in-live-run.md) | `check_started`/`check_finished` nunca são emitidos num Run real (o port de produção descarta os callbacks) | `src/index.ts` · `src/checks/runner.ts` | média | aberto |
 | [D-0005](D-0005-approval-requested-frame-has-empty-taskid.md) | Control frame `approval_requested` sai com `taskId`/`stepId` vazios (hardcoded) | `src/tui/start.ts` | média | aberto |
 | [D-0006](D-0006-cancelsignal-seam-never-wired.md) | `cancelSignal` é seam morto: o hard-stop nunca chega ao step `shell` | `src/steps/index.ts` · `src/steps/shell.ts` | média | aberto |
-| [D-0007](D-0007-approval-onfail-goto-renders-object-object.md) | `on_fail: { goto }` em step `approval` renderiza `[object Object]` na `reason` | `src/steps/approval.ts` | baixa | aberto |
+| [D-0007](D-0007-approval-onfail-goto-renders-object-object.md) | `on_fail: { goto }` em step `approval` renderiza `[object Object]` na `reason` | `src/steps/approval.ts` | baixa | resolvido em 2026-07-24 |
 | [D-0008](D-0008-run-cost-undercounts-since-task-cost-became-a-sum.md) | Custo do Run subconta: Task virou soma (ADR-0006), Run/Change seguem *last-non-null* | `src/metrics/folds.ts` · `src/types.ts` | média | resolvido em C-0017 (ADR-0011) |
 | [D-0009](D-0009-loopy-types-subpath-not-exported.md) | O app importa `loopy/types`, mas o subpath não existe no `exports` do pacote (alias wildcard esconde) | `package.json` · `tsup.config.ts` | baixa | aberto |
 | [D-0010](D-0010-fast-mode-not-exposed.md) | `fast mode` (`category: model_config`) revelado pela sondagem mas não exposto no yml | `src/acp/capabilities.ts` · `src/config/schema.ts` | baixa | aberto |

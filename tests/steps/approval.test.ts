@@ -235,6 +235,28 @@ describe("createApprovalStep — execute", () => {
     expect(result.output).toContain("CONFLICT");
   });
 
+  it("renders an on_fail goto as 'goto <id>', never '[object Object]' (D-0007)", async () => {
+    const { ui } = recordingUi(true);
+    const { runner } = recordingRunner((cmd) =>
+      cmd.includes("merge") ? { ok: false, exitCode: 1 } : {},
+    );
+    const ctx = makeStepContext({
+      step: approvalStep({
+        run: ["git merge"],
+        on_fail: { goto: "abort-root-merge" },
+      }),
+      ui,
+    });
+
+    const result = await createApprovalStep({ runCommand: runner }).execute(
+      ctx,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).not.toContain("[object Object]");
+    expect(result.reason).toContain("goto abort-root-merge");
+  });
+
   it("stops at the first failing action command", async () => {
     const { ui } = recordingUi(true);
     const { runner, ran } = recordingRunner((cmd) =>
