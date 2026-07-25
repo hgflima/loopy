@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, cleanup, fireEvent } from "@testing-library/react";
+import { render, cleanup, fireEvent, act } from "@testing-library/react";
 import type { StoreState } from "loopy/tui/store";
 
 // ---------------------------------------------------------------------------
@@ -400,6 +400,52 @@ describe("ViewSwitcher — Specs tab (T-014, D20)", () => {
   it("forwards runActive to SpecsPane (D22 warning is the pane's, the flag is ours)", () => {
     render(<ViewSwitcher store={makeStore()} tick={0} dir="/x" runActive />);
     expect(specsPaneProps.runActive).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "Abrir o board" (T-015, D11) — the Specs tab's saved screen fires onOpenBoard;
+// the App patches inputs.* (its job — it owns configDraft), and the ViewSwitcher
+// reveals the board (its job — it owns `view`).
+// ---------------------------------------------------------------------------
+
+describe("ViewSwitcher — 'Abrir o board' (T-015, D11)", () => {
+  it("forwards an onOpenBoard handler to the SpecsPane", () => {
+    render(
+      <ViewSwitcher store={makeStore()} tick={0} dir="/x" onOpenBoard={vi.fn()} />,
+    );
+    expect(typeof specsPaneProps.onOpenBoard).toBe("function");
+  });
+
+  it("SpecsPane's onOpenBoard calls the parent then switches back to Kanban", () => {
+    const onOpenBoard = vi.fn();
+    const { getByRole, getByTestId } = render(
+      <ViewSwitcher store={makeStore()} tick={0} dir="/x" onOpenBoard={onOpenBoard} />,
+    );
+
+    // Leave Kanban first, so the switch-back is observable.
+    fireEvent.click(getByRole("radio", { name: "Specs" }));
+    expect(getByRole("radio", { name: "Specs" }).getAttribute("aria-checked")).toBe("true");
+
+    // Fire what the "Abrir o board" button on the saved screen does.
+    const paneOpenBoard = specsPaneProps.onOpenBoard as (dir: string) => void;
+    act(() => paneOpenBoard(".harn/devy/changes/C-0018-x"));
+
+    // Parent handler ran with the Change dir…
+    expect(onOpenBoard).toHaveBeenCalledWith(".harn/devy/changes/C-0018-x");
+    // …and the view is back on the Kanban board.
+    expect(getByRole("radio", { name: "Kanban" }).getAttribute("aria-checked")).toBe("true");
+    expect(getByTestId("kanban-board")).toBeTruthy();
+  });
+
+  it("still switches to Kanban when no parent onOpenBoard is wired", () => {
+    const { getByRole } = render(<ViewSwitcher store={makeStore()} tick={0} dir="/x" />);
+    fireEvent.click(getByRole("radio", { name: "Specs" }));
+
+    const paneOpenBoard = specsPaneProps.onOpenBoard as (dir: string) => void;
+    act(() => paneOpenBoard(".harn/devy/changes/C-0018-x"));
+
+    expect(getByRole("radio", { name: "Kanban" }).getAttribute("aria-checked")).toBe("true");
   });
 });
 
