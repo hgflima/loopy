@@ -331,7 +331,7 @@
     Size: M
     Risk: M
 
-- [ ] T-014: D20 — barra de abas sempre visível + 5.º segmento `Specs`
+- [x] T-014: D20 — barra de abas sempre visível + 5.º segmento `Specs`
     Corrige a ordem do trabalho: **spec vem antes do yml**. Hoje `App.tsx:258` faz
     `showEmptyState = isIdle && configDraft.hasConfig === false` e `App.tsx:409` troca o
     **`ViewSwitcher` inteiro** pelo `EmptyState` — a barra de abas some, e a aba `Specs` não
