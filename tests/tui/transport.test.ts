@@ -45,6 +45,22 @@ function roundTripControl(control: ControlFrame): void {
   expect(result.control).toEqual(control);
 }
 
+/**
+ * Round-trip a CommandFrame through serialize→parse and assert equality.
+ *
+ * Commands travel app → motor via stdin, so the transport has no `emitCommand`;
+ * we hand-build the wire line (`{frame:"command", …}`) exactly as the app does.
+ */
+function roundTripCommand(command: CommandFrame): void {
+  const line = JSON.stringify({ frame: "command", ...command });
+  const result = parseTransportLine(line);
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.frame).toBe("command");
+  if (result.frame !== "command") return;
+  expect(result.command).toEqual(command);
+}
+
 // ---------------------------------------------------------------------------
 // StoreEvent round-trip (every variant)
 // ---------------------------------------------------------------------------
@@ -269,47 +285,153 @@ describe("transport — control frame round-trip", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Interview control frame round-trip (C-0018 T-001 — 6 new variants)
+// ---------------------------------------------------------------------------
+
+describe("transport — interview control frame round-trip", () => {
+  it("phase_started (without changeDir — spec phase, D10)", () => {
+    roundTripControl({
+      control: "phase_started",
+      phase: "spec",
+      command: "/devy:spec",
+    });
+  });
+
+  it("phase_started (with changeDir — refine/plan phase)", () => {
+    roundTripControl({
+      control: "phase_started",
+      phase: "refine",
+      command: "/devy:refine",
+      changeDir: ".harn/devy/changes/C-0018-specs-authoring",
+    });
+  });
+
+  it("change_resolved", () => {
+    roundTripControl({
+      control: "change_resolved",
+      changeDir: ".harn/devy/changes/C-0019-nova-change",
+    });
+  });
+
+  it("question_asked (minimal — no options)", () => {
+    roundTripControl({
+      control: "question_asked",
+      questionId: "q-1",
+      phase: "spec",
+      prompt: "Qual é o escopo da change?",
+    });
+  });
+
+  it("question_asked (full — options, otherLabel, finding, source)", () => {
+    roundTripControl({
+      control: "question_asked",
+      questionId: "q-2",
+      phase: "plan",
+      prompt: "Qual estratégia de implementação?",
+      options: [
+        {
+          label: "Incremental",
+          detail: "task por task",
+          recommended: true,
+          why: "menor risco",
+        },
+        { label: "Big bang" },
+      ],
+      otherLabel: "Outro…",
+      finding: "o motor já interpreta o yml",
+      source: "src/index.ts:12",
+    });
+  });
+
+  it("agent_activity", () => {
+    roundTripControl({
+      control: "agent_activity",
+      phase: "refine",
+      text: "analisando o repositório…",
+    });
+  });
+
+  it("phase_finished", () => {
+    roundTripControl({
+      control: "phase_finished",
+      phase: "plan",
+      changeDir: ".harn/devy/changes/C-0018-specs-authoring",
+      files: ["spec.md", "plan.md", "todo.md"],
+    });
+  });
+
+  it("interview_failed", () => {
+    roundTripControl({
+      control: "interview_failed",
+      reason: "agente encerrou sem <loopy-done/>",
+    });
+  });
+
+  it("questionId and phase are always present (not the empty-string D-0005 trap)", () => {
+    const { lines, sink } = collectSink();
+    const transport = createEventTransport(sink);
+    transport.emitControl({
+      control: "question_asked",
+      questionId: "q-42",
+      phase: "spec",
+      prompt: "?",
+    });
+    const wire = JSON.parse(lines[0]!.trim());
+    expect(wire.questionId).toBe("q-42");
+    expect(wire.phase).toBe("spec");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Command frame round-trip (parse-only — commands come from stdin)
 // ---------------------------------------------------------------------------
 
 describe("transport — command frame parse", () => {
   it("approval_decision (approved)", () => {
-    const line = JSON.stringify({
-      frame: "command",
+    roundTripCommand({
       command: "approval_decision",
       requestId: "req-42",
       approved: true,
     });
-    const result = parseTransportLine(line);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.frame).toBe("command");
-    if (result.frame !== "command") return;
-    const cmd: CommandFrame = {
-      command: "approval_decision",
-      requestId: "req-42",
-      approved: true,
-    };
-    expect(result.command).toEqual(cmd);
   });
 
   it("approval_decision (rejected)", () => {
-    const line = JSON.stringify({
-      frame: "command",
+    roundTripCommand({
       command: "approval_decision",
       requestId: "req-99",
       approved: false,
     });
-    const result = parseTransportLine(line);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.frame).toBe("command");
-    if (result.frame !== "command") return;
-    expect(result.command).toEqual({
-      command: "approval_decision",
-      requestId: "req-99",
-      approved: false,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interview command frame round-trip (C-0018 T-001 — 3 new variants)
+// ---------------------------------------------------------------------------
+
+describe("transport — interview command frame round-trip", () => {
+  it("question_answer (minimal — no attachments)", () => {
+    roundTripCommand({
+      command: "question_answer",
+      questionId: "q-1",
+      text: "escopo enxuto, só a aba Specs",
     });
+  });
+
+  it("question_answer (with attachments)", () => {
+    roundTripCommand({
+      command: "question_answer",
+      questionId: "q-2",
+      text: "veja o print do erro",
+      attachments: [".loopy/attachments/20260725-143012-erro.png"],
+    });
+  });
+
+  it("phase_wrap_up", () => {
+    roundTripCommand({ command: "phase_wrap_up" });
+  });
+
+  it("interview_cancel", () => {
+    roundTripCommand({ command: "interview_cancel" });
   });
 });
 

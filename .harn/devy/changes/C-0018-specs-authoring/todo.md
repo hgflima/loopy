@@ -14,7 +14,7 @@
 
 ## Fase 1 — Fundação: contrato de fio e os puros
 
-- [ ] T-001: Frames da Entrevista no Transport NDJSON
+- [x] T-001: Frames da Entrevista no Transport NDJSON
     `src/tui/transport.ts`: estender `ControlFrame` (hoje 3 variantes, `:28-37`) com as **seis**
     da spec — `phase_started` (`phase`, `command`, `changeDir?`), `change_resolved` (`changeDir`),
     `question_asked` (`questionId`, `phase`, `prompt`, `options?`, `otherLabel?`, `finding?`,
