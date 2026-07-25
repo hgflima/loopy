@@ -17,7 +17,7 @@ Uma execução completa do motor, do início ao esvaziamento do backlog (ou para
 _Avoid_: execução, sessão, invocação. (Reserve "Run" para a execução inteira; o campo `run:` de um Step é config, não este conceito.)
 
 **Loop externo**:
-O laço que consome as Tasks do Backlog, aplicando o Pipeline a cada uma. Desde o ADR-0004 **não** itera "em ordem": quem escolhe as próximas é o **Scheduler** (o *ready set* sob Concorrência), usando a ordem do Backlog só como desempate. Seu contador de runtime é `max_iterations` ("Tasks iniciadas") — **não** a var `${iteration}`, que é índice estável e não contador (ver _Iteração_).
+O laço que consome as Tasks do Backlog, aplicando o Pipeline a cada uma. Desde o ADR-0004 **não** itera "em ordem": quem escolhe as próximas é o **Scheduler** (o _ready set_ sob Concorrência), usando a ordem do Backlog só como desempate. Seu contador de runtime é `max_iterations` ("Tasks iniciadas") — **não** a var `${iteration}`, que é índice estável e não contador (ver _Iteração_).
 _Avoid_: loop principal, outer loop
 
 **Loop interno**:
@@ -117,7 +117,7 @@ A integração do Worktree de uma Task na Parent branch, atrás de um Gate de Ap
 O protocolo pelo qual o motor dirige os Agentes de código.
 
 **Agente** (precisão — ADR-0006):
-Um agente de código **nomeado** que o motor pode dirigir via ACP (ex.: `claude`, `codex`). É o *perfil/tipo* declarado no Registry de Agentes, não o subprocesso em si (esse é o **Processo de Agente**). Um Run pode usar **N Agentes**.
+Um agente de código **nomeado** que o motor pode dirigir via ACP (ex.: `claude`, `codex`). É o _perfil/tipo_ declarado no Registry de Agentes, não o subprocesso em si (esse é o **Processo de Agente**). Um Run pode usar **N Agentes**.
 _Avoid_: modelo, LLM, assistente; e não use "agente" para o Step nem para o subprocesso (use Processo de Agente)
 
 **Processo de Agente** (ADR-0006):
@@ -211,11 +211,11 @@ O vocabulário **da persistência** — deliberadamente mais estreito que o stat
 
 **`aborted` não é sinônimo de Escalated.** Escalated (nível de Run) cobre `abort_loop` **e** `skip_task`; `aborted` (nível de checkpoint) cobre **só** `abort_loop` — `skip_task` **abandona** o checkpoint em vez de gravar status. É essa distinção que decide se o resume retoma, então não a colapse. Mapa canônico:
 
-| Escalonamento | status de Run | checkpoint |
-| --- | --- | --- |
-| `pause` | `paused` | `paused` |
-| `abort_loop` | `escalated` | `aborted` |
-| `skip_task` | `escalated` | *(abandonado)* |
+| Escalonamento | status de Run | checkpoint     |
+| ------------- | ------------- | -------------- |
+| `pause`       | `paused`      | `paused`       |
+| `abort_loop`  | `escalated`   | `aborted`      |
+| `skip_task`   | `escalated`   | _(abandonado)_ |
 
 _Avoid_: renomear `aborted` (o valor está gravado no disco dos projetos-alvo — trocá-lo é breaking change de estado persistido); e não chame o tipo de `TaskStatus` (esse nome é o status de Run, na store).
 
@@ -228,7 +228,7 @@ O teto efetivamente respeitado pelo Scheduler para o paralelismo entre Tasks. De
 _Avoid_: threads, workers
 
 **Largura do grafo** (_max layer width_, ADR-0009):
-A camada topológica mais larga do Grafo de tasks — `max(...topoLayers(graph).map(l => l.length))` — é o máximo de Tasks que o DAG **permite** em paralelo. É o valor que `concurrency: auto` usa como base. Nota técnica: é o *limite inferior* do paralelismo real (o pico exato é o maior antichain e exigiria matching bipartido), mas coincide na prática. Calculado por `maxLayerWidth()` (`src/scheduler/graph.ts`), que já existia como `topoLayers` — usada pelo dry-run.
+A camada topológica mais larga do Grafo de tasks — `max(...topoLayers(graph).map(l => l.length))` — é o máximo de Tasks que o DAG **permite** em paralelo. É o valor que `concurrency: auto` usa como base. Nota técnica: é o _limite inferior_ do paralelismo real (o pico exato é o maior antichain e exigiria matching bipartido), mas coincide na prática. Calculado por `maxLayerWidth()` (`src/scheduler/graph.ts`), que já existia como `topoLayers` — usada pelo dry-run.
 _Avoid_: largura máxima (sem qualificar), antichain (é o conceito exato, não o que o motor calcula)
 
 **Teto do auto** (_max_concurrency_, ADR-0009):
@@ -236,24 +236,25 @@ Chave `max_concurrency` (default **4**) que limita `concurrency: auto`. **Só mo
 _Avoid_: limite, cap (sem qualificar)
 
 **Iteração** — precisão dupla sob paralelismo (ADR-0004):
+
 - A **var `${iteration}`** = índice estável da Task na ordem de arquivo do Backlog (o que o dry-run já resolve). Determinística e **idêntica entre dry-run e run vivo** ⇒ preserva AD-4. Não é mais o contador de runtime.
 - O **teto `max_iterations`** = contador de runtime separado, "Tasks **iniciadas** nesta Run". `skipped` não conta.
-(Tentativa/Visita intra-Task intocados.)
+  (Tentativa/Visita intra-Task intocados.)
 
 ## DAG de tasks e scheduling (ADR-0004)
 
 Termos do paralelismo entre Tasks — distinto do fluxo intra-Pipeline (Desvio/`goto`/PC, que é entre Steps de **uma** Task). Introduzidos pelo ADR-0004.
 
-**Aresta de dependência** (*dependency edge*):
+**Aresta de dependência** (_dependency edge_):
 "T-B depende de T-A", materializada na linha `Deps:` do `todo.md` e em `task.deps`. Semântica: **T-B só fica Ready quando T-A está Done (merjada no parent)**. Direção no grafo: `[from = dep, to = dependente]`. Pattern **configurável** via `inputs.backlog.deps_pattern` (default `Deps:` case-insensitive).
 _Avoid_: link, relação, edge (sem qualificar)
 
-**Grafo de tasks** (*task graph* / DAG):
+**Grafo de tasks** (_task graph_ / DAG):
 Grafo dirigido **acíclico**; **nodes** = Tasks do Backlog **completo** (`done` + pendentes), **edges** = Arestas de dependência. Ciclo ou Dep órfã (id ausente do Backlog inteiro) ⇒ erro fail-fast (Run não inicia). Distinto do **flow graph de `goto`** (que é intra-Pipeline, entre Steps).
 _Avoid_: pipeline graph, flow graph (esses são de Steps)
 
 **Scheduler**:
-Componente puro (AD-6) que, dado o Grafo e o mapa de status, computa o **conjunto pronto** (*ready set*) e escolhe as próximas a iniciar sob Concorrência. Desempate por ordem do Backlog (determinismo). O Scheduler **não** executa Steps (isso é do PC).
+Componente puro (AD-6) que, dado o Grafo e o mapa de status, computa o **conjunto pronto** (_ready set_) e escolhe as próximas a iniciar sob Concorrência. Desempate por ordem do Backlog (determinismo). O Scheduler **não** executa Steps (isso é do PC).
 _Avoid_: orquestrador (é o módulo do Loop externo), planner (é o do `--dry-run`)
 
 **Ready / Pronta**:
@@ -268,7 +269,7 @@ _Avoid_: travada, pendente (colide com o status de checkbox)
 Task cujo fecho de Deps contém uma que **não chegou a `done`**. Nunca ficará Ready; marcada e **não executada**. Derivada do Grafo + status, **não persistida** (recomputada no resume). Resultado do skip transitivo.
 _Avoid_: ignorada, descartada
 
-**Seção crítica do parent** (*parent critical section*):
+**Seção crítica do parent** (_parent critical section_):
 Região serializada por um mutex único da Run que embrulha a **execução de comandos de todo Step não-Agente** (rodam contra o root) mais os ports `commitPaths`/`isParentClean`. **Não** mora no `GitPort` — vive na **camada de execução de Steps** (threaded via os seams do command-runner). O **wait de aprovação** do Merge acontece **fora** do mutex; a aquisição é só para a **execução de comandos**, com `require_clean_parent` reavaliado logo antes. O auto-rebase (quando `on_merge_conflict: rebase`) roda **dentro** dela. Step `parallel_safe: true` fica **fora**.
 _Avoid_: lock, semáforo, região crítica (sem qualificar)
 
@@ -280,7 +281,7 @@ _Avoid_: thread-safe (conceito distinto)
 Policy de git (`policies.git.on_merge_conflict`): `escalate` (default) | `rebase`. `rebase` = o motor faz `git rebase <parent>` + re-tenta o merge uma vez dentro do mutex antes de cair no `on_fail`. Config decide; mecânica é do motor (AD-1).
 _Avoid_: conflict resolution (sem qualificar o mecanismo)
 
-**Cancelamento** (*cancellation*):
+**Cancelamento** (_cancellation_):
 `session.cancel()` (ACP `session/cancel`, por `sessionId`, sibling-safe, cooperativo). Na parada dura (`abort_loop`), `child.kill()` do processo do Agente é o **fallback de timeout** (a Run inteira encerra). Distinto do **Stop signal** (`.loopy.stop`, que encerra **após** a Task corrente). `child.kill()` **nunca** para abortar uma Task isolada.
 _Avoid_: kill, interrupção (para o mecanismo cooperativo)
 
@@ -332,8 +333,12 @@ A 4ª aba da GUI menubar (4º segmento do `ViewSwitcher`) e a **única leitura**
 _Avoid_: Relatório de execução, Relatório de change (aposentados); dashboard (é a TUI de execução)
 
 **Change**:
-Termo do **devy**, adotado no motor **apenas** como par de valores de config derivados: `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. O motor não tem lógica de change além de (a) interpolar `${change.*}` e (b) escrever onde o yml mandar. Quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`. (Cf. AD-1.)
-_Avoid_: usar "change" como conceito do motor — é puramente derivado do path
+O conjunto `spec.md`/`plan.md`/`todo.md` de uma unidade de trabalho, na pasta `.harn/devy/changes/<id>-<slug>/`. Termo do **devy**, com **dois papéis** no motor:
+
+- **Derivado** (telemetria/interpolação): par de config `change.dir = dirname(inputs.todo)`, `change.id = basename(change.dir)`. `${change.*}` interpola e a telemetria agrega por ele; quando `dirname` é `.`/vazio (backlog na raiz), `change.id` cai para `config.name`.
+- **Criado** (C-0018, ADR-0012): a **Entrevista** (`loopy interview`) agora **produz** uma Change — grava os três `.md` na pasta. Foi essa promoção que tirou "puramente derivado do path" do conceito.
+
+_Avoid_: reduzir "change" a "só um path derivado" — desde a C-0018 o motor também a **cria** (ver _Entrevista_)
 
 ## Dashboard e TUI de execução (ADR-0005)
 
@@ -352,7 +357,7 @@ A renderização do **Grafo de tasks** (ADR-0004) com layout computado por **dag
 _Avoid_: DAG na tela, diagrama
 
 **GraphGeometry**:
-A saída **pura e renderer-agnóstica** de **`computeDagreLayout`** (`layoutGraph` é só um wrapper fino sobre ela): posição de cada nó (em célula) + os segmentos das arestas (dos `points[]` do dagre), em coordenadas inteiras de célula. **Toda** a matemática de layout mora aqui — e a promessa se cumpriu: o renderer Ink a rasteriza para ASCII, e a **Native UI** importa a *mesma* função (subpath export `loopy/tui/view`) e escala célula→pixel para posicionar os nós do React Flow. Um layout, dois renderers.
+A saída **pura e renderer-agnóstica** de **`computeDagreLayout`** (`layoutGraph` é só um wrapper fino sobre ela): posição de cada nó (em célula) + os segmentos das arestas (dos `points[]` do dagre), em coordenadas inteiras de célula. **Toda** a matemática de layout mora aqui — e a promessa se cumpriu: o renderer Ink a rasteriza para ASCII, e a **Native UI** importa a _mesma_ função (subpath export `loopy/tui/view`) e escala célula→pixel para posicionar os nós do React Flow. Um layout, dois renderers.
 _Avoid_: layout (sozinho), coordenadas; `layoutGraph` (é o wrapper — a fonte é `computeDagreLayout`)
 
 **Native UI** (redefinida no C-0009 — ADR-0007):
@@ -392,5 +397,29 @@ O protocolo **NDJSON duplex** entre motor e Native UI: uma linha JSON por mensag
 _Avoid_: IPC, canal, socket (não há socket); "API" (não é RPC nem HTTP)
 
 **Frame**:
-Uma linha do Transport, discriminada pelo campo `frame`. Três classes: **`event`** (wrapper de um `StoreEvent` — o mesmo do Emit seam), **`control`** (fatos do Run que não são StoreEvent: `run_started`, `run_finished`, `approval_requested`) e **`command`** (a única direção UI→motor: `approval_decision`). Parse é **fail-soft** (linha inválida vira valor de erro, nunca exceção — AD-5).
+Uma linha do Transport, discriminada pelo campo `frame`. Três classes: **`event`** (wrapper de um `StoreEvent` — o mesmo do Emit seam), **`control`** (fatos do Run que não são StoreEvent: `run_started`, `run_finished`, `approval_requested`) e **`command`** (UI→motor: `approval_decision`). A **Entrevista** (C-0018, ADR-0012) estende a taxonomia de forma **aditiva** — seis `control` e três `command` novos (ver _Entrevista_), sem mudar a shape de nenhum frame existente. Parse é **fail-soft** (linha inválida vira valor de erro, nunca exceção — AD-5).
 _Avoid_: mensagem, payload, evento (solto — `event` é **uma** das três classes)
+
+## Autoria de Change: a Entrevista (C-0018, ADR-0012)
+
+Como o motor produz os inputs de um Run (`spec.md`/`plan.md`/`todo.md`) — a etapa **antes** do Backlog. Estende o Transport (ADR-0007) com frames aditivos e é a primeira vez que o motor **cria** uma Change em vez de só derivá-la de um path (ver _Change_). Roteiro **fora** do motor: as perguntas são do `/devy:*` (D1/AD-1); o motor só impõe a forma (o Envelope).
+
+**Entrevista** (_Interview_):
+A conversa dirigida por um **Agente** ACP que produz os inputs de uma **Change**, sem sair da GUI — uma pergunta por vez, com opção recomendada e o porquê. Ocupa a aba `Specs`. Rodada pelo subcomando `loopy interview` (**um processo por Fase** — D13); o motor não tem o roteiro, só o Envelope. Trilha `feature` termina com os três `.md` gravados; `bug`/`débito` termina num hand-off que não grava nada.
+_Avoid_: chat, wizard, autoria (a aba chama-se "Specs"; o conceito é a Entrevista)
+
+**Trilha** (_track_):
+O tipo de demanda que a Entrevista tria na abertura e que decide o desfecho: **`feature`** (e "outro tipo…", que cai em `feature` — D24) percorre as **Fases** e **produz arquivos**; **`bug`**/**`débito`** vai até um **hand-off** estático (monta um comando `/devy:debug` copiável) e **não grava nada** — nunca spawna processo.
+_Avoid_: tipo, categoria; e não use "modo" (colide com o Modo do Agente)
+
+**Fase** (_phase_):
+Um dos três estágios da trilha `feature`: `spec` (`/devy:spec`), `refine` (`/devy:refine`) e `plan` (`/devy:plan spec.md`) — a única tabela fase→comando que o motor possui (`src/interview/phases.ts`). **Uma Sessão e um processo `loopy interview` por Fase** (D13): a Fase termina, o processo sai com 0, o próximo passo spawna outro — então o Gate humano entre Fases e a retomada após fechar o app são **o mesmo código**. Distinta de **Step** (unidade do Pipeline) e de **Fase de plano** (as fases do `plan.md`).
+_Avoid_: etapa, estágio, Step (é do Pipeline)
+
+**Envelope** (_envelope_):
+A única instrução que o motor **prepende** ao comando `/devy:*` delegado. Fala de **forma** — encerre o turno com um bloco `<loopy-ask>`, uma pergunta por turno, `<loopy-done/>` ao terminar —, **nunca de conteúdo** (AD-1). Turno 1 leva o Envelope completo; turnos seguintes, só um lembrete de uma linha (D15); o wrap-up (D17) é o turno final que pede o encerramento. Puro e testável char-a-char (`src/interview/envelope.ts`).
+_Avoid_: prompt, instrução de sistema, roteiro (o roteiro é do `/devy:*`, não do Envelope)
+
+**Pergunta** (_ask_):
+O bloco `<loopy-ask>{json}</loopy-ask>` com que o Agente encerra um turno para pedir uma decisão: `prompt`, `options` (exatamente uma `recommended`, com o `why`), `otherLabel` e — quando leu o código em vez de perguntar — `finding`+`source` (D10). Um turno que **não** emite o bloco degrada para **pergunta aberta** (texto do Agente + campo livre — D3, o fallback, não o padrão). Parseada por `parseAsk` (puro, nunca lança — AD-5).
+_Avoid_: card, cartão (é a apresentação na GUI); question (use "Pergunta")

@@ -9,11 +9,11 @@ Duas responsabilidades hoje:
 - `startUi({ flags, … })` → `Ui` (`{ ui, tui, dispatch, stop, transport? }`). **Dois eixos ortogonais**, não uma escolha binária:
   - *Renderer*: Ink **só** quando `flags.tui` (sem `--no-tui`) E stdout é TTY real E um `mount` foi injetado; senão, fallback de linha.
   - *`--emit-events`*: faz **fan-out** sobre qualquer um dos dois renderers, emitindo NDJSON no **stdout** e redirecionando todo texto de log para **stderr** (stdout vira canal de dados). É o gate de toda a camada de transporte.
-- **`transport.ts` (ADR-0007)** — o contrato com a Native UI. Frames discriminados por `frame`:
+- **`transport.ts` (ADR-0007, estendido pela ADR-0012)** — o contrato com a Native UI. Frames discriminados por `frame`:
   - `event` — wrapper de `StoreEvent` (motor → UI);
-  - `control` — `run_started` / `run_finished` / `approval_requested`;
-  - `command` — `approval_decision` (UI → motor, por stdin).
-  `parseTransportLine` **nunca lança** (erro como valor — AD-5); `createEventTransport(sink)` é best-effort e **engole exceção do sink** (AD-1: consumidor quebrado nunca perturba o Run).
+  - `control` — **Run**: `run_started` / `run_finished` / `approval_requested`; **Entrevista** (C-0018): `phase_started` / `change_resolved` / `question_asked` / `agent_activity` / `phase_finished` / `interview_failed`;
+  - `command` — **Run**: `approval_decision`; **Entrevista**: `question_answer` / `phase_wrap_up` / `interview_cancel` (UI → motor, por stdin).
+  Os frames da Entrevista são **aditivos** — nenhum frame existente muda de shape, então `apps/menubar/` continua compilando. `Phase` e `AskOption` são declarados **aqui** (aparecem dentro dos frames; o barrel é o subpath export que a GUI consome). `parseTransportLine` **nunca lança** (erro como valor — AD-5) e é **genérico** sobre o payload (variante nova de control/command não exige tocar o parser); `createEventTransport(sink)` é best-effort e **engole exceção do sink** (AD-1: consumidor quebrado nunca perturba o Run).
 - `UiPort` (aprovação) tem **três** transportes: `--yes` curto-circuita (auto-aprova); sob `--emit-events` a decisão vem por **stdin NDJSON** (`createStdinApproval`, `approval.ts`); senão TUI usa `ApprovalController` e o fallback usa `readline`.
 - `store.ts` — `reduce`/`initialState`, **14 variantes de `StoreEvent`** (`pipeline_declared`, `edges_set`, `task_registered`, `task_started`, `step_started`, `attempt_started`, `check_started`, `check_finished`, `stream_chunk`, `acp_traffic`, `usage_sample`, `step_finished`, `task_finished`, **`warning`** — ADR-0008), selectors (`readyTasks`/`runningTasks`/`blockedTasks`/`skippedTasks`), `ACP_LOG_CAP` e `WARNINGS_CAP`. `StoreState` inclui `warnings: readonly WarningEntry[]` (ring bounded) e `StepState.warned?: boolean`.
 - `MountApp` (Ink) é **injetado** por `mount.tsx` — `start.ts`/`store.ts`/`view.ts`/`transport.ts`/`line-reporter.ts` nunca carregam React.
