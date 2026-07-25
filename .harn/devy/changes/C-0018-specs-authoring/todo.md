@@ -210,7 +210,7 @@
 
 ## Fase 4 — A GUI
 
-- [ ] T-009: `interview-state.ts` — o redutor puro do fluxo
+- [x] T-009: `interview-state.ts` — o redutor puro do fluxo
     `apps/menubar/src/specs/interview-state.ts`: `advance(state, event)` **puro** — sem I/O, sem
     React, sem `Date.now()` (AD-6, o mesmo padrão de `applyLine`, `groupByStep`, `configToStore`).
     Estados: `triage` → `describe` → `phase` (`running` | `asking`) → `gate` → `saved`; trilhas
