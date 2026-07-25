@@ -232,7 +232,7 @@
     Size: M
     Risk: L
 
-- [ ] T-010: `useInterviewProcess.ts` — a ponte com o processo `interview://`
+- [x] T-010: `useInterviewProcess.ts` — a ponte com o processo `interview://`
     `apps/menubar/src/specs/useInterviewProcess.ts`: hook que spawna `loopy interview` via
     `invoke("start_interview", …)`, escuta `interview://line|stderr|exit`, parseia cada linha
     com `parseTransportLine` (do motor — **não reimplementar**) e alimenta o `advance` do T-009;
