@@ -13,6 +13,7 @@
 | 0009 | ["Concorrência derivada do DAG: concurrency auto e max_concurrency"](./0009-concorrencia-derivada-do-dag.md) | accepted | 2026-07-14 |  |
 | 0010 | ["Catálogo de Agentes: o argv por `preset`, as capabilities por sondagem"](./0010-catalogo-de-agentes-argv-por-preset.md) | accepted | 2026-07-14 |  |
 | 0011 | ["Telemetria em SQLite: persistência insert-only e granularidade por-Tentativa (estende a ADR-0003)"](./0011-telemetria-sqlite-insert-only-e-granularidade-por-tentativa.md) | accepted | 2026-07-15 |  |
+| 0012 | ["Autoria de Change via Entrevista delegada"](./0012-autoria-de-change-via-entrevista.md) | accepted | 2026-07-25 |  |
 
 ## Changelog
 
@@ -26,5 +27,6 @@
 - 2026-07-14 — ADR-0008 created — loopy-bot
 - 2026-07-14 — ADR-0009 created — loopy-bot
 - 2026-07-14 — ADR-0010 created — loopy-bot
-- 2026-07-15 — ADR-0011 created
+- 2026-07-15 — ADR-0011 created — loopy-bot
+- 2026-07-25 — ADR-0012 created
 
