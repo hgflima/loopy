@@ -40,7 +40,7 @@
     Size: S
     Risk: M
 
-- [ ] T-002: `parse-ask.ts` — turno do Agente → ask | change | done | open
+- [x] T-002: `parse-ask.ts` — turno do Agente → ask | change | done | open
     `src/interview/parse-ask.ts`: função **pura** (AD-6) que lê o texto de um turno e devolve
     o que ele pede, exatamente pela tabela da spec: `<loopy-ask>{json válido}</loopy-ask>` →
     `{kind:"ask", question}`; `<loopy-change dir="…"/>` → `{kind:"change", dir}` — **pode
