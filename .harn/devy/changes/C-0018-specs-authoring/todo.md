@@ -58,7 +58,7 @@
     Size: S
     Risk: L
 
-- [ ] T-003: `envelope.ts` + `phases.ts` — a instrução de forma e a única tabela do motor
+- [x] T-003: `envelope.ts` + `phases.ts` — a instrução de forma e a única tabela do motor
     `src/interview/envelope.ts`: `fullEnvelope(phase, changeDir?)`, `reminder()` e `wrapUp()` —
     **puros**, com o texto literal da seção "O envelope" da `spec.md`. O envelope fala de
     **forma**, nunca de conteúdo (AD-1). Turno 1 leva o texto completo; turnos seguintes, só o
