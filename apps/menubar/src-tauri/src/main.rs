@@ -2,6 +2,7 @@
 
 mod changes;
 mod config;
+mod interview_process;
 #[cfg(target_os = "macos")]
 mod panel;
 mod project_fs;
@@ -10,6 +11,7 @@ mod telemetry;
 
 use changes::{discard_change, read_changes};
 use config::{load_launch_config, save_launch_config};
+use interview_process::InterviewState;
 use project_fs::{probe_agent, read_backlog, read_capabilities_cache, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
 use telemetry::{
@@ -51,6 +53,35 @@ fn send_command(
 
 #[tauri::command]
 fn stop_sidecar(state: tauri::State<'_, SidecarState>) -> Result<(), String> {
+    state.stop()
+}
+
+// ---------------------------------------------------------------------------
+// Interview commands (C-0018 / T-008) — a second managed process for the Specs
+// tab's Interview. Deliberately separate from the sidecar: starting one must
+// NOT kill an in-flight Run (spec Boundary "Never").
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+fn start_interview(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, InterviewState>,
+    dir: String,
+    args: Vec<String>,
+) -> Result<(), String> {
+    state.start(&app, &dir, args)
+}
+
+#[tauri::command]
+fn send_interview_command(
+    state: tauri::State<'_, InterviewState>,
+    payload: String,
+) -> Result<(), String> {
+    state.send_command(&payload)
+}
+
+#[tauri::command]
+fn stop_interview(state: tauri::State<'_, InterviewState>) -> Result<(), String> {
     state.stop()
 }
 
@@ -208,6 +239,7 @@ fn main() {
 
     builder
         .manage(SidecarState::new())
+        .manage(InterviewState::new())
         .setup(|app| {
             // Start as accessory on macOS (no Dock icon, menu bar only)
             #[cfg(target_os = "macos")]
@@ -294,6 +326,11 @@ fn main() {
             start_sidecar,
             send_command,
             stop_sidecar,
+            // Interview process (C-0018 / T-008): a second managed process for
+            // the Specs tab that never kills the Run's sidecar.
+            start_interview,
+            send_interview_command,
+            stop_interview,
             show_main_window,
             hide_main_window,
             show_about_window,
