@@ -252,7 +252,7 @@
     Size: M
     Risk: M
 
-- [ ] T-011: Componentes da Entrevista + `specs.css`
+- [x] T-011: Componentes da Entrevista + `specs.css`
     `apps/menubar/src/specs/`: `QuestionCard.tsx` (cartão de pergunta — opções com detalhe de
     uma linha, badge `RECOMENDADA` em **exatamente uma**, o bloco `Porquê:` separado por
     hairline, `finding` + `source` quando o Agente leu o código em vez de perguntar, e o escape
