@@ -76,6 +76,34 @@
   min-height: 0;
 }
 
+/* Outcome sections inside a terminal column ("Fim"). Quieter than the column
+   header: no border, no uppercase weight of its own beyond the label token. */
+.kanban-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kanban-section + .kanban-section {
+  margin-top: var(--sp-sm);
+}
+
+.kanban-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 2px;
+  margin: 0;
+  color: var(--ink-tertiary);
+  text-transform: uppercase;
+  font-weight: inherit;
+}
+
+.kanban-section-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
 .kanban-card {
   display: flex;
   align-items: flex-start;

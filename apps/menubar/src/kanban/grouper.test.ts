@@ -108,6 +108,46 @@ describe("groupByStep", () => {
     expect(groupByStep(s).find((c) => c.id === "fim")!.cards).toHaveLength(4);
   });
 
+  it("splits Fim into outcome sections, done first and skipped apart from it", () => {
+    const s = store(
+      [
+        task("T-001", "A", { status: "escalated" }),
+        task("T-002", "B", { status: "skipped" }),
+        task("T-003", "C", { status: "done" }),
+        task("T-004", "D", { status: "skipped" }),
+      ],
+      [{ id: "build", type: "shell" }],
+    );
+    const fim = groupByStep(s).find((c) => c.id === "fim")!;
+
+    expect(fim.sections?.map((sec) => [sec.status, sec.cards.length])).toEqual([
+      ["done", 1],
+      ["skipped", 2],
+      ["escalated", 1],
+    ]);
+    // `cards` stays flat but follows the section order (header count + goto
+    // detection read it and know nothing about sections).
+    expect(fim.cards.map((c) => c.taskId)).toEqual([
+      "T-003",
+      "T-002",
+      "T-004",
+      "T-001",
+    ]);
+  });
+
+  it("omits sections when Fim holds a single outcome", () => {
+    const s = store(
+      [
+        task("T-001", "A", { status: "done" }),
+        task("T-002", "B", { status: "done" }),
+      ],
+      [{ id: "build", type: "shell" }],
+    );
+    const fim = groupByStep(s).find((c) => c.id === "fim")!;
+    expect(fim.sections).toBeUndefined();
+    expect(fim.cards).toHaveLength(2);
+  });
+
   it("escalated task carries failedAtStepId", () => {
     const s = store(
       [

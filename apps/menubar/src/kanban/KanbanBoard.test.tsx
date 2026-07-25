@@ -328,3 +328,36 @@ describe("KanbanBoard — orphan refs", () => {
     expect(getByTestId("orphan-banner").textContent).toContain("deploy");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fim — outcome sections (skipped must not read as done)
+// ---------------------------------------------------------------------------
+
+describe("KanbanBoard — Fim outcome sections", () => {
+  it("labels each outcome inside Fim, with its own count", () => {
+    const s = store(
+      [
+        task("T-001", "A", "done"),
+        task("T-002", "B", "skipped"),
+        task("T-003", "C", "skipped"),
+      ],
+      [{ id: "build", type: "shell" }],
+    );
+    const { getByTestId } = render(<KanbanBoard store={s} />);
+
+    expect(getByTestId("section-fim-done").textContent).toContain("Concluídas");
+    expect(getByTestId("section-fim-skipped").textContent).toContain("Puladas");
+    expect(getByTestId("section-fim-skipped").textContent).toContain("2");
+  });
+
+  it("renders no section headers when Fim holds a single outcome", () => {
+    const s = store(
+      [task("T-001", "A", "done"), task("T-002", "B", "done")],
+      [{ id: "build", type: "shell" }],
+    );
+    const { queryByTestId, container } = render(<KanbanBoard store={s} />);
+
+    expect(queryByTestId("section-fim-done")).toBeNull();
+    expect(container.querySelectorAll(".kanban-card")).toHaveLength(2);
+  });
+});

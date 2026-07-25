@@ -18,7 +18,7 @@
  */
 import { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import type { StoreState } from "loopy/tui/store";
-import { groupByStep, type KanbanColumn } from "./grouper";
+import { groupByStep, type KanbanCard, type KanbanColumn } from "./grouper";
 import { detectGotoCards } from "./goto-detect";
 import type { OrphanRef } from "../config/pipeline-edit";
 import { TaskStatusDot } from "../ui";
@@ -137,6 +137,52 @@ export function KanbanBoard({
     setDragOverId(null);
   }, []);
 
+  /** One task card. Shared by the flat and the sectioned column bodies. */
+  const renderCard = useCallback(
+    (card: KanbanCard) => {
+      const isGoto = gotoIds.has(card.taskId);
+      const isSelected = selectedTaskId === card.taskId;
+      const cls = [
+        "kanban-card",
+        isGoto && "kanban-card--goto",
+        isSelected && "kanban-card--selected",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return (
+        <article
+          key={card.taskId}
+          className={cls}
+          role="button"
+          tabIndex={0}
+          aria-pressed={isSelected}
+          onClick={() => onSelectTask?.(card.taskId)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onSelectTask?.(card.taskId);
+            }
+          }}
+        >
+          <TaskStatusDot status={card.status} />
+          <span className="kanban-card-id t-data">{card.taskId}</span>
+          <span className="kanban-card-title t-body">{card.title}</span>
+          {card.failedAtStepId && (
+            <span className="kanban-card-failed t-data">
+              @{card.failedAtStepId}
+            </span>
+          )}
+          {card.warned && (
+            <span className="kanban-card-warned t-data" title="Warning">
+              ⚠
+            </span>
+          )}
+        </article>
+      );
+    },
+    [gotoIds, selectedTaskId, onSelectTask],
+  );
+
   return (
     <div className="kanban-board">
       {/* Orphan refs banner */}
@@ -230,49 +276,22 @@ export function KanbanBoard({
               )}
             </header>
             <div className="kanban-column-cards">
-              {col.cards.map((card) => {
-                const isGoto = gotoIds.has(card.taskId);
-                const isSelected = selectedTaskId === card.taskId;
-                const cls = [
-                  "kanban-card",
-                  isGoto && "kanban-card--goto",
-                  isSelected && "kanban-card--selected",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
-                return (
-                  <article
-                    key={card.taskId}
-                    className={cls}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={isSelected}
-                    onClick={() => onSelectTask?.(card.taskId)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelectTask?.(card.taskId);
-                      }
-                    }}
-                  >
-                    <TaskStatusDot status={card.status} />
-                    <span className="kanban-card-id t-data">{card.taskId}</span>
-                    <span className="kanban-card-title t-body">
-                      {card.title}
-                    </span>
-                    {card.failedAtStepId && (
-                      <span className="kanban-card-failed t-data">
-                        @{card.failedAtStepId}
-                      </span>
-                    )}
-                    {card.warned && (
-                      <span className="kanban-card-warned t-data" title="Warning">
-                        ⚠
-                      </span>
-                    )}
-                  </article>
-                );
-              })}
+              {col.sections
+                ? col.sections.map((section) => (
+                    <div className="kanban-section" key={section.status}>
+                      <h4
+                        className="kanban-section-title t-label"
+                        data-testid={`section-${col.id}-${section.status}`}
+                      >
+                        {section.label}
+                        <span className="kanban-section-count">
+                          {section.cards.length}
+                        </span>
+                      </h4>
+                      {section.cards.map(renderCard)}
+                    </div>
+                  ))
+                : col.cards.map(renderCard)}
             </div>
           </section>
         );

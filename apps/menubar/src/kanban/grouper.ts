@@ -31,22 +31,48 @@ export interface KanbanCard {
   readonly warned?: boolean;
 }
 
+/**
+ * A labelled run of cards inside a column. Only "Fim" uses it today: the
+ * column is terminal for four *different* outcomes, and a `skipped` task
+ * (never ran — a dependency broke first) must not read as a `done` one.
+ */
+export interface KanbanSection {
+  readonly status: TaskStatus;
+  readonly label: string;
+  readonly cards: KanbanCard[];
+}
+
 export interface KanbanColumn {
   readonly id: string;
   readonly title: string;
+  /** Every card in the column, flat and in render order. */
   readonly cards: KanbanCard[];
+  /**
+   * Optional breakdown of `cards` by outcome, same order. Present only when
+   * the column holds more than one outcome — with a single one the column
+   * header already says everything, and a lone section header is noise.
+   */
+  readonly sections?: readonly KanbanSection[];
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const TERMINAL: ReadonlySet<TaskStatus> = new Set([
-  "done",
-  "escalated",
-  "skipped",
-  "paused",
-]);
+/**
+ * The terminal outcomes, in the order they read inside "Fim": what shipped
+ * first, what never ran second, what needs a human last.
+ */
+const TERMINAL_ORDER: readonly (readonly [TaskStatus, string])[] = [
+  ["done", "Concluídas"],
+  ["skipped", "Puladas"],
+  ["escalated", "Escalonadas"],
+  ["paused", "Pausadas"],
+];
+
+const TERMINAL: ReadonlySet<TaskStatus> = new Set(
+  TERMINAL_ORDER.map(([status]) => status),
+);
 
 function toCard(task: TaskState): KanbanCard {
   const fid = failedStepId(task);
@@ -93,6 +119,30 @@ export function groupByStep(state: StoreState): KanbanColumn[] {
       title: s.id,
       cards: stepBuckets.get(s.id)!,
     })),
-    { id: "fim", title: "Fim", cards: fim },
+    endColumn(fim),
   ];
+}
+
+/**
+ * Build the "Fim" column, splitting its cards by outcome.
+ *
+ * `cards` stays flat (and is reordered to match the sections) so callers that
+ * only care about membership — the header count, `detectGotoCards` — need to
+ * know nothing about sections.
+ */
+function endColumn(cards: readonly KanbanCard[]): KanbanColumn {
+  const sections = TERMINAL_ORDER.map(([status, label]) => ({
+    status,
+    label,
+    cards: cards.filter((c) => c.status === status),
+  })).filter((s) => s.cards.length > 0);
+
+  const ordered = sections.flatMap((s) => s.cards);
+
+  return {
+    id: "fim",
+    title: "Fim",
+    cards: ordered,
+    ...(sections.length > 1 && { sections }),
+  };
 }
