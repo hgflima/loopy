@@ -287,6 +287,30 @@ describe("buildInterviewArgs", () => {
       "low",
     ]);
   });
+
+  it("appends --demand last (the spec-phase turn-1 seed)", () => {
+    expect(
+      buildInterviewArgs({
+        dir: "/p",
+        phase: "spec",
+        agent: "claude",
+        demand: "um editor visual de specs",
+      }),
+    ).toEqual([
+      "--phase",
+      "spec",
+      "--agent",
+      "claude",
+      "--demand",
+      "um editor visual de specs",
+    ]);
+  });
+
+  it("omits --demand when the demand is empty (bare /devy:spec)", () => {
+    expect(
+      buildInterviewArgs({ dir: "/p", phase: "spec", demand: "" }),
+    ).toEqual(["--phase", "spec"]);
+  });
 });
 
 // ---------------------------------------------------------------------------

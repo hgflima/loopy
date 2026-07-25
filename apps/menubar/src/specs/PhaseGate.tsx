@@ -14,6 +14,7 @@
 import type { Phase } from "loopy/tui/transport";
 import type { GateChoice, GateOption } from "./interview-state";
 import { Button } from "../ui";
+import { WrittenFiles } from "./WrittenFiles";
 import "./specs.css";
 
 /** pt-BR labels for the gate choices; the reducer deals only in English keys. */
@@ -63,25 +64,11 @@ export function PhaseGate({
           </span>
           {PHASE_LABEL[phase]} gravada
         </p>
-        {changeDir && <p className="spec-gate__dir t-data">{changeDir}</p>}
-        {files.length > 0 && (
-          <ul className="spec-gate__files">
-            {files.map((f) => (
-              <li className="spec-gate__file" key={f}>
-                <span className="spec-gate__file-name t-data">{f}</span>
-                {onOpenFile && (
-                  <Button
-                    variant="ghost"
-                    className="spec-gate__open"
-                    onClick={() => onOpenFile(f)}
-                  >
-                    Abrir
-                  </Button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+        <WrittenFiles
+          changeDir={changeDir}
+          files={files}
+          onOpenFile={onOpenFile}
+        />
       </div>
 
       <div className="spec-gate__actions">

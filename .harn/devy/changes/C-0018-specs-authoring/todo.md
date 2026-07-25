@@ -142,12 +142,17 @@
     `src/index.ts`: registrar `interview` ao lado do `probe-agent` (`:1593`) — o commander casa
     subcomando **antes** do `[dir]` posicional, então não há ambiguidade (mesma mecânica do
     T-008 original). Assinatura: `loopy interview <dir> --emit-events [--change <id>]
-    [--phase <spec|refine|plan>] [--agent <preset>] [--model <m>] [--effort <e>]`.
+    [--phase <spec|refine|plan>] [--demand <texto>] [--agent <preset>] [--model <m>]
+    [--effort <e>]`.
     **Sem `--emit-events`**: imprime a mensagem dizendo que o processo existe para falar com a
     GUI e sai com **código 2** (um modo terminal interativo é outro produto — fora de escopo).
     `--change` + `--phase` entram numa fase específica (D12/D13); sem eles, começa uma Change
-    nova pela fase `spec`. Monta `createEventTransport` sobre o stdout, manda todo texto de log
-    para o **stderr** (stdout é o canal NDJSON — ADR-0007) e chama `runInterview`.
+    nova pela fase `spec`. `--demand <texto>` é a demanda em texto livre do DESCRIBE, repassada
+    a `runInterview({ demand })` — semeia o turno 1 da fase `spec` (`/devy:spec <demanda>`); só
+    a fase `spec` a lê. É o **único** canal que leva a demanda da GUI ao processo (a ponte T-010
+    a emite via `buildInterviewArgs`); sem declarar a flag, o commander rejeita o spawn da GUI.
+    Monta `createEventTransport` sobre o stdout, manda todo texto de log para o **stderr**
+    (stdout é o canal NDJSON — ADR-0007) e chama `runInterview`.
     Zero colisão com o `loopy change` que **já existe** (`src/index.ts:1188`, anotação de
     telemetria) — a D23 escolheu `interview` justamente por isso.
     Acceptance: `interview <dir>` sem `--emit-events` sai 2 com mensagem; `--phase` fora do
