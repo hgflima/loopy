@@ -20,16 +20,28 @@
  * and live-run infra faults become a clear message + non-zero exit, never a
  * stack trace. Invalid config aborts before any effect (it is loaded first).
  */
-import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
-import { Command, CommanderError, InvalidArgumentError } from "commander";
+import {
+  Command,
+  CommanderError,
+  InvalidArgumentError,
+  Option,
+} from "commander";
 import { execa } from "execa";
 import pkg from "../package.json" with { type: "json" };
 import { openAgent, type AgentHandle } from "./acp/agent";
 import type { AgentCapabilities } from "./acp/capabilities";
 import { cacheKey, readCache, writeCache } from "./acp/capabilities-cache";
+import { AGENT_PRESET_IDS, findAgentPreset } from "./acp/catalog";
 import { buildSession } from "./acp/session";
 import { acpTrafficSummary, agentChunkText, usageUpdateUsed } from "./acp/client";
 import {
@@ -59,6 +71,8 @@ import {
   type InitGitRepoOptions,
 } from "./git/worktree";
 import { InterpolationError } from "./interp/resolver";
+import { CHANGES_DIR } from "./interview/phases";
+import { runInterview, type RunInterviewOptions } from "./interview/run";
 import { createLogFactory, type AcpTrafficEntry } from "./logging/logger";
 import {
   createCheckpointPort,
@@ -94,6 +108,7 @@ import { bootstrap } from "./telemetry/schema";
 import { markChangeMerged } from "./telemetry/write";
 import { mountApp } from "./tui/mount";
 import { startUi } from "./tui/start";
+import { createEventTransport, type Phase } from "./tui/transport";
 import type {
   AgentDef,
   ChecksRunnerPort,
@@ -161,6 +176,12 @@ export interface RunHooks {
   readonly approve?: (prompt: string) => Promise<boolean>;
   /** The live outer-loop executor (default: {@link defaultRunLive}). */
   readonly runLive?: RunLive;
+  /**
+   * The interview-phase runner (default: the real {@link runInterview}). Injected
+   * so the `interview` subcommand's CLI logic is testable without spawning an ACP
+   * agent — the same seam pattern as {@link RunHooks.runLive}.
+   */
+  readonly runInterview?: (options: RunInterviewOptions) => Promise<number>;
 }
 
 /** Parse a `--max-iterations` value as a positive integer (commander hook). */
@@ -1196,6 +1217,164 @@ function registerAnnotateCommands(
     .action(async (dir: string, opts) => setExit(await executeChangeStatus(opts, dir, io)));
 }
 
+/** The valid Interview phases — mirrors the `Phase` union for commander `.choices`. */
+const INTERVIEW_PHASES: readonly Phase[] = ["spec", "refine", "plan"];
+
+/**
+ * Resolve a Change id (e.g. `C-0018`) to its dir **relative to the project root**
+ * (`.harn/devy/changes/C-0018-slug`), scanning the changes folder for the subdir
+ * carrying that id — either exactly `<id>` or the usual `<id>-<slug>`. Returns
+ * `undefined` when the folder or a matching subdir is absent: a boundary value,
+ * not a throw (AD-5); the caller turns it into a clean usage error.
+ */
+function resolveChangeDir(dir: string, id: string): string | undefined {
+  try {
+    const entries = readdirSync(resolvePath(dir, CHANGES_DIR), {
+      withFileTypes: true,
+    });
+    const match = entries.find(
+      (e) => e.isDirectory() && (e.name === id || e.name.startsWith(`${id}-`)),
+    );
+    return match !== undefined ? `${CHANGES_DIR}/${match.name}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Register the `interview <dir>` subcommand (C-0018 T-006, D23, ADR-0012).
+ *
+ * It drives ONE phase of an Interview by delegating to {@link runInterview}
+ * (T-005). Commander matches subcommands before the root `[dir]` positional, so
+ * this coexists with `loopy [dir]` and with the pre-existing `loopy change`
+ * (telemetry) without ambiguity — D23 chose the name `interview` precisely to
+ * avoid that collision.
+ *
+ * `--emit-events` is mandatory: the process exists to speak NDJSON with the GUI
+ * (stdout is the data channel; all text goes to stderr — ADR-0007). Without it,
+ * a message + exit 2 (a terminal interactive mode is a different product, out of
+ * scope). `--change` + `--phase` re-enter an existing Change at a specific phase
+ * (D12/D13); with neither, a new Change starts at the `spec` phase.
+ */
+function registerInterviewCommand(
+  program: Command,
+  io: RunIO,
+  hooks: RunHooks,
+  setExit: (code: number) => void,
+): void {
+  program
+    .command("interview")
+    .description(
+      "conduz UMA fase de uma Entrevista (spec/refine/plan) delegada ao harness devy, " +
+        "falando NDJSON com a GUI (ADR-0012); exige --emit-events",
+    )
+    .argument("<dir>", "diretorio do projeto-alvo")
+    .option(
+      "--emit-events",
+      "stdout vira o canal NDJSON e o texto vai pro stderr (obrigatorio)",
+      false,
+    )
+    .option(
+      "--change <id>",
+      "id de uma Change existente (ex.: C-0018); com --phase, entra nessa fase",
+    )
+    .addOption(
+      new Option("--phase <fase>", "fase da Entrevista")
+        .choices([...INTERVIEW_PHASES])
+        .default("spec"),
+    )
+    .addOption(
+      new Option(
+        "--agent <preset>",
+        "preset do agente no catalogo (so presets do catalogo aqui)",
+      )
+        .choices([...AGENT_PRESET_IDS])
+        .default("claude"),
+    )
+    .option("--model <m>", "model por-fase, best-effort (ADR-0008)")
+    .option("--effort <e>", "reasoning effort por-fase, best-effort (ADR-0008)")
+    .exitOverride()
+    .configureOutput({
+      writeOut: (str) => io.out(str),
+      writeErr: (str) => io.err(str),
+    })
+    .action(
+      async (
+        dir: string,
+        opts: {
+          emitEvents: boolean;
+          change?: string;
+          phase: Phase;
+          agent: string;
+          model?: string;
+          effort?: string;
+        },
+      ) => {
+        // Without --emit-events the process has no reason to exist: stdout is the
+        // NDJSON channel to the GUI, and a terminal interactive mode is a different
+        // product (out of scope). Message on stderr keeps stdout clean; exit 2.
+        if (!opts.emitEvents) {
+          io.err(
+            "loopy: `interview` existe para falar com a GUI e exige --emit-events " +
+              "(o stdout é o canal NDJSON; um modo terminal interativo é outro produto).\n",
+          );
+          setExit(2);
+          return;
+        }
+
+        // Preset → adapter argv. `.choices` already rejects unknowns, so this
+        // lookup never misses; the guard is belt-and-suspenders (AD-5), not flow.
+        const preset = findAgentPreset(opts.agent);
+        if (preset === undefined) {
+          io.err(
+            `loopy: preset de agente desconhecido: "${opts.agent}" ` +
+              `(conhecidos: ${AGENT_PRESET_IDS.join(", ")}).\n`,
+          );
+          setExit(1);
+          return;
+        }
+
+        // refine/plan re-enter an existing Change, so they need --change (D12/D13);
+        // only the spec phase creates a new Change and resolves its dir itself (D10).
+        let changeDir: string | undefined;
+        if (opts.change !== undefined) {
+          changeDir = resolveChangeDir(dir, opts.change);
+          if (changeDir === undefined) {
+            io.err(
+              `loopy: change "${opts.change}" não encontrada em ${CHANGES_DIR}/ sob "${dir}".\n`,
+            );
+            setExit(1);
+            return;
+          }
+        } else if (opts.phase !== "spec") {
+          io.err(
+            `loopy: a fase "${opts.phase}" exige --change <id> — a Change já existe ` +
+              "(só a fase spec cria uma nova).\n",
+          );
+          setExit(1);
+          return;
+        }
+
+        // stdout is the NDJSON channel (ADR-0007); frames go through the transport,
+        // never plain text. Delegate to runInterview and forward its exit code.
+        const transport = createEventTransport((line) => io.out(line));
+        const doRun = hooks.runInterview ?? runInterview;
+        setExit(
+          await doRun({
+            dir,
+            phase: opts.phase,
+            ...(changeDir !== undefined ? { changeDir } : {}),
+            agent: opts.agent,
+            command: preset.command,
+            ...(opts.model !== undefined ? { model: opts.model } : {}),
+            ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
+            transport,
+          }),
+        );
+      },
+    );
+}
+
 /**
  * Pick the `--clean` target: explicit id, or the single paused/running entry.
  * Returns the task id on success, or an error message on ambiguity/absence.
@@ -1658,6 +1837,11 @@ export async function run(
         }
       },
     );
+
+  // C-0018 T-006 (D23): the `interview` subcommand — drives one Interview phase.
+  registerInterviewCommand(program, io, hooks, (code) => {
+    exitCode = code;
+  });
 
   // T-008 (C-0017): telemetry annotation subcommands (verdict/bug/change).
   registerAnnotateCommands(program, io, (code) => {
