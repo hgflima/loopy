@@ -17,7 +17,7 @@
  * too (not just in the Config tab), the Save affordance lives here, next to the
  * tabs, so it is visible from every view. Fail-closed: disabled while errors exist.
  */
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import type { StoreState } from "loopy/tui/store";
 import type { ConfigDraftAPI } from "../config/useConfigDraft";
@@ -73,6 +73,12 @@ interface ViewSwitcherProps {
   onReorderStep?: (from: number, to: number) => void;
   /** Orphan refs for highlighting (idle only, T-012). */
   orphanRefs?: readonly OrphanRef[];
+  /**
+   * "Abrir o board" from the Specs tab's saved screen (D11, T-015). The App
+   * patches `inputs.*` (it owns `configDraft`); switching the view to the Kanban
+   * board is ours (we own `view`) — both happen in one gesture.
+   */
+  onOpenBoard?: (changeDir: string) => void;
 }
 
 export function ViewSwitcher({
@@ -90,8 +96,19 @@ export function ViewSwitcher({
   onRemoveStep,
   onReorderStep,
   orphanRefs,
+  onOpenBoard,
 }: ViewSwitcherProps) {
   const [view, setView] = useState<ViewId>("kanban");
+
+  // "Abrir o board" (D11): let the App repoint inputs.* on the draft, then reveal
+  // the Kanban board so the human sees the just-written backlog.
+  const handleOpenBoard = useCallback(
+    (changeDir: string) => {
+      onOpenBoard?.(changeDir);
+      setView("kanban");
+    },
+    [onOpenBoard],
+  );
 
   return (
     <div className="view-switcher">
@@ -188,7 +205,7 @@ export function ViewSwitcher({
         className="view-switcher__pane"
         style={{ display: view === "specs" ? "flex" : "none" }}
       >
-        <SpecsPane dir={dir} runActive={runActive} />
+        <SpecsPane dir={dir} runActive={runActive} onOpenBoard={handleOpenBoard} />
       </div>
     </div>
   );

@@ -354,7 +354,7 @@
     Size: M
     Risk: H
 
-- [ ] T-015: D11 — "Abrir o board" repõe `inputs.{spec,plan,todo}` no draft
+- [x] T-015: D11 — "Abrir o board" repõe `inputs.{spec,plan,todo}` no draft
     Sem isto o SC8 é impossível: o board lê o backlog em `inputs.todo`
     (`apps/menubar/src/config/useConfigDraft.ts:154-174`), e os três `inputs.*` são campos
     **obrigatórios** do schema apontando para a Change **anterior** — o backlog recém-criado
@@ -417,7 +417,7 @@
     Size: M
     Risk: L
 
-- [ ] T-018: Remover o protótipo da `main` (SC17)
+- [x] T-018: Remover o protótipo da `main` (SC17)
     Apagar `apps/menubar/src/authoring-prototype/` inteiro (11 arquivos + `handoff.md`) e
     reverter o bloco `PROTOTYPE gate` de `apps/menubar/src/main.tsx:310-345` — o `IS_PROTOTYPE`,
     o `React.lazy(PrototypeRoute)` e o ramo `PrototypeRoute ? … :` do render, deixando
