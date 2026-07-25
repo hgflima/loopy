@@ -1,8 +1,15 @@
 /**
- * ViewSwitcher — default Kanban, toggles to DepsFlow (graph) or Config (editor).
+ * ViewSwitcher — five segments: Kanban (default), Deps (graph), Config (editor),
+ * Insights (telemetry) and Specs (authoring, C-0018).
  *
- * All three views are kept mounted (hidden via CSS) so state is preserved
- * on switch (acceptance criterion: "sem perder estado").
+ * All views are kept mounted (hidden via CSS) so state is preserved on switch
+ * (acceptance criterion: "sem perder estado").
+ *
+ * **The tab bar is always visible (D20).** It is no longer replaced wholesale by
+ * the EmptyState when a project has no `loopy.yml` — authoring precedes the yml,
+ * and `Specs` must be reachable in exactly that project. Instead the EmptyState
+ * degrades the **Config** tab (its "criar a partir do template" seeds the draft);
+ * Kanban/Deps/Insights show their own empty; `Specs` works normally.
  *
  * The tab bar also hosts the **global save bar**: every edit — a step via the ⋯
  * drawer, an added/removed/reordered column, or a field in the Config tab — writes
@@ -19,16 +26,19 @@ import { KanbanBoard } from "../kanban/KanbanBoard";
 import { DepsFlow } from "../graph/DepsFlow";
 import { ConfigPane } from "../config/ConfigPane";
 import { InsightsPane } from "../insights/InsightsPane";
+import { SpecsPane } from "../specs/SpecsPane";
+import { EmptyState } from "../config/EmptyState";
 import { SegmentedControl, Button, type Segment } from "../ui";
 import "./ViewSwitcher.css";
 
-export type ViewId = "kanban" | "deps" | "config" | "insights";
+export type ViewId = "kanban" | "deps" | "config" | "insights" | "specs";
 
 const SEGMENTS: readonly Segment<ViewId>[] = [
   { id: "kanban", label: "Kanban" },
   { id: "deps", label: "Deps" },
   { id: "config", label: "Config" },
   { id: "insights", label: "Insights" },
+  { id: "specs", label: "Specs" },
 ];
 
 interface ViewSwitcherProps {
@@ -47,6 +57,12 @@ interface ViewSwitcherProps {
    * `idle` sem ele, e os selects de model/effort degradam para texto livre).
    */
   dir?: string;
+  /**
+   * True while a Run is in progress — forwarded to the `Specs` tab, which *warns*
+   * (D22) that authoring a Change dirties the parent and can stop the Run. It
+   * never blocks; the flag is ours, the warning is the pane's.
+   */
+  runActive?: boolean;
   /** Open step editor for a given step id (idle only). */
   onEditStep?: (stepId: string) => void;
   /** Add a new step (idle only, T-012). */
@@ -68,6 +84,7 @@ export function ViewSwitcher({
   maxConcurrency,
   configDraft,
   dir,
+  runActive,
   onEditStep,
   onAddStep,
   onRemoveStep,
@@ -110,7 +127,7 @@ export function ViewSwitcher({
         )}
       </div>
 
-      {/* All three mounted, hidden via display — preserves state on switch */}
+      {/* All panes mounted, hidden via display — preserves state on switch */}
       <div
         className="view-switcher__pane"
         style={{ display: view === "kanban" ? "flex" : "none" }}
@@ -145,11 +162,18 @@ export function ViewSwitcher({
           </div>
         </ReactFlowProvider>
       </div>
+      {/* Config: hosts the EmptyState when the dir has no yml (D20) — the empty
+          state degrades this tab instead of replacing the whole bar. */}
       <div
         className="view-switcher__pane"
         style={{ display: view === "config" ? "flex" : "none" }}
       >
-        {configDraft && <ConfigPane configDraft={configDraft} dir={dir} />}
+        {configDraft &&
+          (configDraft.hasConfig === false ? (
+            <EmptyState onCreateFromTemplate={configDraft.seedFromTemplate} />
+          ) : (
+            <ConfigPane configDraft={configDraft} dir={dir} />
+          ))}
       </div>
       {/* Insights: 4ª aba, sempre montada (lê o `.db` por Rust; funciona em idle e no run). */}
       <div
@@ -157,6 +181,14 @@ export function ViewSwitcher({
         style={{ display: view === "insights" ? "flex" : "none" }}
       >
         <InsightsPane dir={dir} />
+      </div>
+      {/* Specs: 5ª aba (C-0018, D20), sempre montada — a autoria de spec/plan/todo
+          precede o yml, então funciona com ou sem `loopy.yml`. */}
+      <div
+        className="view-switcher__pane"
+        style={{ display: view === "specs" ? "flex" : "none" }}
+      >
+        <SpecsPane dir={dir} runActive={runActive} />
       </div>
     </div>
   );
