@@ -1277,6 +1277,11 @@ async function runTaskPipeline(
     }
 
     // escalate: explicit "escalate", omitted on_fail, or orphan goto target.
+    // The carry must describe the step that FAILED, not the last successful
+    // one: the resumed run re-enters *this* step and its `${checks.report}`
+    // has to be this failure's report (same rule as the goto branch above).
+    // Keep the previous carry only when the failure produced nothing at all.
+    checksReport = result.report?.text ?? result.output ?? checksReport;
     // Save progress for resume (PC stays at this step).
     deps.checkpoint?.saveProgress(task.id, step.id, visits, checksReport);
     terminal = { ok: false, failedStepId: step.id, reason: result.reason };

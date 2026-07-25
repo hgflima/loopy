@@ -292,6 +292,71 @@ describe("resume — mid fix-loop resume with carry", () => {
     // We check the calls to verify carry was threaded.
     expect(cp.calls.some((c) => c.startsWith("saveProgress:T-1:review"))).toBe(true);
   });
+
+  it("persists the FAILING step's report as the carry on escalate, not the previous step's", async () => {
+    // implement succeeds and produces a report; review fails with its own
+    // report. The checkpoint saved at the escalate must carry *review's*
+    // failure — the resumed run re-enters review and reads `${checks.report}`.
+    const pipeline = [shell("implement"), shell("review")];
+
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline, {
+      escalation: { action: "pause", keep_worktree: true, notify: "stderr" },
+    });
+    const cp = fakeCheckpoint(pipeline);
+
+    const registry = scriptedRegistry(rec, {
+      implement: {
+        ok: true,
+        report: { ok: true, text: "implement: tudo verde", results: [] },
+      },
+      review: {
+        ok: false,
+        reason: "review reprovou",
+        report: {
+          ok: false,
+          text: "review: 3 findings bloqueantes",
+          results: [],
+        },
+      },
+    });
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    const checkpoint = cp.state().tasks["T-1"];
+    expect(checkpoint?.pc).toBe("review");
+    expect(checkpoint?.checksReport).toBe("review: 3 findings bloqueantes");
+  });
+
+  it("falls back to the failing step's output when it produced no report", async () => {
+    const pipeline = [shell("implement"), shell("merge")];
+
+    const rec: Recorder = { order: [] };
+    const { port } = recordingMarkDone();
+    const config = makeConfig(pipeline, {
+      escalation: { action: "pause", keep_worktree: true, notify: "stderr" },
+    });
+    const cp = fakeCheckpoint(pipeline);
+
+    const registry = scriptedRegistry(rec, {
+      implement: {
+        ok: true,
+        report: { ok: true, text: "implement: tudo verde", results: [] },
+      },
+      merge: { ok: false, reason: "merge falhou", output: "CONFLICT (content)" },
+    });
+
+    await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry, markDone: port }),
+      checkpoint: cp.port,
+    });
+
+    expect(cp.state().tasks["T-1"]?.checksReport).toBe("CONFLICT (content)");
+  });
 });
 
 // ---------------------------------------------------------------------------
