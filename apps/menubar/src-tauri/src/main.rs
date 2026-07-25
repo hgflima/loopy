@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod changes;
 mod config;
 #[cfg(target_os = "macos")]
 mod panel;
@@ -7,6 +8,7 @@ mod project_fs;
 mod sidecar;
 mod telemetry;
 
+use changes::{discard_change, read_changes};
 use config::{load_launch_config, save_launch_config};
 use project_fs::{probe_agent, read_backlog, read_capabilities_cache, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
@@ -306,6 +308,10 @@ fn main() {
             write_loopy_yml,
             read_capabilities_cache,
             probe_agent,
+            // Specs authoring bridge (C-0018 / T-007): list + non-destructive
+            // discard of devy Changes.
+            read_changes,
+            discard_change,
             // Telemetry Insights bridge (C-0017 / T-009): SELECT-only reads over
             // the engine's views + one-shot CLI writes (verdict/bug/change).
             read_change_list,

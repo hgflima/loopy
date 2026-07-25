@@ -80,7 +80,7 @@
     Size: S
     Risk: L
 
-- [ ] T-004: Anexos em `.loopy/attachments/` + `promptBlocks` na Sessão
+- [x] T-004: Anexos em `.loopy/attachments/` + `promptBlocks` na Sessão
     `src/interview/attachments.ts`: gravar um anexo em
     `<dir>/.loopy/attachments/<YYYYMMDD-HHmmss>-<nome>` (D19 — o prefixo evita colisão de dois
     `print.png`, e **anexos nunca são apagados**, para nunca quebrar uma referência que o
@@ -161,7 +161,7 @@
 
 ## Fase 3 — A ponte Rust
 
-- [ ] T-007: `changes.rs` — listar e descartar Changes
+- [x] T-007: `changes.rs` — listar e descartar Changes
     `apps/menubar/src-tauri/src/changes.rs` (novo): `ChangeSummary { id, slug, has_spec,
     has_plan, has_todo, task_count, done_count }` (serde snake_case, como o resto de
     `project_fs.rs`).
