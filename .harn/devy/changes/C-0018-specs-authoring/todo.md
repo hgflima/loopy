@@ -304,7 +304,7 @@
     Size: M
     Risk: M
 
-- [ ] T-013: `SpecsPane.tsx` — a aba (lista, seletores, aviso, descarte)
+- [x] T-013: `SpecsPane.tsx` — a aba (lista, seletores, aviso, descarte)
     `apps/menubar/src/specs/SpecsPane.tsx`: a lista de Changes via `read_changes` (T-007) —
     ordenada decrescente, com o estado dos três `.md` e a contagem de tasks —, o botão
     `+ Nova spec`, `Continuar` numa Change parcial (entra na **fase escolhida**, não em `spec` —
