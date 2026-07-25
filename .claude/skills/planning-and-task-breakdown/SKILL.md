@@ -19,6 +19,19 @@ Decompose work into small, verifiable tasks with explicit acceptance criteria. G
 
 **When NOT to use:** Single-file changes with obvious scope, or when the spec already contains well-defined tasks.
 
+## What You Produce
+
+Two files, written **next to the spec**. If the spec lives in `.harn/devy/changes/C-0042-csv-export/`, they go in that folder; if it lives in `docs/specs/`, they go there. The names are exact, because whatever runs the backlog points at them by name:
+
+| File | Content |
+|------|---------|
+| `plan.md` | The narrative — overview, architecture decisions, dependency graph, phases with checkpoints, risks. What a human reads to understand the shape of the work. |
+| `todo.md` | The executable backlog — one entry per task, in the format below. What tooling reads. |
+
+Keep them complementary rather than redundant: `plan.md` explains why the work is shaped this way, `todo.md` carries the tasks themselves. Repeating the full task list in both means they drift apart the first time one is edited.
+
+Both follow the language of the spec — if the spec is in Portuguese, so are they. The field labels (`Deps:`, `Files:`, `Size:`, `Risk:`) stay in English regardless, since the parser matches them as literal prefixes.
+
 ## The Planning Process
 
 ### Step 1: Enter Plan Mode
@@ -78,30 +91,25 @@ Each vertical slice delivers working, testable functionality.
 
 ### Step 4: Write Tasks
 
-Each task follows this structure:
+Each task is a checkbox line at column 0 carrying an id, followed by an indented body:
 
 ```markdown
-## Task [N]: [Short descriptive title]
-
-**Description:** One paragraph explaining what this task accomplishes.
-
-**Acceptance criteria:**
-- [ ] [Specific, testable condition]
-- [ ] [Specific, testable condition]
-
-**Verification:**
-- [ ] Tests pass: `npm test -- --grep "feature-name"`
-- [ ] Build succeeds: `npm run build`
-- [ ] Manual check: [description of what to verify]
-
-**Dependencies:** [Task numbers this depends on, or "None"]
-
-**Files likely touched:**
-- `src/path/to/file.ts`
-- `tests/path/to/test.ts`
-
-**Estimated scope:** [Small: 1-2 files | Medium: 3-5 files | Large: 5+ files]
+- [ ] T-001: Short imperative title
+    What this task delivers and why — one paragraph.
+    Acceptance: a testable condition; another testable condition.
+    Verification: npm test -- --grep "feature-name" && npm run build
+    Deps: none
+    Files: src/path/to/file.ts, tests/path/to/test.ts
+    Size: S
+    Risk: M
 ```
+
+The shape isn't arbitrary — each part of it is load-bearing:
+
+- **The checkbox at column 0 plus the id is what marks a task.** Everything indented below belongs to it, up to the next non-blank line at column 0. Ids are sequential and zero-padded (`T-001`, `T-002`).
+- **The body is handed to whoever implements the task** — it becomes their entire briefing, since they won't have read the spec. `Acceptance` and `Verification` aren't paperwork: they're how the implementer knows when to stop and how they check themselves before claiming done.
+- **One field per line, and `Deps:` holds nothing but comma-separated ids.** The parser cuts the prefix, splits on commas, and silently drops any token that isn't an id — so `Deps: T-001, T-002. Files: x.ts` parses as `["T-001"]`. The second dependency vanishes, the graph flattens, and nothing warns you. Of all the ways to get this format wrong, that one costs the most and shows the least.
+- **No dependencies: leave the line out** (or write `Deps: none`).
 
 ### Step 5: Order and Checkpoint
 
@@ -122,25 +130,38 @@ Add explicit checkpoints:
 - [ ] Review with human before proceeding
 ```
 
-## Task Sizing Guidelines
+## Sizing and Risk
 
-| Size | Files | Scope | Example |
-|------|-------|-------|---------|
-| **XS** | 1 | Single function or config change | Add a validation rule |
-| **S** | 1-2 | One component or endpoint | Add a new API endpoint |
-| **M** | 3-5 | One feature slice | User registration flow |
-| **L** | 5-8 | Multi-component feature | Search with filtering and pagination |
-| **XL** | 8+ | **Too large — break it down further** | — |
+Two independent axes, and conflating them is how dangerous work gets scheduled late. Size tells you whether a task fits in one session. Risk tells you what happens if it goes wrong. A schema migration can touch a single file and still be the most dangerous thing in the plan.
 
-If a task is L or larger, it should be broken into smaller tasks. An agent performs best on S and M tasks.
+**Size** — one ruler, based on how much surface the task moves:
 
-**When to break a task down further:**
+| Size | Files | Example |
+|------|-------|---------|
+| **XS** | 1 | A validation rule, a config value |
+| **S** | 1-2 | One endpoint, one component |
+| **M** | 3-5 | One feature slice |
+| **L** | 5-8 | A multi-component feature |
+
+There is no XL. A task that lands above L isn't a size — it's a signal to split. An agent does its best work at S and M.
+
+**Break a task down further when:**
 - It would take more than one focused session (roughly 2+ hours of agent work)
-- You cannot describe the acceptance criteria in 3 or fewer bullet points
+- You cannot state its acceptance criteria in 3 or fewer bullets
 - It touches two or more independent subsystems (e.g., auth and billing)
-- You find yourself writing "and" in the task title (a sign it is two tasks)
+- You find yourself writing "and" in the title — usually two tasks wearing one hat
 
-## Plan Document Template
+**Risk** — what raises it, independent of size:
+- It writes a **persisted format** (a schema, a file on the user's disk); mistakes outlive the run
+- Failure would be **silent** — nothing in CI or the UI would surface it
+- It's **hard to reverse**: a migration, a published API, a release
+- Much depends on it, so a wrong call propagates outward
+
+A high-risk task earns a cheap spike or confirmation task *before* it, with the real implementation depending on that spike via `Deps:`. The expensive work then starts from a checked assumption instead of a hoped-for one — and when the assumption turns out wrong, you find out in the task that cost nothing.
+
+## `plan.md` Template
+
+Phases reference tasks by id rather than restating them — the tasks themselves live in `todo.md`, and a second copy here would go stale the moment one of them is edited.
 
 ```markdown
 # Implementation Plan: [Feature/Project Name]
@@ -152,72 +173,48 @@ If a task is L or larger, it should be broken into smaller tasks. An agent perfo
 - [Key decision 1 and rationale]
 - [Key decision 2 and rationale]
 
-## Task List
+## Dependency Graph
+[The graph, as a diagram or as an ordered reading of the edges]
 
-### Phase 1: Foundation
-- [ ] Task 1: ...
-- [ ] Task 2: ...
+## Phases
 
-### Checkpoint: Foundation
-- [ ] Tests pass, builds clean
+### Phase 1: Foundation — T-001, T-002
+[What this phase establishes and why it comes first]
+**Checkpoint:** tests pass, builds clean
 
-### Phase 2: Core Features
-- [ ] Task 3: ...
-- [ ] Task 4: ...
+### Phase 2: Core Features — T-003, T-004 (parallel), T-005
+[What becomes possible once the foundation is in]
+**Checkpoint:** end-to-end flow works
 
-### Checkpoint: Core Features
-- [ ] End-to-end flow works
-
-### Phase 3: Polish
-- [ ] Task 5: ...
-- [ ] Task 6: ...
-
-### Checkpoint: Complete
-- [ ] All acceptance criteria met
-- [ ] Ready for review
+### Phase 3: Polish — T-006
+**Checkpoint:** all acceptance criteria met, ready for review
 
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| [Risk] | [High/Med/Low] | [Strategy] |
+| [Risk] | [High/Med/Low] | [Strategy — often "de-risked by T-00N"] |
 
 ## Open Questions
 - [Question needing human input]
 ```
 
-## Parallelization Opportunities
+## Parallelism Is the Default
 
-When multiple agents or sessions are available:
+Nobody asks what can run together — anything whose dependencies are satisfied runs. So what you declare with `Deps:` isn't the parallelism, it's the **serialization**: edges are how you say "not yet".
 
-- **Safe to parallelize:** Independent feature slices, tests for already-implemented features, documentation
-- **Must be sequential:** Database migrations, shared state changes, dependency chains
-- **Needs coordination:** Features that share an API contract (define the contract first, then parallelize)
+That inversion has one consequence worth internalizing:
 
-## Common Rationalizations
+> **Two tasks that edit the same file need an edge between them**, even when they're logically independent.
 
-| Rationalization | Reality |
-|---|---|
-| "I'll figure it out as I go" | That's how you end up with a tangled mess and rework. 10 minutes of planning saves hours. |
-| "The tasks are obvious" | Write them down anyway. Explicit tasks surface hidden dependencies and forgotten edge cases. |
-| "Planning is overhead" | Planning is the task. Implementation without a plan is just typing. |
-| "I can hold it all in my head" | Context windows are finite. Written plans survive session boundaries and compaction. |
+Without one they run concurrently in separate worktrees, never see each other's work, and collide at merge. Rebasing doesn't rescue that — both sides genuinely changed the same region, so a human has to decide. An edge costs a little wall-clock; a merge conflict mid-run costs a person's attention.
 
-## Red Flags
+Beyond shared files, add an edge when a task needs another's output to exist (the migration before the code reading the new column), or when both mutate shared state. Everything else stays unconstrained — and the widest layer of the resulting graph is what determines how many tasks can actually run at once.
 
-- Starting implementation without a written task list
-- Tasks that say "implement the feature" without acceptance criteria
-- No verification steps in the plan
-- All tasks are XL-sized
-- No checkpoints between tasks
-- Dependency order isn't considered
+## Before You Hand It Over
 
-## Verification
-
-Before starting implementation, confirm:
-
-- [ ] Every task has acceptance criteria
-- [ ] Every task has a verification step
-- [ ] Task dependencies are identified and ordered correctly
-- [ ] No task touches more than ~5 files
-- [ ] Checkpoints exist between major phases
+- [ ] Every task has acceptance criteria and a verification step — none says "implement the feature" and leaves it there
+- [ ] Every `Deps:` line holds ids and nothing else, and every id it names exists
+- [ ] Dependency order is right, and any two tasks touching the same file have an edge
+- [ ] No task is above L; high-risk ones sit early and have their spike ahead of them
+- [ ] Checkpoints exist between phases
 - [ ] The human has reviewed and approved the plan

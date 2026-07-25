@@ -1,2 +1,0 @@
-/Users/henriquelima/dev/personal/acp-agentic-loop/.claude/skills/planning-and-task-breakdown-workspace/iteration-1/eval-2-risky-migration-derisk-xl/old_skill/project/.harn/devy/changes/C-0108-user-prefs-schema-v2/plan.md
-/Users/henriquelima/dev/personal/acp-agentic-loop/.claude/skills/planning-and-task-breakdown-workspace/iteration-1/eval-2-risky-migration-derisk-xl/old_skill/project/.harn/devy/changes/C-0108-user-prefs-schema-v2/todo.md
