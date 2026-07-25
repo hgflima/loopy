@@ -574,13 +574,226 @@
 }
 
 /* ======================================================================== *
+ * SpecsPane — the tab: the Changes list, the authoring selector, the warning
+ * ======================================================================== */
+
+.specs-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  padding: var(--sp-lg);
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  min-height: 0;
+  overflow: auto;
+}
+.specs-pane__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+}
+.specs-pane__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+}
+.specs-pane__title {
+  margin: 0;
+  color: var(--ink);
+}
+
+/* The authoring selector — a compact row of probed fields (D16/D18). */
+.specs-pane__authoring {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.specs-pane__authoring .field {
+  min-width: 160px;
+  flex: 1 1 160px;
+}
+
+/* Run-active warning (D22): a quiet, non-blocking strip — the human decides. */
+.specs-pane__warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-sm);
+  font: 12px/1.5 var(--font-ui);
+  color: var(--state-blocked-ink);
+  background: var(--state-blocked-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-md);
+}
+.specs-pane__warning code {
+  font-family: var(--font-mono);
+}
+.specs-pane__warning-icon {
+  flex: none;
+  line-height: 1.5;
+}
+
+/* The list of Changes. */
+.specs-pane__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.specs-pane__empty {
+  padding: var(--sp-lg);
+  text-align: center;
+}
+.specs-pane__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-sm) var(--sp-md);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.specs-pane__row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.specs-pane__row-id {
+  color: var(--ink);
+  font-weight: 600;
+}
+.specs-pane__row-slug {
+  font: 12px/1.3 var(--font-ui);
+  color: var(--ink-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The three .md flags — present carries the "done" tint, absent is muted. */
+.specs-pane__flags {
+  display: flex;
+  gap: var(--sp-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: none;
+}
+.specs-pane__flag {
+  font: 11px/1 var(--font-mono);
+  padding: 4px 7px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  color: var(--ink-tertiary);
+  background: var(--surface);
+}
+.specs-pane__flag.is-present {
+  color: var(--state-done-ink);
+  background: var(--state-done-subtle);
+  border-color: transparent;
+}
+.specs-pane__flag.is-absent {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.specs-pane__count {
+  flex: none;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+.specs-pane__count-label {
+  margin-left: 2px;
+}
+.specs-pane__row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  flex: none;
+}
+
+/* Modal dialogs — the phase picker and the discard confirmation. */
+.specs-pane__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-lg);
+  /* Scrim derived from a token — no literal colors (specs.css house rule). */
+  background: color-mix(in oklch, var(--ink) 38%, transparent);
+}
+.specs-pane__dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--sp-lg);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-gate);
+}
+.specs-pane__dialog-title {
+  margin: 0;
+  color: var(--ink);
+}
+.specs-pane__dialog-detail {
+  margin: 0;
+  font: 13px/1.6 var(--font-ui);
+  color: var(--ink-secondary);
+}
+.specs-pane__dialog-detail code {
+  font-family: var(--font-mono);
+}
+.specs-pane__phase-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+}
+/* A phase choice — the accent marks it interactive (the human's live decision). */
+.specs-pane__phase-option {
+  text-align: left;
+  padding: var(--sp-sm) var(--sp-md);
+  font: 500 14px/1.3 var(--font-ui);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+.specs-pane__phase-option:hover {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+.specs-pane__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-sm);
+}
+
+/* ======================================================================== *
  * Motion — never animate at someone who asked for stillness
  * ======================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
   .spec-option,
   .spec-attach.is-over,
-  .spec-textarea {
+  .spec-textarea,
+  .specs-pane__phase-option {
     transition: none;
   }
 }

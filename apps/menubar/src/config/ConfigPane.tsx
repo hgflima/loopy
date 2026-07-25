@@ -22,6 +22,7 @@ import type { ConfigDraftAPI, ConfigError } from "./useConfigDraft";
 import { errorAt } from "./useConfigDraft";
 import { renameAgent, renameChecksList } from "./rename";
 import { useAgentCapabilities } from "./useAgentCapabilities";
+import { capOptions } from "./cap-options";
 import { effortDisabledReason, effortHint, probeSummary } from "./capability-hints";
 import {
   TextField,
@@ -86,35 +87,6 @@ function uniqueAgentName(base: string, existing: Record<string, unknown>): strin
   while (`${base}-${n}` in existing) n++;
   return `${base}-${n}`;
 }
-
-// ---------------------------------------------------------------------------
-// Helpers for probed selects (T-011, D30/D31)
-// ---------------------------------------------------------------------------
-
-/**
- * As opções de um select sondado do registry (`model`/`effort`).
- *
- * **Não há opção de placeholder.** Um Agente do registry roda com *algum* model:
- * ao trocar o preset, o `seed` grava o default que o adapter anunciou, então
- * "vazio" não é uma escolha — é a ausência de resposta. Oferecê-lo ao lado do
- * valor real só convida a gravar um yml que não diz nada.
- *
- * O vazio sobrevive em exatamente um caso: o campo **está** vazio (a sondagem não
- * soube nomear um default). Aí ele é obrigatório — um `<select>` sem a option do
- * seu próprio `value` exibe a primeira da lista, mentindo sobre o yml.
- *
- * Um valor que a sondagem não conhece é preservado, não corrigido (D31): o yml é
- * do usuário, e um adapter pode aceitar mais do que anuncia.
- */
-function capOptions(
-  values: readonly string[],
-  current: string | undefined,
-): string[] {
-  const withCurrent =
-    current && !values.includes(current) ? [current, ...values] : [...values];
-  return current ? withCurrent : ["", ...withCurrent];
-}
-
 
 // ---------------------------------------------------------------------------
 // Section header with error counter (R5)
