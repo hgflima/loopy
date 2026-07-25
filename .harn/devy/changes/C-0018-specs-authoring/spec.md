@@ -250,7 +250,8 @@ Nunca lança (AD-5). Mesmo caminho do `parseVerdict`, que já lê o turno assim.
 
 ```
 loopy interview <dir> --emit-events [--change <id>] [--phase <spec|refine|plan>]
-                      [--agent <preset>] [--model <m>] [--effort <e>]
+                      [--demand <texto>] [--agent <preset>]
+                      [--model <m>] [--effort <e>]
 ```
 
 - **Sempre** `--emit-events`: o processo existe para falar com a GUI. Sem a flag,
@@ -258,6 +259,12 @@ loopy interview <dir> --emit-events [--change <id>] [--phase <spec|refine|plan>]
   interativo é um produto diferente — fora de escopo.)
 - `--change` + `--phase`: entrada em uma fase específica (D12/D13). Sem eles,
   começa uma Change nova pela fase `spec`.
+- `--demand <texto>`: a demanda em texto livre do stage DESCRIBE, que semeia o
+  turno 1 da fase `spec` (`/devy:spec <demanda>` — `phaseCommand` em `phases.ts`).
+  **Só** a fase `spec` a lê; `refine`/`plan` a ignoram (releem os `.md`). É o
+  único canal que carrega a demanda da GUI ao processo — sem ela, `/devy:spec`
+  roda pelado e repergunta o que o DESCRIBE já coletou. Um argv, não shell: o
+  Rust spawna argv direto, então espaços e quebras de linha sobrevivem.
 - **Um processo por Fase** (D13): o processo termina quando a fase termina.
 - Reusa: `createAgentProcessPool`, `LoopySession`, `TurnTextBuffer`,
   `createEventTransport`, o logger. **Um Processo de Agente, uma Sessão**,

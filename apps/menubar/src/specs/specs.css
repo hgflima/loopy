@@ -441,6 +441,139 @@
 }
 
 /* ======================================================================== *
+ * Interview — the assembled flow shell (T-012): header, triage intro,
+ * phase progress + the always-visible "Chega" button, terminal notes
+ * ======================================================================== */
+
+.spec-flow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  height: 100%;
+  min-height: 0;
+  padding: var(--sp-lg);
+  overflow-y: auto;
+}
+.spec-flow__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-sm);
+}
+.spec-flow__title {
+  margin: 0;
+  color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spec-flow__close.btn {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  font-size: 15px;
+  line-height: 1;
+}
+.spec-flow__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Warnings accumulate without interrupting the flow (D25) — a quiet strip. */
+.spec-warnings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.spec-warning {
+  font: 12px/1.5 var(--font-ui);
+  color: var(--state-blocked-ink);
+  background: var(--state-blocked-subtle);
+  border-radius: var(--r-md);
+  padding: var(--sp-sm) var(--sp-md);
+}
+
+/* A running Phase: the progress row, the "Chega" bar, then question/activity. */
+.spec-phase-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  max-width: 760px;
+  width: 100%;
+}
+.spec-phasebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+.spec-phases {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.spec-phase-step {
+  font: 12px/1 var(--font-ui);
+  color: var(--ink-tertiary);
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.spec-phase-step.is-done {
+  color: var(--state-done-ink);
+  background: var(--state-done-subtle);
+  border-color: transparent;
+}
+/* The current Phase carries the accent — this is live, human-facing work. */
+.spec-phase-step.is-current {
+  color: var(--accent-text);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+/* Terminal notes (failed / closed / cancelled). */
+.spec-terminal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md);
+  max-width: 620px;
+  width: 100%;
+}
+.spec-terminal__title {
+  margin: 0;
+  color: var(--ink);
+}
+.spec-terminal__detail {
+  margin: 0;
+  font: 13px/1.6 var(--font-ui);
+  color: var(--ink-secondary);
+}
+.spec-terminal__log {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  color: var(--ink-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-md);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ======================================================================== *
  * Motion — never animate at someone who asked for stillness
  * ======================================================================== */
 
