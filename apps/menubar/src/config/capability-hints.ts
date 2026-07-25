@@ -66,3 +66,20 @@ export function effortDisabledReason(
   }
   return "Este agente não anuncia effort";
 }
+
+/**
+ * Hint do campo de texto livre enquanto a sondagem ainda não está `ok`: fala o
+ * estado da sondagem (`probing`/`failed`) ou, quando não há nada a dizer, o
+ * `defaultHint` do próprio campo. Compartilhada pelo `StepEditor` (override por
+ * Step) e pelo `SpecsPane` (seleção de authoring).
+ */
+export function probeFallbackHint(
+  probeStatus: string,
+  probeReason: string | undefined,
+  defaultHint: string,
+): string {
+  if (probeStatus === "probing") return "Sondando capabilities…";
+  if (probeStatus === "failed")
+    return `Sondagem falhou: ${probeReason ?? "erro desconhecido"}`;
+  return defaultHint;
+}

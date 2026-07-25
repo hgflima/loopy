@@ -21,6 +21,17 @@ pub struct LaunchConfig {
     /// `--verbose` flag.
     #[serde(default)]
     pub verbose: bool,
+    /// Specs Interview agent preset (C-0018 D16/D18). Empty = the CLI default
+    /// (`claude`). Persisted here, not in `loopy.yml` — authoring runs without a
+    /// yml (D20), so the selection is a launch preference, not loop config.
+    #[serde(default)]
+    pub authoring_agent: String,
+    /// Specs Interview model, best-effort (C-0018 D18). Empty = the agent default.
+    #[serde(default)]
+    pub authoring_model: String,
+    /// Specs Interview reasoning effort, best-effort (C-0018 D18). Empty = default.
+    #[serde(default)]
+    pub authoring_effort: String,
 }
 
 const CONFIG_FILE: &str = "launch-config.json";
@@ -76,6 +87,11 @@ mod tests {
         assert!(!cfg.yes);
         assert_eq!(cfg.task_id, "");
         assert!(!cfg.verbose);
+        // C-0018: the Specs Interview selection defaults to empty (the CLI then
+        // falls back to the `claude` preset and the agent's own model/effort).
+        assert_eq!(cfg.authoring_agent, "");
+        assert_eq!(cfg.authoring_model, "");
+        assert_eq!(cfg.authoring_effort, "");
     }
 
     #[test]
@@ -85,6 +101,9 @@ mod tests {
             yes: true,
             task_id: "T-001".to_string(),
             verbose: true,
+            authoring_agent: "claude".to_string(),
+            authoring_model: "opus".to_string(),
+            authoring_effort: "high".to_string(),
         };
         let json = serde_json::to_string(&cfg).unwrap();
         let parsed: LaunchConfig = serde_json::from_str(&json).unwrap();
@@ -99,6 +118,21 @@ mod tests {
         assert!(!cfg.yes);
         assert_eq!(cfg.task_id, "");
         assert!(!cfg.verbose);
+    }
+
+    #[test]
+    fn deserialize_pre_c0018_config_defaults_authoring_fields() {
+        // A launch-config.json written before C-0018 has none of the authoring
+        // keys; `#[serde(default)]` must fill them with empty strings so old
+        // configs keep loading.
+        let json = r#"{"dir": "/tmp/test", "yes": true, "task_id": "T-9", "verbose": true}"#;
+        let cfg: LaunchConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.authoring_agent, "");
+        assert_eq!(cfg.authoring_model, "");
+        assert_eq!(cfg.authoring_effort, "");
+        // The pre-existing fields survive untouched.
+        assert_eq!(cfg.dir, "/tmp/test");
+        assert!(cfg.yes);
     }
 
     #[test]

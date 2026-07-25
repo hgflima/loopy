@@ -21,7 +21,8 @@ import { errorAt } from "./useConfigDraft";
 import { migrateStepType } from "./pipeline-edit";
 import { renameStepId } from "./rename";
 import { useAgentCapabilities } from "./useAgentCapabilities";
-import { effortDisabledReason } from "./capability-hints";
+import { ensureOption } from "./cap-options";
+import { effortDisabledReason, probeFallbackHint } from "./capability-hints";
 import {
   TextField,
   NumberField,
@@ -335,20 +336,6 @@ interface AgentFieldsProps extends FieldSectionProps<AgentStep> {
 }
 
 /**
- * Ensure the current value is present in the options list.
- * If not, prepend it — preserving unknown values that were already in the yml (D31).
- */
-function ensureOption(
-  options: readonly string[],
-  currentValue: string | undefined,
-): readonly string[] {
-  if (!currentValue || currentValue === "" || options.includes(currentValue)) {
-    return options;
-  }
-  return [currentValue, ...options];
-}
-
-/**
  * Options for a probed mode/model/effort select.
  *
  * There is **no placeholder option**: an omitted `mode`/`model`/`effort` is not
@@ -378,17 +365,6 @@ function capChange(
   apply: (value: string | undefined) => void,
 ): (value: string) => void {
   return (value) => apply(value && value !== inherited ? value : undefined);
-}
-
-/** Hint for the text-field fallback when the probe isn't "ok" yet. */
-function probeFallbackHint(
-  probeStatus: string,
-  probeReason: string | undefined,
-  defaultHint: string,
-): string {
-  if (probeStatus === "probing") return "Sondando capabilities…";
-  if (probeStatus === "failed") return `Sondagem falhou: ${probeReason ?? "erro desconhecido"}`;
-  return defaultHint;
 }
 
 function AgentFields({ step, patchStep, fieldError, agents, defaultAgentName, dir }: AgentFieldsProps) {
