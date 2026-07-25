@@ -17,6 +17,9 @@
  *    `session/new`); the wrapper is preserved but the `sessionId` changes.
  *  - {@link LoopySession.prompt}  → one prompt turn; resolves with the ACP
  *    `stopReason` only (never the text).
+ *  - {@link LoopySession.promptBlocks} → like `prompt`, but the turn is ACP
+ *    {@link ContentBlock}s (answer text + attachment `resource_link`s); driven
+ *    only by the Interview (C-0018 T-004).
  *  - {@link LoopySession.readText} → the turn's text from our OWN buffer (OQ3),
  *    reset before every turn; the SDK's `readText()` is kept as a fallback.
  *  - {@link LoopySession.cancel}  → `session/cancel`.
@@ -38,6 +41,7 @@ import { AGENT_METHODS } from "@agentclientprotocol/sdk";
 import type {
   ActiveSession,
   ClientContext,
+  ContentBlock,
   SessionConfigOption,
 } from "@agentclientprotocol/sdk";
 import type {
@@ -119,6 +123,20 @@ export interface SessionDeps {
 export interface LoopySession extends AgentSession {
   /** What this agent announced it supports (modes, models, efforts). */
   readonly capabilities: AgentCapabilities;
+  /**
+   * Send a prompt made of ACP {@link ContentBlock}s (answer text + attachment
+   * `resource_link`s) — the Interview's answer-with-attachments turn (C-0018
+   * T-004). Same turn mechanics as {@link AgentSession.prompt}: resolves with
+   * the `stopReason`, and {@link AgentSession.readText} holds the turn text
+   * afterwards.
+   *
+   * Lives here, not on {@link AgentSession} — the frozen contract in
+   * `types.ts`. The Interview drives a `LoopySession` straight from
+   * `pool.session()` (never through `StepContext`), so widening
+   * {@link AgentSession.prompt} to `string | ContentBlock[]` would only break
+   * the step/loop/agent fakes' contextual typing for no gain.
+   */
+  promptBlocks(blocks: ContentBlock[]): Promise<StopReason>;
   /** Stop routing this session's updates (teardown). Idempotent. */
   dispose(): void;
 }
@@ -408,6 +426,10 @@ class SessionWrapper implements LoopySession {
     return this.runTurn(text);
   }
 
+  async promptBlocks(blocks: ContentBlock[]): Promise<StopReason> {
+    return this.runTurn(blocks);
+  }
+
   /** The current turn's text (OQ3 buffer first, SDK `readText()` as fallback). */
   readText(): string {
     const own = this.deps.text.read(this.sessionId);
@@ -469,12 +491,16 @@ class SessionWrapper implements LoopySession {
    * guarantees the buffer holds the complete turn — and that no late chunk leaks
    * into the next turn's (reset) buffer.
    */
-  private async runTurn(text: string): Promise<StopReason> {
-    this.send("session/prompt", { sessionId: this.sessionId, text });
+  private async runTurn(input: string | ContentBlock[]): Promise<StopReason> {
+    // Traffic payload mirrors the ACP request shape: a bare string keeps `text`;
+    // a block array carries `prompt` (observation only — AD-1).
+    const content =
+      typeof input === "string" ? { text: input } : { prompt: input };
+    this.send("session/prompt", { sessionId: this.sessionId, ...content });
     this.deps.text.reset(this.sessionId);
     // Start the prompt first so its `stop` completion is queued before the
     // concurrent drain reads it.
-    const responsePromise = this.active.prompt(text);
+    const responsePromise = this.active.prompt(input);
     const [response, drained] = await Promise.all([
       responsePromise,
       this.active.readText(),
