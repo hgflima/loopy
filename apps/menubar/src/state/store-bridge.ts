@@ -97,6 +97,11 @@ function applyControl(ui: UIState, control: ControlFrame): UIState {
           },
         ],
       };
+    default:
+      // Interview controls (C-0018 — `phase_started`, `question_asked`, …) run
+      // in a separate process and do not belong to the Run's BridgeState. Ignore
+      // them by returning the same reference (structural sharing, AD-5).
+      return ui;
   }
 }
 
@@ -170,8 +175,13 @@ export function applyLine(state: BridgeState, line: string): BridgeState {
 
       return { ...state, store: nextStore };
     }
-    case "control":
-      return { ...state, ui: applyControl(state.ui, result.control) };
+    case "control": {
+      const nextUi = applyControl(state.ui, result.control);
+      // An ignored control (e.g. an Interview frame) leaves `ui` untouched —
+      // return the same BridgeState reference for React's reconciliation.
+      if (nextUi === state.ui) return state;
+      return { ...state, ui: nextUi };
+    }
     case "command":
       return state;
   }

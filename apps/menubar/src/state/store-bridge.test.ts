@@ -98,3 +98,45 @@ describe("store-bridge — warning event propagation (T-007)", () => {
     expect(step?.warned).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// store-bridge — interview controls are ignored (C-0018 T-001)
+// ---------------------------------------------------------------------------
+
+/** Serialize one interview ControlFrame as an NDJSON transport line. */
+function ctrl(control: Record<string, unknown>): string {
+  return JSON.stringify({ frame: "control", ...control });
+}
+
+describe("store-bridge — interview controls are ignored (same reference)", () => {
+  // The Interview runs in a separate process; its control frames do not belong
+  // to the Run's BridgeState. Each must be a no-op returning the SAME reference.
+  const cases: Record<string, Record<string, unknown>> = {
+    phase_started: { control: "phase_started", phase: "spec", command: "/devy:spec" },
+    change_resolved: { control: "change_resolved", changeDir: ".harn/devy/changes/C-0019" },
+    question_asked: { control: "question_asked", questionId: "q-1", phase: "spec", prompt: "?" },
+    agent_activity: { control: "agent_activity", phase: "refine", text: "trabalhando…" },
+    phase_finished: {
+      control: "phase_finished",
+      phase: "plan",
+      changeDir: ".harn/devy/changes/C-0019",
+      files: ["spec.md"],
+    },
+    interview_failed: { control: "interview_failed", reason: "sem <loopy-done/>" },
+  };
+
+  for (const [name, control] of Object.entries(cases)) {
+    it(`${name} returns the same BridgeState reference`, () => {
+      const state = initialBridgeState();
+      const next = applyLine(state, ctrl(control));
+      expect(next).toBe(state);
+    });
+  }
+
+  it("a real run control still produces a new state (run_started)", () => {
+    const state = initialBridgeState();
+    const next = applyLine(state, ctrl({ control: "run_started" }));
+    expect(next).not.toBe(state);
+    expect(next.ui.runStatus).toBe("running");
+  });
+});
