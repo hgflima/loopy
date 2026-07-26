@@ -204,7 +204,7 @@
     Size: M
     Risk: M
 
-- [ ] T-006: `applyTimeline` — o transcript vira um redutor irmão do `reduce`
+- [x] T-006: `applyTimeline` — o transcript vira um redutor irmão do `reduce`
     **Esta é a armadilha nº 1 da change, e ela é mais sutil do que "reordenar".**
     `apps/menubar/src/state/store-bridge.ts:145-146` faz
     `const nextStore = reduce(...); if (nextStore === state.store) return state;` e **só
