@@ -81,6 +81,11 @@ pipeline:
 
       ${task.body}
 
+      ## Carry da execução anterior — vazio na primeira passada
+
+      Preenchido só quando o Run é retomado de um checkpoint parado neste step; nesse caso
+      descreve o que falhou por último. Ignore se estiver vazio.
+
       ${checks.report}
 
       **CRITICAL**: NÃO rode git add/commit. Deixe todas as mudanças no working tree; o pipeline faz o commit.
@@ -147,9 +152,38 @@ pipeline:
     prompt: |
       Invoke the code-review-and-quality skill.
 
-      Review the current changes (staged or recent commits) across all five axes:
+      Você está revisando **uma task** de um backlog maior, não o repositório inteiro.
+      O escopo desta revisão é exclusivamente o que ESTA task pede.
 
-      1. **Correctness** — Does it match the spec? Edge cases handled? Tests adequate?
+      ## Task sob revisão: ${task.id} — ${task.title}
+
+      ${task.body}
+
+      Especificação completa (contexto de fundo — leia se precisar; a **Acceptance** acima
+      é que manda): ${inputs.spec}
+
+      ## Regras de escopo — leia ANTES de julgar
+
+      - A **Acceptance** acima é o contrato desta task. Satisfeita = PASS.
+      - Arquivo fora da lista **Files:** desta task não é escopo desta revisão. Se o defeito
+        real mora lá, registre como `Suggestion` — nunca como motivo de FAIL.
+      - O que o corpo da task manda **manter como está**, mantenha. Reprovar código que a
+        task explicitamente congela é erro de revisão, não achado.
+      - As tasks irmãs do backlog cobrem o que falta. Integração prevista para outra task
+        ausente aqui não é defeito.
+      - Prefira evidência a hipótese: rode o **Verification** da task se ele for executável
+        em read-only. Cenário hipotético que os testes existentes desmentem não é Critical.
+        Duas armadilhas de invocação, que **não** são findings: o filtro do vitest é
+        substring literal, não regex — um Verification `-- "A|B|C"` não casa nada (rode os
+        nomes como args separados); e o sandbox read-only pode barrar o vitest do app, que
+        precisa escrever `apps/menubar/node_modules/.vite-temp/`. Nos dois casos o comando
+        falhou, não o código: relate que não conseguiu executar e julgue estaticamente.
+
+      ## Eixos
+
+      Review the current changes across all five axes:
+
+      1. **Correctness** — Does it match the task's Acceptance? Edge cases handled? Tests adequate?
       2. **Readability** — Clear names? Straightforward logic? Well-organized?
       3. **Architecture** — Follows existing patterns? Clean boundaries? Right abstraction level?
       4. **Security** — Input validated? Secrets safe? Auth checked? (Use security-and-hardening skill)
@@ -158,16 +192,77 @@ pipeline:
       Categorize findings as Critical, Important, or Suggestion.
       Output a structured review with specific file:line references and fix recommendations.
 
+      ## Veredito — só Critical reprova
+
+      **Critical** = quebra um item da Acceptance desta task, quebra comportamento existente
+      (regressão), ou introduz vulnerabilidade explorável no código desta task. Nada mais.
+
+      `Important` e `Suggestion` entram no relatório e **não** bloqueiam: há um Gate de
+      Aprovação humano no merge, e reprovar por eles re-roda a implementação inteira.
+      Na dúvida entre Critical e Important, é **Important**.
+
       **CRITICAL:** NUNCA EDITE NADA — esta revisão é read-only. Não crie, não altere e não
       formate arquivo algum.
 
       Diff sob revisão:
       ${worktree.diff}
 
-      Responda na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo objetivo>".
+      Responda na ÚLTIMA linha exatamente "REVIEW: PASS" ou
+      "REVIEW: FAIL: <o item da Acceptance ou o comportamento que quebrou>".
     expect: "REVIEW: PASS"
+    # Obrigatório: sem ele o caminho aprovado cairia sequencialmente no `review-fix`.
+    on_success:
+      goto: commit
+    # Volta para um fix CIRÚRGICO, não para o `implement`: re-implementar do zero e
+    # re-simplificar custa 3 turnos caros por volta e faz o review mudar de alvo.
     on_fail:
-      goto: implement
+      goto: review-fix
+
+  - id: review-fix
+    type: agent
+    agent: claude
+    mode: acceptEdits
+    clear_context: true
+    prompt: |
+      A revisão reprovou a task ${task.id} — ${task.title} por um finding **Critical**:
+      algo que quebra um item da Acceptance da task, quebra comportamento existente
+      (regressão), ou é uma vulnerabilidade explorável neste código.
+
+      A implementação já está no worktree e passou nos checks. Corrija **apenas** o que o
+      relatório abaixo aponta como Critical — cirurgicamente. Não refatore o que está
+      funcionando, não expanda o escopo e não toque em arquivo fora da lista `Files:`.
+
+      ## Task
+
+      ${task.body}
+
+      ## Relatório da revisão
+
+      ${checks.report}
+
+      ## Se o finding for improcedente
+
+      O revisor não executa a suíte (roda read-only) e às vezes levanta um cenário
+      hipotético que o código já trata. Se for o caso, **não** mude o comportamento:
+      acrescente um teste de regressão que prove o cenário apontado, para que a próxima
+      revisão tenha evidência em vez de suposição.
+
+      **CRITICAL**: NÃO rode git add/commit. Deixe as mudanças no working tree; o pipeline
+      faz o commit.
+
+      **FORMATAÇÃO**: `prettier --write` apenas em arquivo NOVO criado por você; `cargo fmt`
+      apenas no arquivo Rust que você tocou. Nunca formate o repo inteiro.
+    retry_prompt: |
+      A correção está no worktree, mas os checks falharam. Leia o código e corrija.
+
+      ${checks.report}
+    verify:
+      run: ci
+      max_attempts: 3
+    # Volta ao review para revalidar; `on_fail` fica no default (escalate) — checks que
+    # não fecham em 3 tentativas são problema humano, não mais uma volta no ciclo.
+    on_success:
+      goto: review
 
   - id: commit
     type: shell
@@ -249,7 +344,10 @@ pipeline:
 
 stop_conditions:
   max_iterations: 25
-  max_step_visits: 25
+  # Teto real do ciclo review ↔ review-fix (era 25 — deixava ~12 voltas caras rodarem).
+  # Não baixar mais: o mesmo contador governa o ciclo de merge
+  # (merge → abort-root-merge → reconcile-parent), que sob concorrência precisa de folga.
+  max_step_visits: 10
   stop_signal_file: .loopy.stop
 
 concurrency: auto

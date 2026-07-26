@@ -105,14 +105,62 @@ pipeline:
     clear_context: true
     # SEM `mode: plan` (G1) — read-only é imposto pelo prompt.
     # Com codex como revisor, `mode: read-only` é seguro e preferível.
+    # G15 — `${task.body}` é OBRIGATÓRIO aqui: sem a Acceptance e a lista `Files:`
+    # o revisor não tem contrato e reprova o que a task manda congelar, gerando
+    # loop infinito review→implement.
     prompt: |
       /devy:review Reveja a implementação da task ${task.id} contra ${inputs.spec} e ${inputs.plan}.
+      Você revisa UMA task de um backlog; o escopo é EXCLUSIVAMENTE o que ela pede.
+
+      ## Task sob revisão: ${task.id} — ${task.title}
+      ${task.body}
+
+      ## Regras de escopo
+      - A **Acceptance** acima é o contrato. Satisfeita = PASS.
+      - Arquivo fora de **Files:** não é escopo → no máximo `Suggestion`, nunca FAIL.
+      - O que a task manda manter como está, mantenha.
+      - Tasks irmãs cobrem o resto: integração prevista para outra task não é defeito.
+      - Rode o **Verification** da task se der; se o COMANDO falhar (filtro que não casa,
+        sandbox read-only), isso não é finding — relate e julgue estaticamente.
+
+      ## Veredito — só Critical reprova
+      **Critical** = quebra um item da Acceptance, quebra comportamento existente,
+      ou é vulnerabilidade explorável neste código. `Important`/`Suggestion` entram
+      no relatório e NÃO bloqueiam (há o Gate de Aprovação humano no merge).
+      Na dúvida entre Critical e Important, é **Important**.
+
       **CRITICAL:** NUNCA EDITE NADA — revisão é read-only.
       Diff sob revisão:
       ${worktree.diff}
       Responda na ÚLTIMA linha exatamente "REVIEW: PASS" ou "REVIEW: FAIL: <motivo>".
     expect: "REVIEW: PASS"
-    on_fail: { goto: implement }   # fix-loop; teto = max_step_visits
+    on_success: { goto: commit }   # obrigatório: senão o PASS cai no review-fix (G14)
+    on_fail: { goto: review-fix }  # fix cirúrgico, NÃO re-implementa (G15)
+
+  - id: review-fix                 # alvo do goto do review; 1 turno por volta
+    type: agent
+    clear_context: true
+    mode: acceptEdits
+    prompt: |
+      A revisão reprovou ${task.id} por um finding **Critical**. A implementação já
+      está no worktree e passou nos checks: corrija APENAS o Critical apontado,
+      cirurgicamente. Não refatore o que funciona, não toque em arquivo fora de `Files:`.
+
+      ## Task
+      ${task.body}
+
+      ## Relatório da revisão
+      ${checks.report}
+
+      Se o finding for improcedente (o revisor não executa a suíte), não mude o
+      comportamento: acrescente um teste de regressão que prove o cenário apontado.
+
+      **CRITICAL**: NÃO rode git add/commit.
+    retry_prompt: |
+      A correção está no worktree, mas os checks falharam. Leia o código e corrija.
+      ${checks.report}
+    verify: { run: ci, max_attempts: 3 }
+    on_success: { goto: review }   # revalida; on_fail fica no default (escalate)
 
   - id: commit
     type: shell
@@ -277,6 +325,7 @@ exit 0
 | G12 | `on_fail: { goto: <agente> }` no step de merge do **root** | O cwd da Sessão é imutável no worktree (AD-3): o conflito fica no working tree do root, **invisível** ao agente → ele "resolve" o nada e o merge segue quebrado | Integrar o parent **dentro** do worktree antes (`reconcile-parent` → `resolve-merge` → `finalize-merge`); o merge no root só acontece já trivial. |
 | G13 | `on_fail: escalate` num `git merge` conflitado | Escala **sujo**: `MERGE_HEAD` + arquivos unmerged ficam no root, e a próxima task-irmã bate em exit 128 e pausa também — uma task derruba as vizinhas (C-0009: T-018 levou a T-014) | `on_fail: { goto: abort-root-merge }`; o abort restaura o root e volta ao `reconcile-parent`, que re-integra o parent **atual**. |
 | G14 | Step de recuperação declarado **depois** do step que o invoca, sem `on_success` no invocador | Omitir `on_success` = seguir a ordem declarada: o `merge` que deu **certo** cairia no `abort-root-merge` e rodaria `git merge --abort` sem merge em progresso → exit ≠ 0 → escalate no caminho feliz | `merge` leva `on_success: { goto: cleanup }`; todo step só-alcançável-por-goto exige que o anterior declare para onde vai no sucesso. |
+| G15 | Step `review` sem `${task.body}`, e/ou sem dizer qual severidade reprova | O revisor só vê `${worktree.diff}`: sem Acceptance e sem lista `Files:` ele inventa o contrato e reprova **fora do escopo** — inclusive código que a task manda congelar. Com `goto: implement` isso vira loop caro (C-0019: T-011 reprovada 5× pela segmentação que o `todo.md` diz "continua como está", 7 implements; mesmo padrão já visto no mdv-kanban C-0002) | `${task.body}` no prompt + regras de escopo (fora de `Files:` = `Suggestion`) + **só `Critical` reprova** (há Gate de Aprovação humano depois); e `on_fail: { goto: review-fix }` — fix cirúrgico de 1 turno, não re-implementação de 3. |
 
 ## Variações
 
