@@ -125,32 +125,49 @@ pub(crate) fn login_shell_path() -> Option<String> {
 /// Handles partial lines across chunks and optional `\r\n` line endings.
 pub struct LineFramer {
     buf: Vec<u8>,
+    /// Bytes of `buf` already scanned for `\n` without finding one. The next
+    /// `feed` resumes the search here instead of re-walking from the start —
+    /// what keeps framing an unterminated line O(N) instead of O(N²). Reset to
+    /// 0 whenever a complete line is drained or the buffer is flushed.
+    scanned: usize,
 }
 
 impl LineFramer {
     pub fn new() -> Self {
-        Self { buf: Vec::new() }
+        Self {
+            buf: Vec::new(),
+            scanned: 0,
+        }
+    }
+
+    fn finish_line(&mut self, newline_pos: usize) -> String {
+        let end = if newline_pos > 0 && self.buf[newline_pos - 1] == b'\r' {
+            newline_pos - 1
+        } else {
+            newline_pos
+        };
+        let line = String::from_utf8_lossy(&self.buf[..end]).into_owned();
+        self.buf.drain(..=newline_pos);
+        self.scanned = 0;
+        line
     }
 
     /// Feed a chunk of bytes; returns any complete lines (without trailing newline).
     pub fn feed(&mut self, chunk: &[u8]) -> Vec<String> {
         self.buf.extend_from_slice(chunk);
         let mut lines = Vec::new();
-        while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
-            let end = if pos > 0 && self.buf[pos - 1] == b'\r' {
-                pos - 1
-            } else {
-                pos
-            };
-            let line = String::from_utf8_lossy(&self.buf[..end]).into_owned();
-            lines.push(line);
-            self.buf.drain(..=pos);
+        while let Some(rel) = self.buf[self.scanned..].iter().position(|&b| b == b'\n') {
+            lines.push(self.finish_line(self.scanned + rel));
         }
+        // Whatever remains is an unterminated tail, so the next feed should
+        // resume scanning from the end of the current buffer.
+        self.scanned = self.buf.len();
         lines
     }
 
     /// Flush any remaining buffered data as a final (unterminated) line.
     pub fn flush(&mut self) -> Option<String> {
+        self.scanned = 0;
         if self.buf.is_empty() {
             None
         } else {
@@ -445,6 +462,72 @@ mod tests {
             f.feed(b"_started\"}\n"),
             vec!["{\"type\":\"run_started\"}"]
         );
+    }
+
+    // -- linearity invariant (kills the O(N²) framer cliff, T-004) -----------
+    // The scan resumes from `scanned` instead of re-walking the whole buffer on
+    // every chunk. We assert the MECHANISM, not the clock: `scanned` advances
+    // with the buffer and never restarts from zero while the line stays open,
+    // and it zeroes the moment the line closes (drain) or is flushed.
+
+    #[test]
+    fn scanned_resumes_and_never_rescans_open_line() {
+        let mut f = LineFramer::new();
+        let chunk = [b'x'; 4096];
+
+        // First 4 KB, no newline: the whole chunk is scanned, no line yet.
+        assert!(f.feed(&chunk).is_empty());
+        assert_eq!(f.scanned, 4096);
+
+        // Second 4 KB: the scan resumes at 4096 and only walks the new bytes —
+        // scanned ends at 8192, it did NOT re-walk the first 4 KB from zero.
+        assert!(f.feed(&chunk).is_empty());
+        assert_eq!(f.scanned, 8192);
+
+        // The feed that closes the line drains it and zeroes the offset.
+        let lines = f.feed(b"\n");
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].len(), 8192);
+        assert_eq!(f.scanned, 0);
+    }
+
+    #[test]
+    fn ten_mb_line_framed_once_with_no_byte_lost_or_duplicated() {
+        const SIZE: usize = 10 * 1024 * 1024;
+        // Deterministic non-newline payload so byte integrity is checkable.
+        let payload: Vec<u8> = (0..SIZE).map(|i| b'a' + (i % 26) as u8).collect();
+
+        let mut f = LineFramer::new();
+        let mut lines = Vec::new();
+        for chunk in payload.chunks(4096) {
+            lines.extend(f.feed(chunk));
+        }
+        // No line is emitted until the terminator arrives.
+        assert!(lines.is_empty());
+        lines.extend(f.feed(b"\n"));
+
+        assert_eq!(lines.len(), 1, "a 10 MB line frames as exactly one line");
+        let framed = &lines[0];
+        assert_eq!(
+            framed.len(),
+            SIZE,
+            "exact size — no byte lost or duplicated"
+        );
+        assert_eq!(
+            framed.as_bytes(),
+            &payload[..],
+            "content preserved byte-for-byte"
+        );
+        assert_eq!(f.scanned, 0, "closing the line zeroes the offset");
+    }
+
+    #[test]
+    fn flush_zeroes_scanned() {
+        let mut f = LineFramer::new();
+        f.feed(b"partial-no-newline");
+        assert_eq!(f.scanned, "partial-no-newline".len());
+        assert_eq!(f.flush(), Some("partial-no-newline".to_string()));
+        assert_eq!(f.scanned, 0);
     }
 
     // -- approval_decision formatting tests ---------------------------------
