@@ -418,7 +418,7 @@
     Size: S
     Risk: M
 
-- [ ] T-013: Entrevista no motor — `onUpdate` filtrado e o control `agent_stream` (R1)
+- [x] T-013: Entrevista no motor — `onUpdate` filtrado e o control `agent_stream` (R1)
     `src/interview/run.ts`: o `defaultOpenSession` passa a dar um `onUpdate` ao `openAgent`,
     que **filtra `agent_message_chunk`** e emite os demais como
     `{ control: "agent_stream", phase, update }` (o frame de T-001) via
