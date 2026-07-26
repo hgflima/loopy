@@ -19,6 +19,7 @@ import type { TaskStatus } from "loopy/tui/store";
 import {
   segmentsFor,
   overlayStepUsage,
+  segmentText,
   type Transcript,
   type StepTelemetry,
 } from "../state/stream-history";
@@ -193,7 +194,7 @@ export function CardDetail({
                     usage={formatUsage(seg.usedTokens, seg.size, seg.model)}
                   />
                 )}
-                <MarkdownStream text={seg.text} />
+                <MarkdownStream text={segmentText(seg.items)} />
               </div>
             ))}
           </section>

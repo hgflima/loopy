@@ -227,9 +227,9 @@ describe("CardDetail — log (transcript)", () => {
   it("renders transcript segments with step dividers", () => {
     const transcript: Transcript = {
       "T-001": [
-        { stepId: "build", text: "Building..." },
-        { stepId: "build", text: " done." },
-        { stepId: "test", text: "Testing..." },
+        { stepId: "build", item: { item: "text", text: "Building..." } },
+        { stepId: "build", item: { item: "text", text: " done." } },
+        { stepId: "test", item: { item: "text", text: "Testing..." } },
       ],
     };
 
@@ -268,7 +268,7 @@ describe("CardDetail — log (transcript)", () => {
 
   it("preserves log after task finishes (transcript survives)", () => {
     const transcript: Transcript = {
-      "T-001": [{ stepId: "build", text: "Completed build" }],
+      "T-001": [{ stepId: "build", item: { item: "text", text: "Completed build" } }],
     };
 
     const { container } = render(

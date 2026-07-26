@@ -15,9 +15,14 @@
  */
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type {
+  ContentBlock,
+  SessionNotification,
+  SessionUpdate,
+} from "@agentclientprotocol/sdk";
 
 import {
+  createStreamForwarder,
   decideTurn,
   runInterview,
   type InterviewFs,
@@ -466,5 +471,141 @@ describe("runInterview — one phase, end to end", () => {
       phase: "refine",
       changeDir: ".harn/devy/changes/C-0018-x",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createStreamForwarder — the Interview's filtered live stream (R1)
+// ---------------------------------------------------------------------------
+
+describe("createStreamForwarder — the filtered live stream (R1)", () => {
+  const notif = (update: SessionUpdate): SessionNotification => ({
+    sessionId: "s1",
+    update,
+  });
+
+  /** A forwarder over a frame-collecting transport. */
+  function forwarder(phase: "spec" | "refine" | "plan" = "spec") {
+    const frames: ControlFrame[] = [];
+    const forward = createStreamForwarder(
+      { emitControl: (c) => frames.push(c) },
+      phase,
+    );
+    return { frames, forward };
+  }
+
+  /** The `update.kind` of each frame, in order (labels non-stream frames). */
+  const streamKinds = (frames: readonly ControlFrame[]): string[] =>
+    frames.map((f) =>
+      f.control === "agent_stream" ? f.update.kind : `not-stream:${f.control}`,
+    );
+
+  it("DISCARDS agent_message_chunk — the prose never streams live", () => {
+    const { frames, forward } = forwarder();
+    forward(
+      notif({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "prosa e <loopy-ask>{...}</loopy-ask>" },
+      }),
+    );
+    expect(frames).toHaveLength(0);
+  });
+
+  it("emits agent_stream for thought / tool / plan / mode / raw", () => {
+    const { frames, forward } = forwarder();
+    forward(
+      notif({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "pensando" },
+      }),
+    );
+    forward(
+      notif({
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        title: "Read a.ts",
+        kind: "read",
+        status: "pending",
+      }),
+    );
+    forward(
+      notif({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      }),
+    );
+    forward(
+      notif({
+        sessionUpdate: "plan",
+        entries: [{ content: "passo", priority: "medium", status: "pending" }],
+      }),
+    );
+    forward(
+      notif({ sessionUpdate: "current_mode_update", currentModeId: "plan" }),
+    );
+    // user_message_chunk is our Envelope coming back — it survives as `raw` (D3).
+    forward(
+      notif({
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "<loopy-answer>…</loopy-answer>" },
+      }),
+    );
+
+    expect(streamKinds(frames)).toEqual([
+      "thought",
+      "tool_call",
+      "tool_delta",
+      "plan",
+      "mode",
+      "raw",
+    ]);
+    // Every emitted frame is an agent_stream carrying the phase.
+    expect(
+      frames.every((f) => f.control === "agent_stream" && f.phase === "spec"),
+    ).toBe(true);
+  });
+
+  it("carries the translated StreamUpdate verbatim, stamped with the phase", () => {
+    const { frames, forward } = forwarder("refine");
+    forward(
+      notif({ sessionUpdate: "current_mode_update", currentModeId: "plan" }),
+    );
+    expect(frames).toEqual<ControlFrame[]>([
+      {
+        control: "agent_stream",
+        phase: "refine",
+        update: { kind: "mode", modeId: "plan" },
+      },
+    ]);
+  });
+
+  it("NO agent_stream ever carries a `text` update, even mixed with a thought", () => {
+    const { frames, forward } = forwarder();
+    forward(
+      notif({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "prosa" },
+      }),
+    );
+    forward(
+      notif({
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "pensando" },
+      }),
+    );
+    // The thought streamed; the prose did not.
+    expect(streamKinds(frames)).toEqual(["thought"]);
+    expect(
+      frames.some(
+        (f) => f.control === "agent_stream" && f.update.kind === "text",
+      ),
+    ).toBe(false);
+  });
+
+  it("usage_update emits nothing (it has its own path — not a discard)", () => {
+    const { frames, forward } = forwarder();
+    forward(notif({ sessionUpdate: "usage_update", used: 100, size: 1000 }));
+    expect(frames).toHaveLength(0);
   });
 });

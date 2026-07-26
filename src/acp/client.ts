@@ -46,6 +46,7 @@ import type {
   KillTerminalRequest,
   PermissionOption,
   PermissionOptionKind,
+  PlanEntry,
   ReleaseTerminalRequest,
   RequestPermissionRequest,
   RequestPermissionResponse,
@@ -54,10 +55,22 @@ import type {
   TerminalExitStatus,
   TerminalOutputRequest,
   TerminalOutputResponse,
+  ToolCall,
+  ToolCallContent,
+  ToolCallLocation,
+  ToolCallUpdate,
   WaitForTerminalExitRequest,
   WaitForTerminalExitResponse,
 } from "@agentclientprotocol/sdk";
 import type { AcpTrafficEntry } from "../logging/logger";
+import type {
+  PlanEntryState,
+  StreamUpdate,
+  ToolCallDelta,
+  ToolCallState,
+  ToolContentItem,
+  ToolLocation,
+} from "../tui/store";
 import type { LoggerPort, PermissionOnRequest } from "../types";
 
 // ---------------------------------------------------------------------------
@@ -246,6 +259,171 @@ export function usageUpdateUsed(
   const u = update as { used?: number; size?: number };
   if (typeof u.used !== "number" || typeof u.size !== "number") return undefined;
   return { used: u.used, size: u.size };
+}
+
+// ---------------------------------------------------------------------------
+// Rich session/update translation (C-0019 T-002) — the ACP shape stops here
+// ---------------------------------------------------------------------------
+
+/** An ACP `ToolCallLocation` as the engine-vocabulary {@link ToolLocation}. */
+function toToolLocation(loc: ToolCallLocation): ToolLocation {
+  return loc.line != null
+    ? { path: loc.path, line: loc.line }
+    : { path: loc.path };
+}
+
+/**
+ * One ACP `ToolCallContent` → one {@link ToolContentItem}: a `content` block is
+ * kept only when it is text (any other block — image/audio/resource — echoes as
+ * `raw` so nothing vanishes, D3); a `diff` keeps its hunks (a missing/`null`
+ * `oldText` is a new file, preserved as `undefined`); a `terminal` keeps its id.
+ * A future `ToolCallContent` variant falls to `raw` too.
+ */
+function toToolContentItem(content: ToolCallContent): ToolContentItem {
+  switch (content.type) {
+    case "content": {
+      const block = content.content;
+      return block.type === "text"
+        ? { kind: "text", text: block.text }
+        : { kind: "raw", payload: content };
+    }
+    case "diff":
+      return content.oldText != null
+        ? {
+            kind: "diff",
+            path: content.path,
+            oldText: content.oldText,
+            newText: content.newText,
+          }
+        : { kind: "diff", path: content.path, newText: content.newText };
+    case "terminal":
+      return { kind: "terminal", terminalId: content.terminalId };
+    default:
+      return { kind: "raw", payload: content };
+  }
+}
+
+/** An ACP `ToolCall` as a complete {@link ToolCallState}, filling SDK defaults. */
+function toToolCallState(call: ToolCall): ToolCallState {
+  return {
+    toolCallId: call.toolCallId,
+    title: call.title,
+    kind: call.kind ?? "other",
+    status: call.status ?? "pending",
+    locations: (call.locations ?? []).map(toToolLocation),
+    content: (call.content ?? []).map(toToolContentItem),
+    ...(call.rawInput !== undefined && { rawInput: call.rawInput }),
+    ...(call.rawOutput !== undefined && { rawOutput: call.rawOutput }),
+  };
+}
+
+/**
+ * An ACP `ToolCallUpdate` as a {@link ToolCallDelta}. Fields pass through as the
+ * SDK sent them — `null`/`undefined` mean "unchanged" downstream
+ * ({@link mergeToolCall}), so no field is invented; only `locations`/`content`
+ * are translated element-wise.
+ */
+function toToolCallDelta(update: ToolCallUpdate): ToolCallDelta {
+  return {
+    toolCallId: update.toolCallId,
+    title: update.title,
+    kind: update.kind,
+    status: update.status,
+    locations: update.locations?.map(toToolLocation),
+    content: update.content?.map(toToolContentItem),
+    ...(update.rawInput !== undefined && { rawInput: update.rawInput }),
+    ...(update.rawOutput !== undefined && { rawOutput: update.rawOutput }),
+  };
+}
+
+/** An ACP `PlanEntry` as a {@link PlanEntryState} (structurally identical). */
+function toPlanEntry(entry: PlanEntry): PlanEntryState {
+  return {
+    content: entry.content,
+    priority: entry.priority,
+    status: entry.status,
+  };
+}
+
+/** A known {@link SessionUpdate} the UI does not model → the `raw` catch-all. */
+function rawUpdate(update: SessionUpdate): StreamUpdate {
+  return { kind: "raw", updateKind: update.sessionUpdate, payload: update };
+}
+
+/**
+ * The `default` arm's catch-all: a `sessionUpdate` the SDK union does not (yet)
+ * declare still reaches the screen as `raw` instead of vanishing (D3). The
+ * `never` parameter is the exhaustiveness guard — the day the SDK union grows,
+ * `update` here is no longer `never` and `tsc` flags this call, the reminder to
+ * map the new variant; at runtime it always echoes the update verbatim.
+ */
+function rawUnknownUpdate(update: never): StreamUpdate {
+  const kind = (update as { sessionUpdate?: unknown }).sessionUpdate;
+  return {
+    kind: "raw",
+    updateKind: typeof kind === "string" ? kind : "unknown",
+    payload: update,
+  };
+}
+
+function textChunkUpdate(
+  kind: "text" | "thought",
+  update: Extract<SessionUpdate, { sessionUpdate: "agent_message_chunk" | "agent_thought_chunk" }>,
+): StreamUpdate {
+  const { content, messageId } = update;
+  if (content.type !== "text") return rawUpdate(update);
+  return messageId != null
+    ? { kind, text: content.text, messageId }
+    : { kind, text: content.text };
+}
+
+/**
+ * Translate one ACP `SessionUpdate` into a {@link StreamUpdate} — pure, a sibling
+ * of {@link agentChunkText} / {@link usageUpdateUsed}. This is the **only** new
+ * place that knows the ACP shape; past it, everything speaks engine vocabulary.
+ *
+ * The `switch` is **exhaustive** over `update.sessionUpdate` with a `default`
+ * that emits `raw`, so a session/update type new to the SDK **shows up on screen**
+ * rather than vanishing (D3) and `tsc` trips the day the union grows. The SDK 0.29
+ * declares 13 variants: `agent_message_chunk` → `text` (text content only; any
+ * other content block → `raw`); `agent_thought_chunk` → `thought`; `tool_call` →
+ * `tool_call`; `tool_call_update` → `tool_delta`; `plan` → `plan`;
+ * `current_mode_update` → `mode`. The six R7d variants (`user_message_chunk`,
+ * `plan_update`, `plan_removed`, `available_commands_update`,
+ * `config_option_update`, `session_info_update`) fall to `raw` by decision.
+ *
+ * `usage_update` returns **`undefined`** — it is **not** a discard: it has its own
+ * path ({@link usageUpdateUsed} → `usage_sample`, {@link usageUpdateCost} → the
+ * cost buffer), which this translator must not double-count.
+ */
+export function translateUpdate(
+  update: SessionUpdate,
+): StreamUpdate | undefined {
+  switch (update.sessionUpdate) {
+    case "agent_message_chunk":
+      return textChunkUpdate("text", update);
+    case "agent_thought_chunk":
+      return textChunkUpdate("thought", update);
+    case "tool_call":
+      return { kind: "tool_call", call: toToolCallState(update) };
+    case "tool_call_update":
+      return { kind: "tool_delta", delta: toToolCallDelta(update) };
+    case "plan":
+      return { kind: "plan", entries: update.entries.map(toPlanEntry) };
+    case "current_mode_update":
+      return { kind: "mode", modeId: update.currentModeId };
+    case "usage_update":
+      return undefined;
+    case "user_message_chunk":
+    case "plan_update":
+    case "plan_removed":
+    case "available_commands_update":
+    case "config_option_update":
+    case "session_info_update":
+      return rawUpdate(update);
+    default:
+      return rawUnknownUpdate(update);
+  }
 }
 
 // ---------------------------------------------------------------------------

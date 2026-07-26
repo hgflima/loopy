@@ -75,7 +75,7 @@
     Size: M
     Risk: H
 
-- [ ] T-002: Tradutor puro `SessionUpdate → StreamUpdate` no boundary ACP
+- [x] T-002: Tradutor puro `SessionUpdate → StreamUpdate` no boundary ACP
     `src/acp/client.ts` ganha `translateUpdate(update: SessionUpdate): StreamUpdate | undefined`
     — **pura**, irmã de `agentChunkText`/`usageUpdateUsed`, que já moram lá. É o **único**
     lugar novo que conhece a shape do ACP; a partir daqui só trafega vocabulário do motor.
@@ -108,7 +108,7 @@
     Size: S
     Risk: M
 
-- [ ] T-003: `onUpdate` do Run deixa de filtrar — despacha tudo, carimbado por Step
+- [x] T-003: `onUpdate` do Run deixa de filtrar — despacha tudo, carimbado por Step
     `src/index.ts` (~`:595-615`): o `onUpdate` passado ao `openAgent` hoje despacha só
     `stream_chunk` (texto) e `usage_sample`, e joga fora os outros onze updates. Passa a
     chamar `translateUpdate` (T-002) e, quando devolve um `StreamUpdate`, despachar
@@ -167,7 +167,7 @@
 
 ## Fase 2 — Acumulação na GUI: a timeline e o ring
 
-- [ ] T-005: `stream-history.ts` — timeline de `StreamItem[]`, ring e o marcador `elided`
+- [x] T-005: `stream-history.ts` — timeline de `StreamItem[]`, ring e o marcador `elided`
     `apps/menubar/src/state/stream-history.ts` deixa de acumular texto e passa a acumular
     itens. **Puro** (AD-6), sem React, sem I/O.
     **A função central, usada pelos DOIS redutores:**
@@ -204,7 +204,7 @@
     Size: M
     Risk: M
 
-- [ ] T-006: `applyTimeline` — o transcript vira um redutor irmão do `reduce`
+- [x] T-006: `applyTimeline` — o transcript vira um redutor irmão do `reduce`
     **Esta é a armadilha nº 1 da change, e ela é mais sutil do que "reordenar".**
     `apps/menubar/src/state/store-bridge.ts:145-146` faz
     `const nextStore = reduce(...); if (nextStore === state.store) return state;` e **só
@@ -279,7 +279,7 @@
     Size: S
     Risk: M
 
-- [ ] T-008: Vocabulário de ferramenta — 5 hues de família, 2 heranças e 7 glifos (C1)
+- [x] T-008: Vocabulário de ferramenta — 5 hues de família, 2 heranças e 7 glifos (C1)
     O `DESIGN.md` reserva cinco hues de estado (accent 352, failed 28, blocked 75, done 150,
     running 210) e exige ~35° de separação — a regra que impede "failed" de ler como
     "interativo". Medindo os intervalos livres na roda, **dez** `ToolKind` distintos não
@@ -419,7 +419,7 @@
     Size: S
     Risk: M
 
-- [ ] T-013: Entrevista no motor — `onUpdate` filtrado e o control `agent_stream` (R1)
+- [x] T-013: Entrevista no motor — `onUpdate` filtrado e o control `agent_stream` (R1)
     `src/interview/run.ts`: o `defaultOpenSession` passa a dar um `onUpdate` ao `openAgent`,
     que **filtra `agent_message_chunk`** e emite os demais como
     `{ control: "agent_stream", phase, update }` (o frame de T-001) via

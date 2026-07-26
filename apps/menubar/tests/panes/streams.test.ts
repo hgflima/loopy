@@ -11,9 +11,22 @@ import { describe, it, expect } from "vitest";
 import { streamColumns } from "../../src/panes/StreamPanel";
 import { initialState, reduce } from "loopy/tui/store";
 import type { StoreEvent, StoreState } from "loopy/tui/store";
-import type { Transcript } from "../../src/state/stream-history";
+import type {
+  Transcript,
+  TranscriptEntry,
+} from "../../src/state/stream-history";
+import type { StreamItem } from "loopy/tui/store";
 
 // ── helpers ─────────────────────────────────────────────────────────────
+
+/** A text timeline item. */
+const ti = (t: string): StreamItem => ({ item: "text", text: t });
+
+/** A transcript entry carrying a text item, tagged by step. */
+const te = (stepId: string, t: string): TranscriptEntry => ({
+  stepId,
+  item: ti(t),
+});
 
 /** Apply a sequence of events to a fresh store. */
 function feedEvents(events: StoreEvent[]): StoreState {
@@ -46,9 +59,9 @@ describe("streamColumns (integration — real reducer)", () => {
       ...startTask("T-003", "Task C"),
     ]);
     const transcript: Transcript = {
-      "T-001": [{ stepId: "implement", text: "alpha" }],
-      "T-002": [{ stepId: "implement", text: "beta" }],
-      "T-003": [{ stepId: "implement", text: "gamma" }],
+      "T-001": [te("implement", "alpha")],
+      "T-002": [te("implement", "beta")],
+      "T-003": [te("implement", "gamma")],
     };
     const cols = streamColumns(store, transcript);
 
@@ -63,8 +76,8 @@ describe("streamColumns (integration — real reducer)", () => {
       ...startTask("T-002", "Running task"),
     ]);
     const transcript: Transcript = {
-      "T-001": [{ stepId: "implement", text: "done" }],
-      "T-002": [{ stepId: "implement", text: "still going" }],
+      "T-001": [te("implement", "done")],
+      "T-002": [te("implement", "still going")],
     };
     const cols = streamColumns(store, transcript);
 
@@ -76,18 +89,22 @@ describe("streamColumns (integration — real reducer)", () => {
     const store = feedEvents(startTask("T-001", "Multi-step"));
     const transcript: Transcript = {
       "T-001": [
-        { stepId: "implement", text: "code..." },
-        { stepId: "implement", text: " more code" },
-        { stepId: "simplify", text: "simplifying..." },
-        { stepId: "audit", text: "AUDIT: PASS" },
+        te("implement", "code..."),
+        te("implement", " more code"),
+        te("simplify", "simplifying..."),
+        te("audit", "AUDIT: PASS"),
       ],
     };
     const cols = streamColumns(store, transcript);
 
     expect(cols[0]!.segments).toEqual([
-      { stepId: "implement", label: "implement", text: "code... more code" },
-      { stepId: "simplify", label: "simplify", text: "simplifying..." },
-      { stepId: "audit", label: "audit", text: "AUDIT: PASS" },
+      {
+        stepId: "implement",
+        label: "implement",
+        items: [ti("code..."), ti(" more code")],
+      },
+      { stepId: "simplify", label: "simplify", items: [ti("simplifying...")] },
+      { stepId: "audit", label: "audit", items: [ti("AUDIT: PASS")] },
     ]);
   });
 
@@ -95,9 +112,9 @@ describe("streamColumns (integration — real reducer)", () => {
     const store = feedEvents(startTask("T-001", "Fix loop"));
     const transcript: Transcript = {
       "T-001": [
-        { stepId: "implement", text: "first pass" },
-        { stepId: "test", text: "fail" },
-        { stepId: "implement", text: "fix" },
+        te("implement", "first pass"),
+        te("test", "fail"),
+        te("implement", "fix"),
       ],
     };
     const cols = streamColumns(store, transcript);

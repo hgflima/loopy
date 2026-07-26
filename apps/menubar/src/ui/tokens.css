@@ -60,6 +60,20 @@
   --state-neutral-ink: oklch(0.50 0.005 260);
   --state-neutral-subtle: oklch(0.955 0.001 260);
 
+  /* ---- Tool-kind vocabulary — the icon STROKE only (C-0019 §C1) --------- *
+   * A tool call's family tints ONLY its icon glyph via `currentColor`; the
+   * status keeps the pill/dot in the state hues above. So the distinction is
+   * shape (glyph × pill), not hue — it survives color-blindness (DESIGN.md §2).
+   * Five family hues sit in the wheel's free arcs (≥30° from every reserved
+   * state hue); the last two INHERIT rather than take a 6th/7th hue. */
+  --tool-read: oklch(0.55 0.15 240);
+  --tool-write: oklch(0.55 0.14 112);
+  --tool-exec: oklch(0.55 0.12 180);
+  --tool-think: oklch(0.55 0.15 270);
+  --tool-mode: oklch(0.55 0.15 322);
+  --tool-danger: var(--state-failed-ink); /* destruction IS the danger hue */
+  --tool-other: var(--ink-tertiary); /* muted; keeps the vocabulary small */
+
   /* ---- Elevation — flat until it floats (DESIGN.md §4) ------------------ */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.16);
@@ -145,6 +159,15 @@
     --state-neutral: oklch(0.52 0.005 260);
     --state-neutral-ink: oklch(0.68 0.005 260);
     --state-neutral-subtle: oklch(0.30 0.004 260);
+
+    /* Tool-kind hues brighten for dark surfaces; the two inherited tokens
+       (`--tool-danger`/`--tool-other`) follow their sources' dark values via
+       `var()`, so they need no override here. */
+    --tool-read: oklch(0.74 0.13 240);
+    --tool-write: oklch(0.74 0.13 112);
+    --tool-exec: oklch(0.74 0.11 180);
+    --tool-think: oklch(0.74 0.14 270);
+    --tool-mode: oklch(0.74 0.14 322);
 
     /* Shadows read poorly on dark — elevation is tonal (surface → elevated);
        keep only a soft ambient lift on true floaters. */

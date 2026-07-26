@@ -35,11 +35,13 @@ import {
   createTurnTextBuffer,
   pickOptionByKind,
   resolvePermissionOutcome,
+  translateUpdate,
   usageUpdateCost,
   usageUpdateUsed,
   type TerminalManager,
 } from "../../src/acp/client";
 import type { AcpTrafficEntry } from "../../src/logging/logger";
+import type { StreamUpdate } from "../../src/tui/store";
 
 // ---------------------------------------------------------------------------
 // Permission decision by kind (AC2)
@@ -455,5 +457,266 @@ describe("createClientApp · onTraffic recv", () => {
     const { app, textBuffer } = createClientApp({});
     expect(app).toBeDefined();
     expect(textBuffer).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// translateUpdate — SessionUpdate → StreamUpdate at the ACP boundary (C-0019 T-002)
+// ---------------------------------------------------------------------------
+
+describe("translateUpdate", () => {
+  it("maps agent_message_chunk text to a `text` update, carrying messageId", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hello" },
+      messageId: "m1",
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "text",
+      text: "hello",
+      messageId: "m1",
+    });
+  });
+
+  it("omits messageId when the chunk has none", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "hello" },
+    };
+    const result = translateUpdate(update);
+    expect(result).toEqual<StreamUpdate>({ kind: "text", text: "hello" });
+    expect(result && "messageId" in result).toBe(false);
+  });
+
+  it("falls back to `raw` for an agent_message_chunk whose content is not text", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "image", data: "AAAA", mimeType: "image/png" },
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "raw",
+      updateKind: "agent_message_chunk",
+      payload: update,
+    });
+  });
+
+  it("maps agent_thought_chunk to a `thought` update", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "thinking" },
+      messageId: "t1",
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "thought",
+      text: "thinking",
+      messageId: "t1",
+    });
+  });
+
+  it("maps tool_call to a `tool_call`, filling defaults and translating content", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "tool_call",
+      toolCallId: "tc-1",
+      title: "Edit file",
+      // kind and status omitted → defaults
+      locations: [{ path: "/a.ts", line: 3 }, { path: "/b.ts" }],
+      content: [
+        { type: "content", content: { type: "text", text: "ok" } },
+        { type: "diff", path: "/a.ts", oldText: "old", newText: "new" },
+        { type: "diff", path: "/c.ts", newText: "brand new" },
+        { type: "terminal", terminalId: "term-9" },
+      ],
+      rawInput: { cmd: "x" },
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "tool_call",
+      call: {
+        toolCallId: "tc-1",
+        title: "Edit file",
+        kind: "other",
+        status: "pending",
+        locations: [{ path: "/a.ts", line: 3 }, { path: "/b.ts" }],
+        content: [
+          { kind: "text", text: "ok" },
+          { kind: "diff", path: "/a.ts", oldText: "old", newText: "new" },
+          { kind: "diff", path: "/c.ts", newText: "brand new" },
+          { kind: "terminal", terminalId: "term-9" },
+        ],
+        rawInput: { cmd: "x" },
+      },
+    });
+  });
+
+  it("preserves a missing diff oldText as undefined (new file)", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "tool_call",
+      toolCallId: "tc-new",
+      title: "Create",
+      content: [{ type: "diff", path: "/new.ts", newText: "x" }],
+    };
+    const result = translateUpdate(update);
+    const diff =
+      result?.kind === "tool_call" ? result.call.content[0] : undefined;
+    expect(diff).toEqual({ kind: "diff", path: "/new.ts", newText: "x" });
+    expect(diff && "oldText" in diff).toBe(false);
+  });
+
+  it("routes a non-text tool content block to `raw`", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "tool_call",
+      toolCallId: "tc-img",
+      title: "Render",
+      content: [
+        {
+          type: "content",
+          content: { type: "image", data: "AAAA", mimeType: "image/png" },
+        },
+      ],
+    };
+    const result = translateUpdate(update);
+    const item =
+      result?.kind === "tool_call" ? result.call.content[0] : undefined;
+    expect(item).toEqual({
+      kind: "raw",
+      payload: {
+        type: "content",
+        content: { type: "image", data: "AAAA", mimeType: "image/png" },
+      },
+    });
+  });
+
+  it("maps tool_call_update to a `tool_delta`, passing fields through", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "tc-1",
+      status: "completed",
+      kind: "execute",
+      content: [{ type: "content", content: { type: "text", text: "done" } }],
+      rawOutput: { code: 0 },
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "tool_delta",
+      delta: {
+        toolCallId: "tc-1",
+        status: "completed",
+        kind: "execute",
+        content: [{ kind: "text", text: "done" }],
+        rawOutput: { code: 0 },
+      },
+    });
+  });
+
+  it("maps plan to a `plan` update", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "plan",
+      entries: [
+        { content: "step one", priority: "high", status: "in_progress" },
+        { content: "step two", priority: "low", status: "pending" },
+      ],
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "plan",
+      entries: [
+        { content: "step one", priority: "high", status: "in_progress" },
+        { content: "step two", priority: "low", status: "pending" },
+      ],
+    });
+  });
+
+  it("maps current_mode_update to a `mode` update", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "current_mode_update",
+      currentModeId: "plan",
+    };
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "mode",
+      modeId: "plan",
+    });
+  });
+
+  it("returns undefined for usage_update (it has its own path)", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "usage_update",
+      used: 1000,
+      size: 200000,
+    };
+    expect(translateUpdate(update)).toBeUndefined();
+  });
+
+  it.each([
+    "user_message_chunk",
+    "plan_update",
+    "plan_removed",
+    "available_commands_update",
+    "config_option_update",
+    "session_info_update",
+  ])("routes the R7d update %s to `raw` with the right updateKind", (kind) => {
+    // These six carry heterogeneous shapes; a minimal object with the right
+    // discriminant is enough — the payload is echoed verbatim.
+    const update = { sessionUpdate: kind } as unknown as SessionUpdate;
+    expect(translateUpdate(update)).toEqual<StreamUpdate>({
+      kind: "raw",
+      updateKind: kind,
+      payload: update,
+    });
+  });
+
+  it("routes an unknown/invented sessionUpdate to `raw` without throwing", () => {
+    const update = {
+      sessionUpdate: "totally_made_up",
+      whatever: 1,
+    } as unknown as SessionUpdate;
+    let result: StreamUpdate | undefined;
+    expect(() => {
+      result = translateUpdate(update);
+    }).not.toThrow();
+    expect(result).toEqual<StreamUpdate>({
+      kind: "raw",
+      updateKind: "totally_made_up",
+      payload: update,
+    });
+  });
+
+  it("never throws across every declared sessionUpdate variant", () => {
+    const updates: SessionUpdate[] = [
+      {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "u" },
+      },
+      {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "a" },
+      },
+      {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "t" },
+      },
+      { sessionUpdate: "tool_call", toolCallId: "x", title: "T" },
+      { sessionUpdate: "tool_call_update", toolCallId: "x" },
+      { sessionUpdate: "plan", entries: [] },
+      { sessionUpdate: "plan_update" } as unknown as SessionUpdate,
+      { sessionUpdate: "plan_removed" } as unknown as SessionUpdate,
+      { sessionUpdate: "available_commands_update", availableCommands: [] },
+      { sessionUpdate: "current_mode_update", currentModeId: "m" },
+      { sessionUpdate: "config_option_update" } as unknown as SessionUpdate,
+      { sessionUpdate: "session_info_update" } as unknown as SessionUpdate,
+      { sessionUpdate: "usage_update", used: 1, size: 2 },
+    ];
+    for (const update of updates) {
+      expect(() => translateUpdate(update)).not.toThrow();
+    }
+  });
+
+  it("does not mutate the update it receives", () => {
+    const update: SessionUpdate = {
+      sessionUpdate: "tool_call",
+      toolCallId: "tc-1",
+      title: "Edit",
+      content: [{ type: "diff", path: "/a.ts", oldText: "o", newText: "n" }],
+      locations: [{ path: "/a.ts", line: 1 }],
+    };
+    const before = structuredClone(update);
+    translateUpdate(update);
+    expect(update).toEqual(before);
   });
 });
