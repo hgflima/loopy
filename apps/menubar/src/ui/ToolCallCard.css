@@ -1,0 +1,152 @@
+/**
+ * ToolCallCard + DiffView — the tool-call card and its painted diff.
+ *
+ * The tool family hue lives ONLY on the glyph stroke (set inline via `color` on
+ * `.tool-card__glyph`, inherited by the SVG's `currentColor`); this file uses
+ * NO `--tool-*` token, so the card's chrome is all neutrals + state hues (C1).
+ */
+
+.tool-card {
+  /* Render cost on demand (C3, render side): an off-screen card is not painted,
+     and a giant payload behind a closed <details> never lays out until opened.
+     The wire still carries everything (D6). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  padding: var(--sp-sm) var(--sp-md);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.tool-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm);
+}
+
+/* The one place a tool family hue appears — the glyph, coloured inline; the SVG
+   stroke inherits it via currentColor. Never a fill/border/pill (C1). */
+.tool-card__glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  line-height: 0;
+}
+
+.tool-card__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+}
+
+.tool-card__locations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-xs) var(--sp-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-secondary);
+}
+
+.tool-card__disclosure {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-xs);
+}
+
+.tool-card__summary {
+  cursor: pointer;
+  color: var(--ink-tertiary);
+  text-transform: uppercase;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tool-card__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-sm);
+  margin-top: var(--sp-xs);
+}
+
+.tool-card__text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-secondary);
+}
+
+.tool-card__terminal {
+  color: var(--ink-tertiary);
+}
+
+.tool-card__diff-path {
+  margin-bottom: var(--sp-xs);
+  color: var(--ink-tertiary);
+}
+
+/* ---- DiffView — painted hunks, +/− in the done/failed hues -------------- */
+
+.diff-view {
+  overflow-x: auto;
+}
+
+.diff-view--notice {
+  color: var(--ink-tertiary);
+  font-style: italic;
+}
+
+.diff-hunk {
+  display: grid;
+  grid-template-columns: max-content max-content max-content 1fr;
+}
+
+.diff-hunk + .diff-hunk {
+  margin-top: var(--sp-sm);
+  padding-top: var(--sp-sm);
+  border-top: 1px dashed var(--border);
+}
+
+/* A line spans all four columns and re-uses them via subgrid, so gutters,
+   sign, and code stay aligned across every line of the hunk. */
+.diff-line {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  column-gap: var(--sp-sm);
+}
+
+/* +/− ride on the existing done/failed hues — both have light + dark mirrors,
+   so the sign reads in either theme. */
+.diff-line--add {
+  background: var(--state-done-subtle);
+  color: var(--state-done-ink);
+}
+.diff-line--del {
+  background: var(--state-failed-subtle);
+  color: var(--state-failed-ink);
+}
+.diff-line--ctx {
+  color: var(--ink-secondary);
+}
+
+.diff-line__gutter {
+  text-align: right;
+  color: var(--ink-tertiary);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.diff-line__sign {
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.diff-line__code {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
