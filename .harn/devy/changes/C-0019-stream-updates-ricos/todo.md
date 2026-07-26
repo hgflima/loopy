@@ -75,7 +75,7 @@
     Size: M
     Risk: H
 
-- [ ] T-002: Tradutor puro `SessionUpdate → StreamUpdate` no boundary ACP
+- [x] T-002: Tradutor puro `SessionUpdate → StreamUpdate` no boundary ACP
     `src/acp/client.ts` ganha `translateUpdate(update: SessionUpdate): StreamUpdate | undefined`
     — **pura**, irmã de `agentChunkText`/`usageUpdateUsed`, que já moram lá. É o **único**
     lugar novo que conhece a shape do ACP; a partir daqui só trafega vocabulário do motor.
