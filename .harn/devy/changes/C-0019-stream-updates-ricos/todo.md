@@ -254,12 +254,13 @@
 
 ## Fase 3 — Vocabulário visual: hunks, hues, glifos e os componentes
 
-- [ ] T-007: `diff-hunks.ts` — hunks de verdade a partir de `oldText`/`newText` (jsdiff)
+- [x] T-007: `diff-hunks.ts` — hunks de verdade a partir de `oldText`/`newText` (jsdiff)
     O tipo `Diff` do ACP é `{ path, oldText?, newText }` — **não** existe hunk, sinal nem
     número de linha no protocolo. Sem algoritmo, o `+`/`−` do Critério 2 é impossível; a
     referência (`acp-inspector`) pinta o arquivo velho inteiro de vermelho e o novo inteiro
     de verde, o que numa edição de 3 linhas num arquivo de 2.000 são 4.000 linhas coloridas.
-    **Dependência nova nº 1 (R5):** `diff` (jsdiff), MIT, no workspace `apps/menubar`.
+    **Dependência nova nº 1 (R5):** `diff` (jsdiff), BSD-3-Clause (permissiva, sem
+    copyleft — jsdiff nunca foi MIT), no workspace `apps/menubar`.
     Myers com corte de prefixo/sufixo é o que a lib faz bem e um LCS caseiro faz mal.
     `apps/menubar/src/ui/diff-hunks.ts` — **puro** (AD-6): recebe `oldText`/`newText` e
     devolve hunks com ~3 linhas de contexto, via `diffLines`. Arquivo novo (`oldText`
@@ -418,7 +419,7 @@
     Size: S
     Risk: M
 
-- [ ] T-013: Entrevista no motor — `onUpdate` filtrado e o control `agent_stream` (R1)
+- [x] T-013: Entrevista no motor — `onUpdate` filtrado e o control `agent_stream` (R1)
     `src/interview/run.ts`: o `defaultOpenSession` passa a dar um `onUpdate` ao `openAgent`,
     que **filtra `agent_message_chunk`** e emite os demais como
     `{ control: "agent_stream", phase, update }` (o frame de T-001) via

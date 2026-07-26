@@ -213,7 +213,8 @@ Sem stack nova além de **duas** dependências, ambas no workspace `apps/menubar
   `MarkdownHooks` e debounce. `react-markdown` expõe `rehypePlugins` exatamente
   para isso (docs oficiais). Conjunto de linguagens: o **`common`** default,
   sem curadoria (R7e).
-- **Dependência nova 2 (R5):** `diff` (jsdiff), MIT. **Por que é necessária:** o
+- **Dependência nova 2 (R5):** `diff` (jsdiff), BSD-3-Clause (permissiva, sem
+  copyleft — jsdiff nunca foi MIT). **Por que é necessária:** o
   tipo `Diff` do ACP (`types.gen.d.ts:509–532`) é `{ path, oldText?, newText }` —
   **não** existe hunk, sinal nem número de linha no protocolo. Sem um algoritmo,
   o `+`/`−` do Critério 2 é impossível; a referência (`acp-inspector`,
