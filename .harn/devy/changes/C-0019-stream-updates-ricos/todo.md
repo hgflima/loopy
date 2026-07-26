@@ -259,7 +259,8 @@
     número de linha no protocolo. Sem algoritmo, o `+`/`−` do Critério 2 é impossível; a
     referência (`acp-inspector`) pinta o arquivo velho inteiro de vermelho e o novo inteiro
     de verde, o que numa edição de 3 linhas num arquivo de 2.000 são 4.000 linhas coloridas.
-    **Dependência nova nº 1 (R5):** `diff` (jsdiff), MIT, no workspace `apps/menubar`.
+    **Dependência nova nº 1 (R5):** `diff` (jsdiff), BSD-3-Clause (permissiva, sem
+    copyleft — jsdiff nunca foi MIT), no workspace `apps/menubar`.
     Myers com corte de prefixo/sufixo é o que a lib faz bem e um LCS caseiro faz mal.
     `apps/menubar/src/ui/diff-hunks.ts` — **puro** (AD-6): recebe `oldText`/`newText` e
     devolve hunks com ~3 linhas de contexto, via `diffLines`. Arquivo novo (`oldText`
