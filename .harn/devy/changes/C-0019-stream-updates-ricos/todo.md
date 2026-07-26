@@ -167,7 +167,7 @@
 
 ## Fase 2 — Acumulação na GUI: a timeline e o ring
 
-- [ ] T-005: `stream-history.ts` — timeline de `StreamItem[]`, ring e o marcador `elided`
+- [x] T-005: `stream-history.ts` — timeline de `StreamItem[]`, ring e o marcador `elided`
     `apps/menubar/src/state/stream-history.ts` deixa de acumular texto e passa a acumular
     itens. **Puro** (AD-6), sem React, sem I/O.
     **A função central, usada pelos DOIS redutores:**
