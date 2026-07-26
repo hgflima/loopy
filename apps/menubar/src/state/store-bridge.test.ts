@@ -12,9 +12,10 @@
  * while documenting that the raw transcript snapshot still misses it.
  */
 import { describe, it, expect } from "vitest";
-import { applyLine, initialBridgeState } from "./store-bridge";
-import { segmentsFor, overlayStepUsage } from "./stream-history";
+import { applyLine, initialBridgeState, applyTimeline } from "./store-bridge";
+import { segmentsFor, overlayStepUsage, TIMELINE_CAP } from "./stream-history";
 import { formatUsage } from "../ui/context-window";
+import type { StoreEvent, StoreState, ToolCallState } from "loopy/tui/store";
 
 /** Serialize one StoreEvent as an NDJSON transport line (`{frame:"event",…}`). */
 function ev(event: Record<string, unknown>): string {
@@ -138,5 +139,252 @@ describe("store-bridge — interview controls are ignored (same reference)", () 
     const next = applyLine(state, ctrl({ control: "run_started" }));
     expect(next).not.toBe(state);
     expect(next.ui.runStatus).toBe("running");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// store-bridge — applyTimeline: the transcript's own reducer (C-0019 T-006)
+// ---------------------------------------------------------------------------
+
+/** A registered, running task sitting on step STEP — so `currentStepId` = STEP. */
+const REGISTERED: readonly string[] = [
+  ev({ type: "task_registered", taskId: TASK, title: "do the thing" }),
+  ev({ type: "task_started", taskId: TASK }),
+  ev({
+    type: "step_started",
+    taskId: TASK,
+    stepId: STEP,
+    stepType: "agent",
+    agentName: "Claude",
+    model: "claude-opus-4-8",
+  }),
+];
+
+/** A full {@link ToolCallState} fixture (every required field), overridable. */
+function toolCallState(
+  id: string,
+  over: Partial<ToolCallState> = {},
+): ToolCallState {
+  return {
+    toolCallId: id,
+    title: "Edit file",
+    kind: "edit",
+    status: "pending",
+    locations: [],
+    content: [],
+    ...over,
+  };
+}
+
+describe("store-bridge — applyLine grows the transcript via applyTimeline (T-006)", () => {
+  it("a tool_call for a registered task grows the transcript even though reduce is a no-op (THE trap)", () => {
+    const base = feed(REGISTERED);
+    const next = applyLine(
+      base,
+      ev({ type: "tool_call", taskId: TASK, stepId: STEP, call: toolCallState("tc-1") }),
+    );
+
+    // `reduce` returns the SAME store for the six rich events (R4)…
+    expect(next.store).toBe(base.store);
+    // …but the transcript MUST grow — the whole reason T-006 exists.
+    expect(next).not.toBe(base);
+    const entries = next.transcript[TASK] ?? [];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.item).toEqual({ item: "tool", call: toolCallState("tc-1") });
+    expect(entries[0]!.stepId).toBe(STEP);
+  });
+
+  it("a timeline event for an UNregistered task returns the same BridgeState (fail-closed)", () => {
+    const base = feed(REGISTERED);
+    const next = applyLine(
+      base,
+      ev({ type: "tool_call", taskId: "GHOST", call: toolCallState("tc-x") }),
+    );
+    expect(next).toBe(base);
+  });
+
+  it("a non-timeline event (check_started) leaves the transcript untouched", () => {
+    const base = feed(REGISTERED);
+    const next = applyLine(
+      base,
+      ev({ type: "check_started", taskId: TASK, stepId: STEP, name: "ci" }),
+    );
+    // The store changed (a check was upserted)…
+    expect(next.store).not.toBe(base.store);
+    // …but the transcript is the same reference (structural sharing).
+    expect(next.transcript).toBe(base.transcript);
+  });
+
+  it("a stream_chunk without a stepId falls back to the task's currentStepId", () => {
+    const base = feed(REGISTERED);
+    const next = applyLine(base, ev({ type: "stream_chunk", taskId: TASK, text: "hi" }));
+    expect(next.transcript[TASK]?.at(-1)?.stepId).toBe(STEP);
+  });
+
+  it("a stream_chunk carries the event's own stepId over currentStepId", () => {
+    // A second step becomes current, but a late chunk still targets STEP.
+    const base = feed([
+      ...REGISTERED,
+      ev({ type: "step_started", taskId: TASK, stepId: "simplify", stepType: "agent" }),
+    ]);
+    const next = applyLine(
+      base,
+      ev({ type: "stream_chunk", taskId: TASK, stepId: STEP, text: "late" }),
+    );
+    expect(next.transcript[TASK]?.at(-1)?.stepId).toBe(STEP);
+  });
+
+  it("routes each rich event to its StreamItem kind", () => {
+    let s = feed(REGISTERED);
+    s = applyLine(s, ev({ type: "thought_chunk", taskId: TASK, text: "hmm" }));
+    s = applyLine(s, ev({
+      type: "plan",
+      taskId: TASK,
+      entries: [{ content: "x", priority: "high", status: "pending" }],
+    }));
+    s = applyLine(s, ev({ type: "mode_changed", taskId: TASK, modeId: "plan" }));
+    s = applyLine(s, ev({
+      type: "agent_update",
+      taskId: TASK,
+      updateKind: "available_commands_update",
+      payload: { a: 1 },
+    }));
+    const kinds = (s.transcript[TASK] ?? []).map((e) => e.item.item);
+    expect(kinds).toEqual(["thought", "plan", "mode", "raw"]);
+  });
+
+  it("a tool_call_update merges into its card by id, interleaved with text (not a new entry)", () => {
+    let s = feed(REGISTERED);
+    s = applyLine(s, ev({ type: "tool_call", taskId: TASK, stepId: STEP, call: toolCallState("tc") }));
+    s = applyLine(s, ev({ type: "stream_chunk", taskId: TASK, stepId: STEP, text: "working…" }));
+    s = applyLine(s, ev({
+      type: "tool_call_update",
+      taskId: TASK,
+      stepId: STEP,
+      delta: { toolCallId: "tc", status: "completed" },
+    }));
+
+    const items = (s.transcript[TASK] ?? []).map((e) => e.item);
+    expect(items).toHaveLength(2); // the update merged in place; no 3rd entry
+    const tool = items.find((i) => i.item === "tool");
+    expect(tool).toMatchObject({ item: "tool", call: { toolCallId: "tc", status: "completed" } });
+  });
+
+  it("consecutive text chunks sharing a messageId concatenate into one entry", () => {
+    let s = feed(REGISTERED);
+    s = applyLine(s, ev({ type: "stream_chunk", taskId: TASK, stepId: STEP, text: "Hello", messageId: "m1" }));
+    s = applyLine(s, ev({ type: "stream_chunk", taskId: TASK, stepId: STEP, text: " world", messageId: "m1" }));
+    const entries = s.transcript[TASK] ?? [];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.item).toEqual({ item: "text", text: "Hello world", messageId: "m1" });
+  });
+
+  it("a command frame and a malformed line both return the same reference", () => {
+    const base = feed(REGISTERED);
+    const cmd = JSON.stringify({
+      frame: "command",
+      command: "approval_decision",
+      requestId: "r",
+      approved: true,
+    });
+    expect(applyLine(base, cmd)).toBe(base);
+    expect(applyLine(base, "}{ not json")).toBe(base);
+  });
+
+  it("a tool_call whose stepId was never started returns the same BridgeState (fail-closed step)", () => {
+    // Task IS registered, but the event carries a step that never emitted
+    // `step_started` — so it is absent from `task.steps`. Fabricating an entry
+    // would leak a ghost segment with no telemetry; fail-closed instead.
+    const base = feed(REGISTERED);
+    const next = applyLine(
+      base,
+      ev({ type: "tool_call", taskId: TASK, stepId: "never-started", call: toolCallState("tc-g") }),
+    );
+    expect(next).toBe(base);
+  });
+
+  it("the elided ring marker joins the first surviving segment, not the current step", () => {
+    // Fill STEP up to (almost) the cap with distinct-messageId text items (no
+    // concatenation), switch to a second step, then overflow so the OLDEST
+    // (STEP) items drop and an `elided` marker is minted at the head.
+    const onStep = 250;
+    const onSimplify = TIMELINE_CAP - onStep + 20; // total renderable > cap → a cut
+    const lines: string[] = [...REGISTERED];
+    for (let i = 0; i < onStep; i++) {
+      lines.push(ev({ type: "stream_chunk", taskId: TASK, stepId: STEP, text: `a${i}`, messageId: `s${i}` }));
+    }
+    lines.push(ev({ type: "step_started", taskId: TASK, stepId: "simplify", stepType: "agent" }));
+    for (let i = 0; i < onSimplify; i++) {
+      lines.push(ev({ type: "stream_chunk", taskId: TASK, stepId: "simplify", text: `b${i}`, messageId: `p${i}` }));
+    }
+    const s = feed(lines);
+
+    const entries = s.transcript[TASK]!;
+    // A cut happened — the head is the elided marker…
+    expect(entries[0]!.item.item).toBe("elided");
+    // …and it inherits the FIRST SURVIVOR's step (STEP, oldest still standing),
+    // NOT the current step (simplify). Otherwise segmentsFor splits the timeline
+    // as `simplify (marker) → STEP → simplify`.
+    expect(entries[0]!.stepId).toBe(STEP);
+
+    const segs = segmentsFor(TASK, s.transcript);
+    expect(segs.map((seg) => seg.stepId)).toEqual([STEP, "simplify"]);
+    expect(segs[0]!.items[0]!.item).toBe("elided");
+  });
+});
+
+describe("applyTimeline — pure, tested in isolation (T-006)", () => {
+  const store: StoreState = feed(REGISTERED).store;
+
+  it("returns the same transcript for a non-timeline event", () => {
+    const tx = {};
+    const event: StoreEvent = { type: "check_started", taskId: TASK, stepId: STEP, name: "ci" };
+    expect(applyTimeline(tx, event, store)).toBe(tx);
+  });
+
+  it("is fail-closed: an event whose task is absent from the store returns the same transcript", () => {
+    const tx = {};
+    const event: StoreEvent = { type: "tool_call", taskId: "GHOST", call: toolCallState("tc") };
+    expect(applyTimeline(tx, event, store)).toBe(tx);
+  });
+
+  it("is fail-closed: an event whose step has no step_started returns the same transcript", () => {
+    // The task exists, but this stepId is absent from `task.steps` (the
+    // inherited-by-accident validation the old guard had for a step without
+    // `step_started`). No ghost segment; same reference.
+    const tx = {};
+    const event: StoreEvent = {
+      type: "tool_call",
+      taskId: TASK,
+      stepId: "never-started",
+      call: toolCallState("tc"),
+    };
+    expect(applyTimeline(tx, event, store)).toBe(tx);
+  });
+
+  it("drops an orphan tool_call_update — no card fabricated (same transcript)", () => {
+    const tx = {};
+    const event: StoreEvent = {
+      type: "tool_call_update",
+      taskId: TASK,
+      stepId: STEP,
+      delta: { toolCallId: "never-seen" },
+    };
+    expect(applyTimeline(tx, event, store)).toBe(tx);
+  });
+
+  it("derives per-entry telemetry from the step in the passed store", () => {
+    const withUsage: StoreState = feed([
+      ...REGISTERED,
+      ev({ type: "usage_sample", taskId: TASK, stepId: STEP, used: 1234, size: 200_000 }),
+    ]).store;
+    const event: StoreEvent = { type: "tool_call", taskId: TASK, stepId: STEP, call: toolCallState("tc") };
+    const tx = applyTimeline({}, event, withUsage);
+    expect(tx[TASK]![0]).toMatchObject({
+      agent: "Claude",
+      model: "claude-opus-4-8",
+      usedTokens: 1234,
+      size: 200_000,
+    });
   });
 });

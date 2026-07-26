@@ -4,20 +4,31 @@
  * {@link applyLine} parses one NDJSON line — reusing
  * {@link parseTransportLine} from the engine (T-004) — and routes it:
  *
- * - **event** frame → {@link reduce} from `loopy/tui/store` (domain state)
+ * - **event** frame → two **sibling** pure reducers, {@link reduce} (domain
+ *   state) and {@link applyTimeline} (the per-task transcript); the frame is a
+ *   no-op only when *both* held still.
  * - **control** frame → UI-only state (`runStatus`, `pendingApprovals`)
  * - **command** frame or malformed input → no-op (same reference)
  *
  * The {@link BridgeState} separates concerns: `store` holds the canonical
- * {@link StoreState} (AD-6 — no domain duplication), `ui` holds transport-
- * level status that exists only for the Native UI surface.
+ * {@link StoreState} (AD-6 — no domain duplication), `transcript` is the
+ * append-only timeline {@link applyTimeline} folds into, and `ui` holds
+ * transport-level status that exists only for the Native UI surface. All three
+ * are sub-states with their own reducer — none nested inside another's guard.
  *
  * Never throws (AD-5 — inherits from {@link parseTransportLine}).
  */
 
 import { parseTransportLine, type ControlFrame } from "loopy/tui/transport";
-import { reduce, initialState, type StoreState } from "loopy/tui/store";
-import type { Transcript, TranscriptEntry } from "./stream-history";
+import {
+  reduce,
+  initialState,
+  type StoreState,
+  type StoreEvent,
+  type StreamUpdate,
+} from "loopy/tui/store";
+import { appendStreamItem } from "./stream-history";
+import type { Transcript, TranscriptEntry, StreamItem } from "./stream-history";
 
 // ---------------------------------------------------------------------------
 // UI state (control frames only — never touches StoreState)
@@ -143,25 +154,21 @@ export function applyLine(state: BridgeState, line: string): BridgeState {
   switch (result.frame) {
     case "event": {
       const nextStore = reduce(state.store, result.event);
-      if (nextStore === state.store) return state;
-
-      if (result.event.type === "stream_chunk") {
-        const nextTranscript = appendStreamChunk(
-          state.transcript,
-          nextStore,
-          result.event.taskId,
-          result.event.text,
-        );
-        if (nextTranscript !== state.transcript) {
-          return {
-            ...state,
-            store: nextStore,
-            transcript: nextTranscript,
-          };
-        }
+      const nextTranscript = applyTimeline(
+        state.transcript,
+        result.event,
+        nextStore,
+      );
+      // The guard demands **both** sub-reducers held still. This is the whole
+      // point of T-006: the six rich C-0019 events are an explicit no-op in
+      // `reduce` (R4) yet MAY grow the transcript, so checking `nextStore`
+      // alone would silently drop the entire timeline (compiles, runs, blank
+      // screen). Fail-closed validation now lives in `applyTimeline`, not
+      // inherited by accident from `reduce`'s unregistered-task no-op.
+      if (nextStore === state.store && nextTranscript === state.transcript) {
+        return state;
       }
-
-      return { ...state, store: nextStore };
+      return { ...state, store: nextStore, transcript: nextTranscript };
     }
     case "control": {
       const nextUi = applyControl(state.ui, result.control);
@@ -218,29 +225,157 @@ export function applySidecarExit(
   };
 }
 
-function appendStreamChunk(
+// ---------------------------------------------------------------------------
+// applyTimeline — the transcript's own reducer (sibling to `reduce`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Route one {@link StoreEvent} to the {@link StreamUpdate} it carries, or `null`
+ * when it is not a timeline event. Only the three step-bearing variants
+ * (`stream_chunk`, `tool_call`, `tool_call_update`, R7a) declare a `stepId`; the
+ * others resolve their Step from the task's `currentStepId` in
+ * {@link applyTimeline}. `text` reuses the existing `stream_chunk` (R3), which is
+ * why an older agent's plain chunk keeps flowing exactly as before.
+ */
+function routeTimeline(event: StoreEvent): {
+  readonly taskId: string;
+  readonly stepId?: string;
+  readonly update: StreamUpdate;
+} | null {
+  switch (event.type) {
+    case "stream_chunk":
+      return {
+        taskId: event.taskId,
+        ...(event.stepId !== undefined && { stepId: event.stepId }),
+        update: {
+          kind: "text",
+          text: event.text,
+          ...(event.messageId !== undefined && { messageId: event.messageId }),
+        },
+      };
+    case "thought_chunk":
+      return {
+        taskId: event.taskId,
+        update: {
+          kind: "thought",
+          text: event.text,
+          ...(event.messageId !== undefined && { messageId: event.messageId }),
+        },
+      };
+    case "tool_call":
+      return {
+        taskId: event.taskId,
+        ...(event.stepId !== undefined && { stepId: event.stepId }),
+        update: { kind: "tool_call", call: event.call },
+      };
+    case "tool_call_update":
+      return {
+        taskId: event.taskId,
+        ...(event.stepId !== undefined && { stepId: event.stepId }),
+        update: { kind: "tool_delta", delta: event.delta },
+      };
+    case "plan":
+      return {
+        taskId: event.taskId,
+        update: { kind: "plan", entries: event.entries },
+      };
+    case "mode_changed":
+      return {
+        taskId: event.taskId,
+        update: { kind: "mode", modeId: event.modeId },
+      };
+    case "agent_update":
+      return {
+        taskId: event.taskId,
+        update: {
+          kind: "raw",
+          updateKind: event.updateKind,
+          payload: event.payload,
+        },
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * The transcript's pure reducer — a **sibling** to the store's {@link reduce},
+ * not a step nested inside its guard. Fold one {@link StoreEvent} onto the
+ * per-task {@link Transcript}, returning the next transcript (or the **same**
+ * reference on a no-op, so structural sharing holds).
+ *
+ * It owns, **explicitly**, the validation the old event guard used to inherit
+ * from `reduce` by accident: with the six rich C-0019 events now a no-op in
+ * `reduce` (R4), "the store ignored it" and "there is nothing to append" stopped
+ * being the same thing. So this is fail-closed:
+ *
+ * - a non-timeline event → the same transcript;
+ * - a timeline event whose task is absent from `store.tasks` → the same
+ *   transcript (never fabricate a ghost task's entry — the whole failure mode
+ *   a naive reorder would reintroduce);
+ * - a timeline event whose Step is unresolvable — neither the event's `stepId`
+ *   nor the task's `currentStepId` names a Step in `store` — → the same
+ *   transcript (a step with no `step_started` is a ghost segment, same as a
+ *   ghost task);
+ * - an update `appendStreamItem` treats as a no-op (e.g. an orphan `tool_delta`)
+ *   → the same transcript.
+ *
+ * Otherwise the update becomes {@link StreamItem}(s) through the shared
+ * {@link appendStreamItem} (T-005 — the single place the ring/merge rules live),
+ * each **new** entry tagged by the event's `stepId` (falling back to the task's
+ * `currentStepId` for an older agent) and stamped with the Step's live telemetry
+ * from `store`. Entries whose item was untouched keep their own reference (so a
+ * `tool_delta` merging into a card mid-list, or a `messageId` concat, rebuilds
+ * only what changed).
+ */
+export function applyTimeline(
   transcript: Transcript,
+  event: StoreEvent,
   store: StoreState,
-  taskId: string,
-  text: string,
 ): Transcript {
-  const task = store.tasks.find((t) => t.id === taskId);
-  const stepId = task?.currentStepId;
+  const route = routeTimeline(event);
+  if (!route) return transcript;
+
+  const task = store.tasks.find((t) => t.id === route.taskId);
+  if (!task) return transcript; // fail-closed: unregistered task
+
+  const stepId = route.stepId ?? task.currentStepId;
   if (!stepId) return transcript;
 
   const step = task.steps.find((s) => s.id === stepId);
-  const existing = transcript[taskId] ?? [];
-  const entry: TranscriptEntry = {
-    stepId,
-    item: { item: "text", text },
-    agent: step?.agentName,
-    model: step?.model,
-    usedTokens: step?.used,
-    size: step?.size,
-  };
+  if (!step) return transcript; // fail-closed: a step with no `step_started`
 
-  return {
-    ...transcript,
-    [taskId]: [...existing, entry],
-  };
+  const entries = transcript[route.taskId] ?? [];
+  const items = entries.map((e) => e.item);
+  const nextItems = appendStreamItem(items, route.update);
+  // `appendStreamItem` returns the same array reference on a genuine no-op
+  // (orphan delta, or a within-cap change that changed nothing).
+  if (nextItems === items) return transcript;
+
+  const kept = new Map<StreamItem, TranscriptEntry>(
+    entries.map((e) => [e.item, e]),
+  );
+  const nextEntries = nextItems.map((item, i): TranscriptEntry => {
+    const existing = kept.get(item);
+    if (existing) return existing;
+    // The `elided` ring marker (T-005 rule d) is synthetic and always sits at
+    // the head. Tag it with the FIRST SURVIVOR's step/telemetry — not the
+    // current event's — so `segmentsFor` folds it into that leading segment
+    // instead of splitting the timeline `current step → old steps → current`.
+    if (item.item === "elided") {
+      const followerItem = nextItems[i + 1];
+      const follower = followerItem ? kept.get(followerItem) : undefined;
+      if (follower) return { ...follower, item };
+    }
+    return {
+      stepId,
+      item,
+      agent: step.agentName,
+      model: step.model,
+      usedTokens: step.used,
+      size: step.size,
+    };
+  });
+
+  return { ...transcript, [route.taskId]: nextEntries };
 }
