@@ -108,7 +108,7 @@
     Size: S
     Risk: M
 
-- [ ] T-003: `onUpdate` do Run deixa de filtrar — despacha tudo, carimbado por Step
+- [x] T-003: `onUpdate` do Run deixa de filtrar — despacha tudo, carimbado por Step
     `src/index.ts` (~`:595-615`): o `onUpdate` passado ao `openAgent` hoje despacha só
     `stream_chunk` (texto) e `usage_sample`, e joga fora os outros onze updates. Passa a
     chamar `translateUpdate` (T-002) e, quando devolve um `StreamUpdate`, despachar

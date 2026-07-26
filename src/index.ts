@@ -30,6 +30,7 @@ import {
 import { basename, dirname, relative, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { pathToFileURL } from "node:url";
+import type { SessionNotification } from "@agentclientprotocol/sdk";
 import {
   Command,
   CommanderError,
@@ -43,7 +44,11 @@ import type { AgentCapabilities } from "./acp/capabilities";
 import { cacheKey, readCache, writeCache } from "./acp/capabilities-cache";
 import { AGENT_PRESET_IDS, findAgentPreset } from "./acp/catalog";
 import { buildSession } from "./acp/session";
-import { acpTrafficSummary, agentChunkText, usageUpdateUsed } from "./acp/client";
+import {
+  acpTrafficSummary,
+  translateUpdate,
+  usageUpdateUsed,
+} from "./acp/client";
 import {
   createAgentProcessPool,
   type PerAgentOptions,
@@ -108,6 +113,7 @@ import { bootstrap } from "./telemetry/schema";
 import { markChangeMerged } from "./telemetry/write";
 import { mountApp } from "./tui/mount";
 import { startUi } from "./tui/start";
+import { toStoreEvent, type StoreEvent } from "./tui/store";
 import { createEventTransport, type Phase } from "./tui/transport";
 import type {
   AgentDef,
@@ -509,6 +515,43 @@ function teeLogger(file: LoggerPort, io: RunIO, verbose: boolean): LoggerPort {
 }
 
 /**
+ * The Run's `onUpdate` "stamp and dispatch" (C-0019 / T-003): translate one ACP
+ * `session/update` into a {@link StreamUpdate} ({@link translateUpdate}, T-002)
+ * and, when there is one, dispatch its {@link StoreEvent} ({@link toStoreEvent},
+ * T-001). This is the one place that knows the ACP shape past the boundary; it
+ * carries only what the closure alone knows — taskId/agent from the sessionId
+ * map (`infoFor`), stepId from `taskCurrentStep` — and stamps it on.
+ *
+ * `stepId` is omitted (never an empty string — the D-0005 precedent) when the
+ * task is between two Steps; the GUI degrades to `task.currentStepId`.
+ * `translateUpdate` returns `undefined` for `usage_update`, so it is a no-op
+ * here — that update keeps its own parallel `usage_sample` path in the closure.
+ * Factored out so the stamping is provable without spawning an agent (AD-6).
+ */
+export function dispatchStreamUpdate(
+  notification: SessionNotification,
+  infoFor: (sessionId: string) => { taskId: string; agent: string | undefined },
+  taskCurrentStep: ReadonlyMap<string, string>,
+  agentName: string,
+  dispatch: (event: StoreEvent) => void,
+): void {
+  const update = translateUpdate(notification.update);
+  if (update === undefined) return;
+  const { taskId, agent } = infoFor(notification.sessionId);
+  const stepId = taskCurrentStep.get(taskId);
+  dispatch(toStoreEvent(update, { taskId, stepId, agent: agent ?? agentName }));
+}
+
+function resolveTaskContext(
+  sessionId: string,
+  infoFor: (sessionId: string) => { taskId: string; agent: string | undefined },
+  taskCurrentStep: ReadonlyMap<string, string>,
+): { readonly taskId: string; readonly stepId: string | undefined; readonly agent: string | undefined } {
+  const { taskId, agent } = infoFor(sessionId);
+  return { taskId, stepId: taskCurrentStep.get(taskId), agent };
+}
+
+/**
  * The real live executor: spawn one ACP process per referenced Agent (AD-3
  * evolved), wire git + checks + the full step registry + the UI/approval
  * transport, run the outer loop over `tasks`, then tear everything down.
@@ -596,19 +639,27 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
         logger,
         onUpdate: (notification) => {
           const { update, sessionId } = notification;
-          const text = agentChunkText(update);
-          if (text !== undefined) {
-            const info = infoFor(sessionId);
-            ui.dispatch({ type: "stream_chunk", taskId: info.taskId, text, agent: info.agent ?? agentName });
-          }
-          // T-007: live context-window occupancy (usage_sample).
+          const context = resolveTaskContext(sessionId, infoFor, taskCurrentStep);
+          // C-0019: translate every session/update and dispatch the typed
+          // StoreEvent (text still rides the same `stream_chunk`), no longer
+          // dropping the other eleven update kinds on the floor.
+          dispatchStreamUpdate(
+            notification,
+            infoFor,
+            taskCurrentStep,
+            agentName,
+            ui.dispatch,
+          );
+          // T-007: live context-window occupancy (usage_sample) — unchanged, and
+          // consulted in parallel (`translateUpdate` no-ops on `usage_update`).
           const sample = usageUpdateUsed(update);
-          if (sample) {
-            const { taskId } = infoFor(sessionId);
-            const stepId = taskCurrentStep.get(taskId);
-            if (stepId) {
-              ui.dispatch({ type: "usage_sample", taskId, stepId, ...sample });
-            }
+          if (sample && context.stepId) {
+            ui.dispatch({
+              type: "usage_sample",
+              taskId: context.taskId,
+              stepId: context.stepId,
+              ...sample,
+            });
           }
         },
         onTraffic: captureAcp
