@@ -83,8 +83,20 @@ export interface InterviewState {
   readonly command: string | null;
   /** Sub-status while `stage === "phase"`. */
   readonly activity: "running" | "asking" | null;
-  /** The live activity line from `session/update` (D14). */
+  /** The last narration the Agent emitted (`agent_activity`) — D14. */
   readonly activityLine: string | null;
+  /**
+   * Every narration of the **running Phase**, accumulated in arrival order and
+   * separated by a blank line (markdown paragraph break).
+   *
+   * `activityLine` alone was lossy: each `agent_activity` replaced the previous
+   * one, so answering a question erased everything the Agent had narrated. The
+   * engine sends the turn's FULL prose (`decideTurn` → `parsed.prose`), which is
+   * markdown and often several paragraphs — this is what the view renders.
+   * Reset per Phase (`enterPhase`/`phase_finished`): each Phase is its own
+   * process and its own conversation.
+   */
+  readonly transcript: string;
   readonly pending: PendingQuestion | null;
   readonly answers: readonly Answer[];
   readonly changeDir: string | null;
@@ -150,6 +162,7 @@ export function initialInterviewState(): InterviewState {
     command: null,
     activity: null,
     activityLine: null,
+    transcript: "",
     pending: null,
     answers: [],
     changeDir: null,
@@ -214,6 +227,7 @@ function enterPhase(state: InterviewState, phase: Phase): InterviewState {
     command: null,
     activity: "running",
     activityLine: null,
+    transcript: "",
     pending: null,
     wrappingUp: false,
   };
@@ -314,8 +328,17 @@ export function advance(
 
     case "activity":
       if (isTerminal(state.stage)) return state;
+      // A repeated narration is a duplicate frame, not new work — same
+      // reference, and nothing appended (the transcript must not double up).
       if (state.activityLine === event.text) return state;
-      return { ...state, activityLine: event.text };
+      return {
+        ...state,
+        activityLine: event.text,
+        transcript:
+          state.transcript === ""
+            ? event.text
+            : `${state.transcript}\n\n${event.text}`,
+      };
 
     case "phase_finished": {
       if (isTerminal(state.stage)) return state;
@@ -324,6 +347,7 @@ export function advance(
         pending: null,
         activity: null,
         activityLine: null,
+        transcript: "",
         wrappingUp: false,
         changeDir: event.changeDir,
         files: event.files,

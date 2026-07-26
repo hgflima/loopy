@@ -293,6 +293,7 @@ export function Interview({
             phase={state.phase}
             pending={state.pending}
             activityLine={state.activityLine}
+            transcript={state.transcript}
             wrappingUp={state.wrappingUp}
             onAnswer={submitAnswer}
             onWrapUp={wrapUp}
@@ -398,6 +399,8 @@ interface PhaseViewProps {
   readonly phase: Phase | null;
   readonly pending: PendingQuestion | null;
   readonly activityLine: string | null;
+  /** Everything the Agent narrated in this Phase (markdown, shown in full). */
+  readonly transcript: string;
   readonly wrappingUp: boolean;
   readonly onAnswer: (
     text: string,
@@ -422,6 +425,7 @@ function PhaseView({
   phase,
   pending,
   activityLine,
+  transcript,
   wrappingUp,
   onAnswer,
   onWrapUp,
@@ -450,7 +454,7 @@ function PhaseView({
           onAnswer={onAnswer}
         />
       ) : (
-        <ActivityLine line={activityLine} busy />
+        <ActivityLine line={activityLine} transcript={transcript} busy />
       )}
     </div>
   );

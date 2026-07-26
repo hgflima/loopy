@@ -420,6 +420,57 @@ describe("frames de controle do processo", () => {
     expect(advance(a, { kind: "activity", text: "explorando src/…" })).toBe(a);
   });
 
+  // A narração antiga não pode sumir quando a próxima chega: cada
+  // `agent_activity` é a prosa INTEIRA de um turno, e substituir apagava tudo
+  // que o Agente contou antes da pergunta que o humano acabou de responder.
+  it("activity acumula as narrações no transcript, separadas por parágrafo", () => {
+    const started = run(
+      { kind: "triaged", track: "feature" },
+      { kind: "described", text: "demanda" },
+    );
+    const a = advance(started, { kind: "activity", text: "# Passos\n\nLi." });
+    expect(a.transcript).toBe("# Passos\n\nLi.");
+
+    const b = advance(a, { kind: "activity", text: "Agora escrevo a spec." });
+    expect(b.transcript).toBe("# Passos\n\nLi.\n\nAgora escrevo a spec.");
+    expect(b.activityLine).toBe("Agora escrevo a spec.");
+  });
+
+  it("um frame de activity duplicado não duplica o transcript", () => {
+    const started = run(
+      { kind: "triaged", track: "feature" },
+      { kind: "described", text: "demanda" },
+    );
+    const a = advance(started, { kind: "activity", text: "olhando o dir" });
+    expect(
+      advance(a, { kind: "activity", text: "olhando o dir" }).transcript,
+    ).toBe("olhando o dir");
+  });
+
+  it("cada Fase tem o seu transcript: entrar numa nova Fase zera", () => {
+    const started = run(
+      { kind: "triaged", track: "feature" },
+      { kind: "described", text: "demanda" },
+    );
+    const narrated = advance(started, {
+      kind: "activity",
+      text: "prosa da spec",
+    });
+    const finished = advance(narrated, {
+      kind: "phase_finished",
+      phase: "spec",
+      changeDir: ".harn/devy/changes/C-0018-x",
+      files: ["spec.md"],
+    });
+    expect(finished.transcript).toBe("");
+
+    const refining = advance(finished, {
+      kind: "gate_decision",
+      next: "refine",
+    });
+    expect(refining.transcript).toBe("");
+  });
+
   it("failed leva ao estágio failed com a razão", () => {
     const started = run(
       { kind: "triaged", track: "feature" },

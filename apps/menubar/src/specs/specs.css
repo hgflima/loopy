@@ -343,7 +343,7 @@
 }
 
 /* ======================================================================== *
- * ActivityLine — proof of life + collapsible transcript (D14)
+ * ActivityLine — proof of life + the Agent's narration (D14)
  * ======================================================================== */
 
 .spec-activity {
@@ -364,27 +364,21 @@
   color: var(--ink-secondary);
   min-width: 0;
 }
-.spec-activity__transcript {
+/*
+ * The narration renders IN FULL — never truncated. `agent_activity` carries the
+ * turn's whole prose, so the box wraps, scrolls past a tall ceiling, and breaks
+ * unbreakable runs (paths, urls) instead of pushing the flow sideways.
+ */
+.spec-activity__narration {
+  width: 100%;
+  min-width: 0;
+  max-height: 340px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  padding: var(--sp-sm) var(--sp-md);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--surface);
-}
-.spec-activity__toggle {
-  cursor: pointer;
-  padding: var(--sp-sm) var(--sp-md);
-  font: 12px/1 var(--font-ui);
-  color: var(--ink-tertiary);
-  user-select: none;
-  -webkit-user-select: none;
-}
-.spec-activity__toggle:hover {
-  color: var(--accent-text);
-}
-.spec-activity__body {
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 0 var(--sp-md) var(--sp-md);
-  border-top: 1px solid var(--border);
 }
 
 /* ======================================================================== *
