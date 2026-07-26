@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { StoreState, TaskState } from "loopy/tui/store";
 import { groupByStep } from "./grouper";
+import { detectGotoCards } from "./goto-detect";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,7 +86,7 @@ describe("groupByStep", () => {
     expect(cols.find((c) => c.id === "test")!.cards).toHaveLength(0);
   });
 
-  it("places running task without currentStepId in Backlog", () => {
+  it("places a task that entered no step yet in Backlog", () => {
     const s = store(
       [task("T-001", "A", { status: "running" })],
       [{ id: "build", type: "shell" }],
@@ -93,6 +94,77 @@ describe("groupByStep", () => {
     expect(
       groupByStep(s).find((c) => c.id === "backlog")!.cards,
     ).toHaveLength(1);
+  });
+
+  // `step_finished` clears `currentStepId`, so a running task is momentarily
+  // position-less between two steps. It must hold its column: dipping into
+  // Backlog would both misread the column (Backlog is tasks yet to start) and
+  // read as a backward move to `detectGotoCards`.
+  it("keeps a running task in its last entered step between two steps", () => {
+    const s = store(
+      [task("T-001", "A", { status: "running", lastStepId: "build" })],
+      [
+        { id: "build", type: "shell" },
+        { id: "test", type: "checks" },
+      ],
+    );
+    const cols = groupByStep(s);
+    expect(cols.find((c) => c.id === "backlog")!.cards).toHaveLength(0);
+    expect(cols.find((c) => c.id === "build")!.cards).toHaveLength(1);
+  });
+
+  it("prefers currentStepId over lastStepId once the next step starts", () => {
+    const s = store(
+      [
+        task("T-001", "A", {
+          status: "running",
+          currentStepId: "test",
+          lastStepId: "test",
+        }),
+      ],
+      [
+        { id: "build", type: "shell" },
+        { id: "test", type: "checks" },
+      ],
+    );
+    const cols = groupByStep(s);
+    expect(cols.find((c) => c.id === "build")!.cards).toHaveLength(0);
+    expect(cols.find((c) => c.id === "test")!.cards).toHaveLength(1);
+  });
+
+  // After a Desvio the `steps` array still ends at the step the goto left
+  // behind (it is ordered by first visit), so the column must come from
+  // `lastStepId` — not from the tail of `steps`.
+  it("sits in the goto target after a Desvio, not in the step left behind", () => {
+    const s = store(
+      [
+        task("T-001", "A", {
+          status: "running",
+          lastStepId: "build",
+          steps: [
+            { id: "build", type: "shell", status: "running", checks: [] },
+            { id: "test", type: "checks", status: "failed", checks: [] },
+          ] as TaskState["steps"],
+        }),
+      ],
+      [
+        { id: "build", type: "shell" },
+        { id: "test", type: "checks" },
+      ],
+    );
+    const cols = groupByStep(s);
+    expect(cols.find((c) => c.id === "build")!.cards).toHaveLength(1);
+    expect(cols.find((c) => c.id === "test")!.cards).toHaveLength(0);
+  });
+
+  it("falls back to Backlog when the remembered step left the pipeline", () => {
+    const s = store(
+      [task("T-001", "A", { status: "running", lastStepId: "removed" })],
+      [{ id: "build", type: "shell" }],
+    );
+    expect(groupByStep(s).find((c) => c.id === "backlog")!.cards).toHaveLength(
+      1,
+    );
   });
 
   it("places terminal tasks (done/escalated/skipped/paused) in Fim", () => {
@@ -232,5 +304,69 @@ describe("groupByStep", () => {
     expect(cols.find((c) => c.id === "build")).toBeUndefined();
     // Task with unknown currentStepId falls to Backlog
     expect(cols.find((c) => c.id === "backlog")!.cards).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: the goto pulse must fire on a Desvio and *only* on a Desvio.
+// `detectGotoCards` reads column indices, so it is only as correct as the
+// grouper's placement — the two are tested together on purpose.
+// ---------------------------------------------------------------------------
+
+describe("groupByStep + detectGotoCards", () => {
+  const PIPELINE = [
+    { id: "build", type: "shell" },
+    { id: "test", type: "checks" },
+  ];
+
+  it("does not read a step completion as a Desvio", () => {
+    // running "build"  →  build finished, next step not started yet
+    const during = groupByStep(
+      store(
+        [
+          task("T-001", "A", {
+            status: "running",
+            currentStepId: "build",
+            lastStepId: "build",
+          }),
+        ],
+        PIPELINE,
+      ),
+    );
+    const between = groupByStep(
+      store(
+        [task("T-001", "A", { status: "running", lastStepId: "build" })],
+        PIPELINE,
+      ),
+    );
+    expect(detectGotoCards(during, between).size).toBe(0);
+  });
+
+  it("still detects a real Desvio (test → build)", () => {
+    const atTest = groupByStep(
+      store(
+        [
+          task("T-001", "A", {
+            status: "running",
+            currentStepId: "test",
+            lastStepId: "test",
+          }),
+        ],
+        PIPELINE,
+      ),
+    );
+    const backAtBuild = groupByStep(
+      store(
+        [
+          task("T-001", "A", {
+            status: "running",
+            currentStepId: "build",
+            lastStepId: "build",
+          }),
+        ],
+        PIPELINE,
+      ),
+    );
+    expect(detectGotoCards(atTest, backAtBuild)).toEqual(new Set(["T-001"]));
   });
 });

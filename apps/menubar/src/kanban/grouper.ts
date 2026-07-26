@@ -4,9 +4,15 @@
  * Zero React. The function is deterministic: same state in → same columns out.
  *
  * Column layout:
- *  - **Backlog**: pending / blocked tasks (or running with no currentStepId).
+ *  - **Backlog**: tasks that have not entered any step yet (ready / blocked).
  *  - **One column per pipeline step** (declared order).
  *  - **Fim**: terminal tasks (done / escalated / skipped / paused).
+ *
+ * "Backlog" means the *Backlog* — tasks still waiting to start. A running task
+ * between two steps stays in the step it last entered (`lastStepId`), because
+ * `step_finished` clears `currentStepId`: without that fallback the card would
+ * dip into Backlog after **every** step, misreading the column and tripping
+ * `detectGotoCards` into flagging a Desvio on every step completion.
  *
  * An escalated card carries `failedAtStepId` — the last step that failed —
  * so the UI can show *where* it broke (spec refino #6).
@@ -74,6 +80,19 @@ const TERMINAL: ReadonlySet<TaskStatus> = new Set(
   TERMINAL_ORDER.map(([status]) => status),
 );
 
+/**
+ * The column a non-terminal card belongs to: the step it is running, or — while
+ * it sits between two steps — the last one it entered. `undefined` means it has
+ * entered none yet, which is the only thing "Backlog" should hold.
+ */
+function columnIdFor(
+  task: TaskState,
+  buckets: ReadonlyMap<string, KanbanCard[]>,
+): string | undefined {
+  const id = task.currentStepId ?? task.lastStepId;
+  return id !== undefined && buckets.has(id) ? id : undefined;
+}
+
 function toCard(task: TaskState): KanbanCard {
   const fid = failedStepId(task);
   const hasWarning = task.steps.some((s) => s.warned);
@@ -105,11 +124,11 @@ export function groupByStep(state: StoreState): KanbanColumn[] {
   for (const task of state.tasks) {
     if (TERMINAL.has(task.status)) {
       fim.push(toCard(task));
-    } else if (task.currentStepId && stepBuckets.has(task.currentStepId)) {
-      stepBuckets.get(task.currentStepId)!.push(toCard(task));
-    } else {
-      backlog.push(toCard(task));
+      continue;
     }
+    const columnId = columnIdFor(task, stepBuckets);
+    if (columnId === undefined) backlog.push(toCard(task));
+    else stepBuckets.get(columnId)!.push(toCard(task));
   }
 
   return [

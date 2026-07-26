@@ -409,6 +409,33 @@ _Avoid_: IPC, canal, socket (não há socket); "API" (não é RPC nem HTTP)
 Uma linha do Transport, discriminada pelo campo `frame`. Três classes: **`event`** (wrapper de um `StoreEvent` — o mesmo do Emit seam), **`control`** (fatos do Run que não são StoreEvent: `run_started`, `run_finished`, `approval_requested`) e **`command`** (UI→motor: `approval_decision`). A **Entrevista** (C-0018, ADR-0012) estende a taxonomia de forma **aditiva** — seis `control` e três `command` novos (ver _Entrevista_), sem mudar a shape de nenhum frame existente. Parse é **fail-soft** (linha inválida vira valor de erro, nunca exceção — AD-5).
 _Avoid_: mensagem, payload, evento (solto — `event` é **uma** das três classes)
 
+## Kanban (a Aba do Run)
+
+O board da Native UI: a Aba `Kanban`, default e vista principal de um Run. Deriva de uma função **pura** (`groupByStep`, AD-6) — mesmo `StoreState` entra, mesmas Colunas saem.
+
+**Card**:
+Uma Task vista pelo board, **um por Task**. Carrega o status, o `failedAtStepId` (o Step onde quebrou, quando escalonada) e o flag de warning. Não é unidade de trabalho nova — é a Task, renderizada.
+_Avoid_: cartão, ticket, item; e não chame de "card" a **Pergunta** da Entrevista (isso é a apresentação dela, outro cluster)
+
+**Coluna**:
+Uma faixa vertical do Kanban. São, em ordem: **`Backlog`**, **uma por Step declarado** (na ordem do Pipeline) e **`Fim`**. A Coluna de um Step é a materialização visual do **Program counter**: o Card está na Coluna do Step em que a Task entrou por último.
+_Avoid_: raia, lane; **Painel** (é região do Dashboard Ink) e **Aba** (é vista da GUI) — os três níveis são distintos
+
+**Coluna `Backlog`** — o invariante:
+Contém **só** Tasks que ainda não entraram em Step nenhum, de modo que a Coluna honra o **Backlog** do domínio (Tasks pendentes). Uma Task `running` **entre** dois Steps fica na Coluna do último Step que entrou (`lastStepId`), porque `step_finished` zera o `currentStepId`: sem essa memória o Card mergulharia no `Backlog` a cada Step concluído — mentindo sobre a Coluna e disparando um falso **Retorno de goto**.
+_Avoid_: tratar a Coluna `Backlog` como "coluna de fallback" — era o que ela fazia, e é o que deixou de fazer
+
+**Coluna `Fim`**:
+A Coluna terminal, e a única que hoje se reparte em **Seções de desfecho** — porque termina em quatro desfechos distintos: `done` (Concluídas), `skipped` (Puladas), `escalated` (Escalonadas) e `paused` (Pausadas). A ordem é deliberada: o que entregou primeiro, o que nunca rodou em seguida, o que precisa de humano por último. Uma Task `skipped` **não pode ler como** `done`.
+
+**Seção de desfecho**:
+Uma faixa rotulada de Cards dentro de uma Coluna, agrupada por status. Só existe quando a Coluna guarda mais de um desfecho — com um só, o cabeçalho da Coluna já diz tudo e a faixa viraria ruído.
+_Avoid_: grupo, bloco; e "Seção" **sem qualificar** (colide com a _Seção crítica do parent_)
+
+**Retorno de goto**:
+O realce temporário de um Card que **recuou** de Coluna — a leitura visual de um **Desvio**, o centro do fix-loop. Detectado comparando o índice de Coluna entre dois snapshots (`detectGotoCards`): índice que diminui = recuo. É **inferência sobre posição**, não um evento do motor: nada emite "houve goto", então a corretude do realce depende inteiramente de o Card estar na Coluna certa — ver o invariante da Coluna `Backlog`.
+_Avoid_: **Pulso** (esse é o do Dashboard Ink, a animação da Task `running`), flash, animação
+
 ## Autoria de Change: a Entrevista (C-0018, ADR-0012)
 
 Como o motor produz os inputs de um Run (`spec.md`/`plan.md`/`todo.md`) — a etapa **antes** do Backlog. Estende o Transport (ADR-0007) com frames aditivos e é a primeira vez que o motor **cria** uma Change em vez de só derivá-la de um path (ver _Change_). Roteiro **fora** do motor: as perguntas são do `/devy:*` (D1/AD-1); o motor só impõe a forma (o Envelope).

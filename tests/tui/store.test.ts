@@ -300,6 +300,66 @@ describe("reduce · task and step lifecycle", () => {
     expect(findTask(state, "T-001").currentStepId).toBeUndefined();
   });
 
+  // `lastStepId` is the *entered* pointer: it outlives `step_finished` so a
+  // consumer can still place a task that sits between two steps (the Kanban
+  // grouper does). Not derivable from `steps` — that array is ordered by first
+  // visit, so after a Desvio its tail is the step the goto left behind.
+  it("remembers the last entered step across step_finished", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "build",
+        stepType: "shell",
+      },
+      { type: "step_finished", taskId: "T-001", stepId: "build", ok: true },
+    );
+    const task = findTask(state, "T-001");
+    expect(task.currentStepId).toBeUndefined();
+    expect(task.lastStepId).toBe("build");
+  });
+
+  it("moves lastStepId back to the goto target on a Desvio", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "build",
+        stepType: "shell",
+      },
+      { type: "step_finished", taskId: "T-001", stepId: "build", ok: true },
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "test",
+        stepType: "checks",
+      },
+      { type: "step_finished", taskId: "T-001", stepId: "test", ok: false },
+      // Desvio back to an earlier step: it is a revisit, so `steps` still ends
+      // at "test" while the task is really at "build".
+      {
+        type: "step_started",
+        taskId: "T-001",
+        stepId: "build",
+        stepType: "shell",
+      },
+    );
+    const task = findTask(state, "T-001");
+    expect(task.lastStepId).toBe("build");
+    expect(task.steps.map((s) => s.id)).toEqual(["build", "test"]);
+  });
+
+  it("is undefined before the first step starts", () => {
+    const state = play({
+      type: "task_registered",
+      taskId: "T-001",
+      title: "t",
+    });
+    expect(findTask(state, "T-001").lastStepId).toBeUndefined();
+  });
+
   it("marks a task done / escalated with an optional reason", () => {
     const done = play(
       { type: "task_registered", taskId: "T-001", title: "t" },

@@ -103,6 +103,17 @@ export interface TaskState {
   readonly deps?: readonly string[];
   /** Id of the step currently running, if any (never a global singleton). */
   readonly currentStepId?: string;
+  /**
+   * Id of the last step this task *entered* — set on every `step_started` and
+   * never cleared. Unlike {@link currentStepId} it survives `step_finished`,
+   * so a consumer can still place a running task while it sits between two
+   * steps (the Kanban grouper does exactly that).
+   *
+   * It is **not** derivable from `steps`: that array is ordered by first
+   * visit and a revisit updates in place, so after a Desvio the last entered
+   * step is no longer the last element.
+   */
+  readonly lastStepId?: string;
   readonly steps: readonly StepState[];
   /** Accumulated agent stream text for the current turn (reset each attempt). */
   readonly stream: string;
@@ -396,7 +407,13 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
         const steps = exists
           ? task.steps.map((s) => (s.id === event.stepId ? step : s))
           : [...task.steps, step];
-        return { ...task, steps, currentStepId: event.stepId, stream: "" };
+        return {
+          ...task,
+          steps,
+          currentStepId: event.stepId,
+          lastStepId: event.stepId,
+          stream: "",
+        };
       });
 
     case "attempt_started":
