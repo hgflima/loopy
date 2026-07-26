@@ -140,6 +140,7 @@ describe("loopy interview — usage validation", () => {
       "--agent",
       "--model",
       "--effort",
+      "--demand",
     ]) {
       expect(help).toContain(flag);
     }
@@ -204,6 +205,44 @@ describe("loopy interview — wiring to runInterview", () => {
     expect(code).toBe(0);
     expect(calls[0]!.model).toBe("opus");
     expect(calls[0]!.effort).toBe("high");
+  });
+
+  // The GUI's only channel for the free-text demand is argv (D23). It arrives as
+  // ONE element — spaces and newlines must survive — and seeds `/devy:spec <demand>`.
+  it("threads --demand through to runInterview as a single argv element", async () => {
+    const cap = capture();
+    const { hooks, calls } = recordingHooks();
+
+    const code = await run(
+      [
+        "interview",
+        "/tmp/proj",
+        "--emit-events",
+        "--demand",
+        "quero uma aba de histórico\ncom filtro por data",
+      ],
+      cap.io,
+      hooks,
+    );
+
+    expect(code).toBe(0);
+    expect(calls[0]!.demand).toBe(
+      "quero uma aba de histórico\ncom filtro por data",
+    );
+  });
+
+  it("omits demand entirely when --demand is absent", async () => {
+    const cap = capture();
+    const { hooks, calls } = recordingHooks();
+
+    const code = await run(
+      ["interview", "/tmp/proj", "--emit-events"],
+      cap.io,
+      hooks,
+    );
+
+    expect(code).toBe(0);
+    expect(calls[0]!.demand).toBeUndefined();
   });
 
   it("--change resolves the Change id (with slug) to its dir for a refine phase", async () => {

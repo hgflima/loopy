@@ -1293,6 +1293,13 @@ function registerInterviewCommand(
     )
     .option("--model <m>", "model por-fase, best-effort (ADR-0008)")
     .option("--effort <e>", "reasoning effort por-fase, best-effort (ADR-0008)")
+    // A demanda em texto livre viaja como UM elemento de argv (D23): a GUI a
+    // spawna sem shell, então espaços e quebras de linha sobrevivem intactos.
+    // Só a fase spec a consome (`phaseCommand`); refine/plan a ignoram.
+    .option(
+      "--demand <texto>",
+      "demanda em texto livre (turno 1 da fase spec; ignorada por refine/plan)",
+    )
     .exitOverride()
     .configureOutput({
       writeOut: (str) => io.out(str),
@@ -1308,6 +1315,7 @@ function registerInterviewCommand(
           agent: string;
           model?: string;
           effort?: string;
+          demand?: string;
         },
       ) => {
         // Without --emit-events the process has no reason to exist: stdout is the
@@ -1368,6 +1376,7 @@ function registerInterviewCommand(
             command: preset.command,
             ...(opts.model !== undefined ? { model: opts.model } : {}),
             ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
+            ...(opts.demand !== undefined ? { demand: opts.demand } : {}),
             transport,
           }),
         );
