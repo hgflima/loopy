@@ -133,7 +133,7 @@
     Size: S
     Risk: M
 
-- [ ] T-004: `LineFramer` linear — matar a cliff quadrática do framer (C3)
+- [x] T-004: `LineFramer` linear — matar a cliff quadrática do framer (C3)
     `apps/menubar/src-tauri/src/sidecar.rs:~139`: `feed()` procura o `\n` com
     `self.buf.iter().position(...)`, varrendo **o buffer acumulado inteiro a cada chunk de
     4 KB** (`:~324`). Enquanto a linha não fecha o custo é O(N²/4096): uma linha de 40 MB —
