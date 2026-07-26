@@ -254,7 +254,7 @@
 
 ## Fase 3 — Vocabulário visual: hunks, hues, glifos e os componentes
 
-- [ ] T-007: `diff-hunks.ts` — hunks de verdade a partir de `oldText`/`newText` (jsdiff)
+- [x] T-007: `diff-hunks.ts` — hunks de verdade a partir de `oldText`/`newText` (jsdiff)
     O tipo `Diff` do ACP é `{ path, oldText?, newText }` — **não** existe hunk, sinal nem
     número de linha no protocolo. Sem algoritmo, o `+`/`−` do Critério 2 é impossível; a
     referência (`acp-inspector`) pinta o arquivo velho inteiro de vermelho e o novo inteiro
