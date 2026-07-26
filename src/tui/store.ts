@@ -146,6 +146,143 @@ export interface AcpLogLine {
 /** Maximum entries kept in {@link StoreState.acpLog} (ring bounded). */
 export const ACP_LOG_CAP = 200;
 
+// ---------------------------------------------------------------------------
+// Rich agent stream vocabulary (C-0019)
+// ---------------------------------------------------------------------------
+//
+// The semantic shape of one `session/update` *after* the ACP shape is stripped
+// at the `onUpdate` boundary — the engine translates, the GUI renders. These
+// types live here, in this browser-safe subpath export, so the engine, **both**
+// GUI reducers (the Run's timeline and the Interview's `advance`) and the
+// Interview `agent_stream` control frame all speak one vocabulary. The GUI never
+// imports from `@agentclientprotocol/sdk`.
+
+/** The 10 tool families the SDK declares (`ToolKind`). Default `"other"`. */
+export type ToolKindName =
+  | "read"
+  | "edit"
+  | "delete"
+  | "move"
+  | "search"
+  | "execute"
+  | "think"
+  | "fetch"
+  | "switch_mode"
+  | "other";
+
+/** Live status of a tool call (`ToolCallStatus`). Default `"pending"`. */
+export type ToolCallStatusName =
+  "pending" | "in_progress" | "completed" | "failed";
+
+/** A file location a tool call touches. */
+export interface ToolLocation {
+  readonly path: string;
+  readonly line?: number;
+}
+
+/**
+ * One renderable piece of a tool call's content. The `raw` variant is the
+ * catch-all so image/audio/resource blocks never silently vanish (D3).
+ */
+export type ToolContentItem =
+  | { readonly kind: "text"; readonly text: string }
+  | {
+      readonly kind: "diff";
+      readonly path: string;
+      readonly oldText?: string;
+      readonly newText: string;
+    }
+  | { readonly kind: "terminal"; readonly terminalId: string }
+  | { readonly kind: "raw"; readonly payload: unknown };
+
+/** Accumulated state of a tool call (`tool_call` + every `tool_call_update`). */
+export interface ToolCallState {
+  readonly toolCallId: string;
+  readonly title: string;
+  readonly kind: ToolKindName;
+  readonly status: ToolCallStatusName;
+  readonly locations: readonly ToolLocation[];
+  readonly content: readonly ToolContentItem[];
+  readonly rawInput?: unknown;
+  readonly rawOutput?: unknown;
+}
+
+/**
+ * A partial update to a {@link ToolCallState}: the same shape, everything
+ * optional but `toolCallId`. A field that is `null` or `undefined` means
+ * "unchanged", **never** "clear it" (see {@link mergeToolCall}). Nullable
+ * because the wire — translated straight from the SDK's optional-nullable
+ * `ToolCallUpdate` — can carry an explicit `null`.
+ */
+export interface ToolCallDelta {
+  readonly toolCallId: string;
+  readonly title?: string | null;
+  readonly kind?: ToolKindName | null;
+  readonly status?: ToolCallStatusName | null;
+  readonly locations?: readonly ToolLocation[] | null;
+  readonly content?: readonly ToolContentItem[] | null;
+  readonly rawInput?: unknown;
+  readonly rawOutput?: unknown;
+}
+
+/** One entry of the agent's plan for the current turn. */
+export interface PlanEntryState {
+  readonly content: string;
+  readonly priority: "high" | "medium" | "low";
+  readonly status: "pending" | "in_progress" | "completed";
+}
+
+/**
+ * What one `session/update` became, already free of the ACP shape — one per
+ * notification. The **wire carries this** (as a {@link StoreEvent} in the Run,
+ * as the `agent_stream` control frame in the Interview); the GUI turns it into a
+ * {@link StreamItem}. The `raw` variant is the catch-all (C2/D3): an update the
+ * UI does not model still travels, tagged by its `updateKind`.
+ */
+export type StreamUpdate =
+  | {
+      readonly kind: "text";
+      readonly text: string;
+      readonly messageId?: string;
+    }
+  | {
+      readonly kind: "thought";
+      readonly text: string;
+      readonly messageId?: string;
+    }
+  | { readonly kind: "tool_call"; readonly call: ToolCallState }
+  | { readonly kind: "tool_delta"; readonly delta: ToolCallDelta }
+  | { readonly kind: "plan"; readonly entries: readonly PlanEntryState[] }
+  | { readonly kind: "mode"; readonly modeId: string }
+  | {
+      readonly kind: "raw";
+      readonly updateKind: string;
+      readonly payload: unknown;
+    };
+
+/**
+ * A renderable item of a Step-of-Agent timeline, discriminated by `item`. The
+ * GUI accumulates these (R4); the engine `StoreState` never does. `elided` is
+ * the ring's cut marker (R6) — the list may shrink but never lies about what it
+ * dropped.
+ */
+export type StreamItem =
+  | {
+      readonly item: "text";
+      readonly text: string;
+      readonly messageId?: string;
+    }
+  | {
+      readonly item: "thought";
+      readonly text: string;
+      readonly messageId?: string;
+    }
+  | { readonly item: "tool"; readonly call: ToolCallState }
+  | { readonly item: "plan"; readonly entries: readonly PlanEntryState[] }
+  | { readonly item: "mode"; readonly modeId: string }
+  | { readonly item: "raw"; readonly kind: string; readonly payload: unknown }
+  | { readonly item: "elided"; readonly count: number };
+
 /** The whole observable run state: tasks in backlog order + DAG edges. */
 export interface StoreState {
   readonly tasks: readonly TaskState[];
@@ -224,6 +361,18 @@ export type StoreEvent =
       readonly text: string;
       /** Agent producing this chunk (T-008: multi-agent prefix). */
       readonly agent?: string;
+      /**
+       * Step this text belongs to (C-0019 R3, additive). Absent for an older
+       * agent — the GUI timeline falls back to `task.currentStepId`. The engine
+       * reducer ignores it, so the Ink renderer stays byte-identical.
+       */
+      readonly stepId?: string;
+      /**
+       * Id shared by chunks of the same agent message (C-0019 R3, additive): a
+       * change of `messageId` closes a text block in the GUI timeline. The
+       * engine reducer ignores it.
+       */
+      readonly messageId?: string;
     }
   | {
       readonly type: "step_finished";
@@ -264,6 +413,52 @@ export type StoreEvent =
       readonly stepId?: string;
       readonly agentName?: string;
       readonly message: string;
+    }
+  // --- C-0019: rich session/update events (C2). All carry `taskId` and an
+  // optional `agent`; the tool events also carry the Step (R7a). They exist as
+  // typed events so the wire stays typed while the union growth trips `reduce`'s
+  // exhaustiveness alarm. The reducer treats all six as an **explicit no-op**:
+  // the timeline accumulates in the GUI (R4), never in `StoreState`.
+  | {
+      readonly type: "tool_call";
+      readonly taskId: string;
+      readonly stepId?: string;
+      readonly agent?: string;
+      readonly call: ToolCallState;
+    }
+  | {
+      readonly type: "tool_call_update";
+      readonly taskId: string;
+      readonly stepId?: string;
+      readonly agent?: string;
+      readonly delta: ToolCallDelta;
+    }
+  | {
+      readonly type: "thought_chunk";
+      readonly taskId: string;
+      readonly agent?: string;
+      readonly text: string;
+      readonly messageId?: string;
+    }
+  | {
+      readonly type: "plan";
+      readonly taskId: string;
+      readonly agent?: string;
+      readonly entries: readonly PlanEntryState[];
+    }
+  | {
+      readonly type: "mode_changed";
+      readonly taskId: string;
+      readonly agent?: string;
+      readonly modeId: string;
+    }
+  | {
+      /** Catch-all (C2/D3): an update the UI does not model, tagged by kind. */
+      readonly type: "agent_update";
+      readonly taskId: string;
+      readonly agent?: string;
+      readonly updateKind: string;
+      readonly payload: unknown;
     };
 
 // ---------------------------------------------------------------------------
@@ -536,6 +731,146 @@ export function reduce(state: StoreState, event: StoreEvent): StoreState {
       }
       return withWarnings;
     }
+
+    // C-0019 R4: the rich stream accumulates in the GUI timeline
+    // (BridgeState/InterviewState), never in `StoreState` — which keeps
+    // describing only the current turn. These six are an **explicit** no-op:
+    // returning the *same* reference (structural sharing) lets the observable
+    // store skip notifying and lets `line-reporter.ts`'s `next === state` guard
+    // filter them, so the Ink renderer never grows a single case and stays
+    // byte-identical (D1). They are explicit cases on purpose — the switch has
+    // no `default`, so a future union member without a case here fails `tsc`.
+    case "tool_call":
+    case "tool_call_update":
+    case "thought_chunk":
+    case "plan":
+    case "mode_changed":
+    case "agent_update":
+      return state;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rich stream helpers — pure (AD-6), shared across the Run and the Interview
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge a {@link ToolCallDelta} onto the accumulated {@link ToolCallState} —
+ * pure (R2). It lives here, not in the GUI, because **both** GUI reducers (the
+ * Run's timeline and the Interview's `advance`) import it: one implementation,
+ * one test, zero divergence. The engine itself stays memoryless — it only
+ * translates deltas onto the wire.
+ *
+ * A field that is `null` or `undefined` in the delta means "unchanged", never
+ * "clear it"; `content` and `locations` **replace** (they do not concatenate)
+ * when present. When `current` is `undefined` a fresh card is built with
+ * defaults (`kind: "other"`, `status: "pending"`, `title` = `delta.title ??
+ * toolCallId`).
+ */
+export function mergeToolCall(
+  current: ToolCallState | undefined,
+  delta: ToolCallDelta,
+): ToolCallState {
+  // `??` collapses both null and undefined to "unchanged"; a falsy-but-present
+  // rawInput/rawOutput (0, false, "") is kept because only null/undefined fall
+  // through to the prior value.
+  const rawInput = delta.rawInput ?? current?.rawInput;
+  const rawOutput = delta.rawOutput ?? current?.rawOutput;
+  return {
+    toolCallId: delta.toolCallId,
+    title: delta.title ?? current?.title ?? delta.toolCallId,
+    kind: delta.kind ?? current?.kind ?? "other",
+    status: delta.status ?? current?.status ?? "pending",
+    locations: delta.locations ?? current?.locations ?? [],
+    content: delta.content ?? current?.content ?? [],
+    ...(rawInput !== undefined && { rawInput }),
+    ...(rawOutput !== undefined && { rawOutput }),
+  };
+}
+
+/**
+ * The base scope every rich {@link StoreEvent} carries: the Task and, when
+ * known, the producing Agent. The **Step is deliberately not here** — only the
+ * three step-bearing variants (`stream_chunk`, `tool_call`, `tool_call_update`,
+ * R7a) declare `stepId`, so {@link toStoreEvent} spreads it in per case. Optional
+ * fields are omitted rather than set to `undefined`, so the wire stays clean.
+ */
+function buildStoreEventScope(ctx: {
+  taskId: string;
+  agent?: string;
+}): { taskId: string; agent?: string } {
+  const scope: { taskId: string; agent?: string } = { taskId: ctx.taskId };
+  if (ctx.agent !== undefined) scope.agent = ctx.agent;
+  return scope;
+}
+
+/**
+ * Stamp a {@link StreamUpdate} with its Run scope into a {@link StoreEvent} —
+ * pure, the mapping the Run's `onUpdate` applies. Text reuses the existing
+ * `stream_chunk` (R3), so no token crosses the pipe twice; the other kinds map
+ * to their typed events and `raw` to the `agent_update` catch-all (C2/D3).
+ *
+ * `stepId` rides **only** on the three variants whose contract declares it
+ * (`stream_chunk`, `tool_call`, `tool_call_update`, R7a) — the other four never
+ * carry it, even when the Run scope has a Step. Optional scope fields are
+ * omitted rather than set to `undefined`, so the wire stays clean and an
+ * older-agent chunk reduces exactly as before.
+ */
+export function toStoreEvent(
+  update: StreamUpdate,
+  ctx: { taskId: string; stepId?: string; agent?: string },
+): StoreEvent {
+  const scope = buildStoreEventScope(ctx);
+  const stepScope = ctx.stepId !== undefined && { stepId: ctx.stepId };
+  switch (update.kind) {
+    case "text":
+      return {
+        type: "stream_chunk",
+        ...scope,
+        ...stepScope,
+        text: update.text,
+        ...(update.messageId !== undefined && { messageId: update.messageId }),
+      };
+    case "thought":
+      return {
+        type: "thought_chunk",
+        ...scope,
+        text: update.text,
+        ...(update.messageId !== undefined && { messageId: update.messageId }),
+      };
+    case "tool_call":
+      return {
+        type: "tool_call",
+        ...scope,
+        ...stepScope,
+        call: update.call,
+      };
+    case "tool_delta":
+      return {
+        type: "tool_call_update",
+        ...scope,
+        ...stepScope,
+        delta: update.delta,
+      };
+    case "plan":
+      return {
+        type: "plan",
+        ...scope,
+        entries: update.entries,
+      };
+    case "mode":
+      return {
+        type: "mode_changed",
+        ...scope,
+        modeId: update.modeId,
+      };
+    case "raw":
+      return {
+        type: "agent_update",
+        ...scope,
+        updateKind: update.updateKind,
+        payload: update.payload,
+      };
   }
 }
 

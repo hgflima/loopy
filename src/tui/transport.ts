@@ -12,7 +12,8 @@
  * - **`"control"`** — envelope-only frames that exist solely for the transport.
  *   The **Run** direction has `run_started`, `run_finished`, `approval_requested`;
  *   the **Interview** direction (C-0018) adds `phase_started`, `change_resolved`,
- *   `question_asked`, `agent_activity`, `phase_finished`, `interview_failed`.
+ *   `question_asked`, `agent_activity`, `phase_finished`, `interview_failed`, plus
+ *   `agent_stream` (C-0019 — the live rich stream, carrying a {@link StreamUpdate}).
  *
  * A third class exists on the **command** (stdin) direction:
  * - **`"command"`** — the Run's `approval_decision`, plus the Interview's
@@ -24,7 +25,7 @@
  * frame payload, so new control/command variants need no parser change.
  */
 
-import type { StoreEvent } from "./store";
+import type { StoreEvent, StreamUpdate } from "./store";
 
 // ---------------------------------------------------------------------------
 // Interview wire vocabulary (C-0018) — declared here because it appears inside
@@ -81,6 +82,18 @@ export type ControlFrame =
       readonly control: "agent_activity";
       readonly phase: Phase;
       readonly text: string;
+    }
+  | {
+      // C-0019 R7b — the Interview's live rich stream. It carries a
+      // `StreamUpdate` (not a `StreamItem`): producing a complete
+      // `ToolCallState` would require the engine to hold accumulated tool-call
+      // state, which R2 forbids. The same type crosses both channels (a
+      // `StoreEvent` in the Run, this frame in the Interview), so one
+      // `mergeToolCall` serves both sides. Additive — `agent_activity` keeps its
+      // shape; the prose still arrives once, at end of turn (R1).
+      readonly control: "agent_stream";
+      readonly phase: Phase;
+      readonly update: StreamUpdate;
     }
   | {
       readonly control: "phase_finished";
@@ -150,9 +163,9 @@ export interface EventTransport {
 export function createEventTransport(
   sink: (line: string) => void,
 ): EventTransport {
-  function writeLine(obj: object): void {
+  function writeLine(frame: "event" | "control", payload: object): void {
     try {
-      sink(JSON.stringify(obj) + "\n");
+      sink(JSON.stringify({ frame, ...payload }) + "\n");
     } catch {
       // best-effort — swallow (AD-1)
     }
@@ -160,11 +173,11 @@ export function createEventTransport(
 
   return {
     emit(event: StoreEvent): void {
-      writeLine({ frame: "event", ...event });
+      writeLine("event", event);
     },
 
     emitControl(control: ControlFrame): void {
-      writeLine({ frame: "control", ...control });
+      writeLine("control", control);
     },
   };
 }
@@ -213,7 +226,11 @@ export function parseTransportLine(line: string): ParseResult {
 
   switch (frameType) {
     case "event":
-      return { ok: true, frame: "event", event: payload as unknown as StoreEvent };
+      return {
+        ok: true,
+        frame: "event",
+        event: payload as unknown as StoreEvent,
+      };
 
     case "control":
       return {

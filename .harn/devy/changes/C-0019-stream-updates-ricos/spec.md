@@ -93,8 +93,14 @@ Sete perguntas, uma por vez, cada uma ancorada no que o código respondeu.
 - **a (OQ1)** — os eventos de tool **carregam `stepId`**. O mapa `taskCurrentStep`
   (`src/index.ts:552–555`) já existe e já carimba o `usage_sample`; sem `stepId` no
   card, o divisor por Step separaria só a prosa.
-- **b (OQ2)** — a Entrevista ganha um **control frame novo**, `agent_stream`,
-  carregando `StreamItem`. Aditivo: o `agent_activity` **não muda de shape**.
+- **b (OQ2)** — a Entrevista ganha um **control frame novo**, `agent_stream`.
+  Aditivo: o `agent_activity` **não muda de shape**. **Correção do `/devy:plan`
+  (§Architecture Decisions 3), registrada na T-001:** o frame carrega um
+  `StreamUpdate`, **não** um `StreamItem`. Produzir um `ToolCallState` completo
+  exigiria que o motor guardasse o estado acumulado da tool call — exatamente o
+  que a R2 proíbe. O mesmo tipo (`StreamUpdate`) atravessa os dois canais
+  (evento no Run, este frame na Entrevista) e a mesma `mergeToolCall` do outro
+  lado o consome. **A decisão R7b não muda; muda o tipo que a cumpre.**
 - **c (OQ3)** — **sete** ícones SVG inline em `ui/icons.tsx`, sem `lucide-react`.
   São sete, não dez: a C1 colapsou os `ToolKind` em famílias.
 - **d** — o que a UI não desenha cai no **`raw`**: `plan_update` e `plan_removed`
