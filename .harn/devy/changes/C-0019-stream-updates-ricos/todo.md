@@ -313,7 +313,7 @@
     Size: M
     Risk: L
 
-- [ ] T-009: `ToolCallCard` + `DiffView` — o card e o diff pintado
+- [x] T-009: `ToolCallCard` + `DiffView` — o card e o diff pintado
     `apps/menubar/src/ui/ToolCallCard.tsx` (novo): renderiza um `ToolCallState`. Glifo da
     família no traço colorido (T-008) + título + **pill de status** (`pending`/`in_progress`/
     `completed`/`failed`) nos hues de estado que já existem, + `locations` quando houver.
