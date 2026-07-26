@@ -278,7 +278,7 @@
     Size: S
     Risk: M
 
-- [ ] T-008: Vocabulário de ferramenta — 5 hues de família, 2 heranças e 7 glifos (C1)
+- [x] T-008: Vocabulário de ferramenta — 5 hues de família, 2 heranças e 7 glifos (C1)
     O `DESIGN.md` reserva cinco hues de estado (accent 352, failed 28, blocked 75, done 150,
     running 210) e exige ~35° de separação — a regra que impede "failed" de ler como
     "interativo". Medindo os intervalos livres na roda, **dez** `ToolKind` distintos não
