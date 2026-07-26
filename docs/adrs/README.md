@@ -30,5 +30,5 @@
 - 2026-07-14 — ADR-0010 created — loopy-bot
 - 2026-07-15 — ADR-0011 created — loopy-bot
 - 2026-07-25 — ADR-0012 created — loopy-bot
-- 2026-07-26 — ADR-0013 created
+- 2026-07-26 — ADR-0013 created — loopy-bot
 
