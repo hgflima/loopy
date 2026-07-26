@@ -478,7 +478,7 @@
 
 ## Fase 5 — Registro
 
-- [ ] T-015: ADR-0013 — o stream semântico, estendendo o ADR-0007
+- [x] T-015: ADR-0013 — o stream semântico, estendendo o ADR-0007
     `docs/adrs/0013-*.md` (novo, via a skill `adr_management` / `/adrs:create`, que tem
     enforcement por hook): registra a decisão de traduzir **todo** `session/update` em
     vocabulário do motor e levá-lo à tela como timeline semântica — cinco eventos tipados
