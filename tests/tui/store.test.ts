@@ -5,13 +5,17 @@ import {
   blockedTasks,
   createStore,
   initialState,
+  mergeToolCall,
   readyTasks,
   reduce,
   runningTasks,
   skippedTasks,
+  toStoreEvent,
   type StoreEvent,
   type StoreState,
   type TaskState,
+  type ToolCallDelta,
+  type ToolCallState,
 } from "../../src/tui/store";
 
 // ---------------------------------------------------------------------------
@@ -1428,5 +1432,381 @@ describe("initialState", () => {
 
   it("includes an empty warnings array", () => {
     expect(initialState().warnings).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeToolCall — the pure shared merge (C-0019 R2)
+// ---------------------------------------------------------------------------
+
+describe("mergeToolCall (R2 — pure shared merge)", () => {
+  const card: ToolCallState = {
+    toolCallId: "tc-1",
+    title: "Ler src/index.ts",
+    kind: "read",
+    status: "in_progress",
+    locations: [{ path: "src/index.ts", line: 42 }],
+    content: [{ kind: "text", text: "conteúdo" }],
+  };
+
+  it("builds a default card when current is undefined", () => {
+    const call = mergeToolCall(undefined, { toolCallId: "tc-1" });
+    expect(call).toEqual({
+      toolCallId: "tc-1",
+      title: "tc-1",
+      kind: "other",
+      status: "pending",
+      locations: [],
+      content: [],
+    });
+  });
+
+  it("uses delta.title for the default card title when present", () => {
+    const call = mergeToolCall(undefined, {
+      toolCallId: "tc-1",
+      title: "Buscar",
+    });
+    expect(call.title).toBe("Buscar");
+  });
+
+  it("preserves the prior value for a field absent (undefined) in the delta", () => {
+    const merged = mergeToolCall(card, {
+      toolCallId: "tc-1",
+      status: "completed",
+    });
+    expect(merged.title).toBe("Ler src/index.ts");
+    expect(merged.kind).toBe("read");
+    expect(merged.status).toBe("completed");
+    expect(merged.locations).toEqual([{ path: "src/index.ts", line: 42 }]);
+    expect(merged.content).toEqual([{ kind: "text", text: "conteúdo" }]);
+  });
+
+  it("treats null in the delta as 'do not touch' — never erases", () => {
+    // The wire (translated from the SDK's optional-nullable ToolCallUpdate) can
+    // carry explicit null; it must mean "unchanged", not "clear".
+    const merged = mergeToolCall(card, {
+      toolCallId: "tc-1",
+      title: null,
+      kind: null,
+      status: null,
+      locations: null,
+      content: null,
+    });
+    expect(merged.title).toBe("Ler src/index.ts");
+    expect(merged.kind).toBe("read");
+    expect(merged.status).toBe("in_progress");
+    expect(merged.locations).toEqual([{ path: "src/index.ts", line: 42 }]);
+    expect(merged.content).toEqual([{ kind: "text", text: "conteúdo" }]);
+  });
+
+  it("replaces content and locations (does not concatenate) when present", () => {
+    const merged = mergeToolCall(card, {
+      toolCallId: "tc-1",
+      locations: [{ path: "novo.ts" }],
+      content: [{ kind: "diff", path: "novo.ts", oldText: "a", newText: "b" }],
+    });
+    expect(merged.locations).toEqual([{ path: "novo.ts" }]);
+    expect(merged.content).toEqual([
+      { kind: "diff", path: "novo.ts", oldText: "a", newText: "b" },
+    ]);
+  });
+
+  it("adopts a kind that only arrives in a later update", () => {
+    const opened = mergeToolCall(undefined, { toolCallId: "tc-1" });
+    expect(opened.kind).toBe("other");
+    const merged = mergeToolCall(opened, {
+      toolCallId: "tc-1",
+      kind: "execute",
+    });
+    expect(merged.kind).toBe("execute");
+  });
+
+  it("carries rawInput/rawOutput and preserves each when the other updates", () => {
+    const withInput = mergeToolCall(undefined, {
+      toolCallId: "tc-1",
+      rawInput: { path: "a.ts" },
+    });
+    expect(withInput.rawInput).toEqual({ path: "a.ts" });
+    expect("rawOutput" in withInput).toBe(false);
+
+    const withOutput = mergeToolCall(withInput, {
+      toolCallId: "tc-1",
+      rawOutput: "done",
+    });
+    expect(withOutput.rawInput).toEqual({ path: "a.ts" });
+    expect(withOutput.rawOutput).toBe("done");
+  });
+
+  it("is pure — deterministic output and never mutates current", () => {
+    const snapshot = JSON.parse(JSON.stringify(card));
+    const delta: ToolCallDelta = { toolCallId: "tc-1", status: "completed" };
+    const a = mergeToolCall(card, delta);
+    const b = mergeToolCall(card, delta);
+    expect(a).toEqual(b);
+    expect(a).not.toBe(card);
+    // current untouched.
+    expect(JSON.parse(JSON.stringify(card))).toEqual(snapshot);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toStoreEvent — the pure StreamUpdate → StoreEvent stamp (C-0019)
+// ---------------------------------------------------------------------------
+
+describe("toStoreEvent (pure onUpdate stamp)", () => {
+  const ctxWithStep = { taskId: "T-001", stepId: "implement", agent: "claude" };
+  const ctxWithoutStep = { taskId: "T-001", agent: "claude" };
+
+  it("text → stream_chunk carrying stepId, messageId and agent (R3)", () => {
+    const ev = toStoreEvent(
+      { kind: "text", text: "olá", messageId: "m1" },
+      ctxWithStep,
+    );
+    expect(ev).toEqual({
+      type: "stream_chunk",
+      taskId: "T-001",
+      text: "olá",
+      agent: "claude",
+      stepId: "implement",
+      messageId: "m1",
+    });
+  });
+
+  it("thought → thought_chunk with messageId and agent, never stepId", () => {
+    // A Step-bearing context (the normal Run scope) must NOT leak stepId onto a
+    // variant whose StoreEvent contract does not declare it (R7a).
+    const ev = toStoreEvent(
+      { kind: "thought", text: "hmm", messageId: "m2" },
+      ctxWithStep,
+    );
+    expect(ev).toEqual({
+      type: "thought_chunk",
+      taskId: "T-001",
+      text: "hmm",
+      agent: "claude",
+      messageId: "m2",
+    });
+    expect(ev).not.toHaveProperty("stepId");
+  });
+
+  it("tool_call → tool_call event carrying the Step (R7a)", () => {
+    const call: ToolCallState = {
+      toolCallId: "tc-1",
+      title: "t",
+      kind: "read",
+      status: "pending",
+      locations: [],
+      content: [],
+    };
+    const ev = toStoreEvent({ kind: "tool_call", call }, ctxWithStep);
+    expect(ev).toEqual({
+      type: "tool_call",
+      taskId: "T-001",
+      stepId: "implement",
+      agent: "claude",
+      call,
+    });
+  });
+
+  it("tool_delta → tool_call_update event carrying the Step", () => {
+    const delta: ToolCallDelta = { toolCallId: "tc-1", status: "completed" };
+    const ev = toStoreEvent({ kind: "tool_delta", delta }, ctxWithStep);
+    expect(ev).toEqual({
+      type: "tool_call_update",
+      taskId: "T-001",
+      stepId: "implement",
+      agent: "claude",
+      delta,
+    });
+  });
+
+  it("plan → plan event, never stepId even from a Step-bearing context", () => {
+    const entries = [
+      { content: "passo", priority: "high", status: "pending" },
+    ] as const;
+    const ev = toStoreEvent({ kind: "plan", entries }, ctxWithStep);
+    expect(ev).toEqual({
+      type: "plan",
+      taskId: "T-001",
+      agent: "claude",
+      entries,
+    });
+    expect(ev).not.toHaveProperty("stepId");
+  });
+
+  it("mode → mode_changed event, never stepId even from a Step-bearing context", () => {
+    const ev = toStoreEvent({ kind: "mode", modeId: "acceptEdits" }, ctxWithStep);
+    expect(ev).toEqual({
+      type: "mode_changed",
+      taskId: "T-001",
+      agent: "claude",
+      modeId: "acceptEdits",
+    });
+    expect(ev).not.toHaveProperty("stepId");
+  });
+
+  it("raw → agent_update catch-all preserving updateKind and payload (C2/D3)", () => {
+    const ev = toStoreEvent(
+      {
+        kind: "raw",
+        updateKind: "available_commands_update",
+        payload: { a: 1 },
+      },
+      ctxWithStep,
+    );
+    expect(ev).toEqual({
+      type: "agent_update",
+      taskId: "T-001",
+      agent: "claude",
+      updateKind: "available_commands_update",
+      payload: { a: 1 },
+    });
+    expect(ev).not.toHaveProperty("stepId");
+  });
+
+  it("a Step-bearing event omits stepId when the context has none", () => {
+    // stepId is optional and additive on tool events too: a context without a
+    // Step must not fabricate one.
+    const call: ToolCallState = {
+      toolCallId: "tc-1",
+      title: "t",
+      kind: "read",
+      status: "pending",
+      locations: [],
+      content: [],
+    };
+    const ev = toStoreEvent({ kind: "tool_call", call }, ctxWithoutStep);
+    expect(ev).toEqual({
+      type: "tool_call",
+      taskId: "T-001",
+      agent: "claude",
+      call,
+    });
+    expect(ev).not.toHaveProperty("stepId");
+  });
+
+  it("omits stepId/agent/messageId when absent from the context", () => {
+    const ev = toStoreEvent({ kind: "text", text: "hi" }, { taskId: "T-001" });
+    expect(ev).toEqual({ type: "stream_chunk", taskId: "T-001", text: "hi" });
+    // No undefined keys leak onto the wire.
+    expect(Object.keys(ev).sort()).toEqual(["taskId", "text", "type"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reduce — the six rich stream events are an explicit no-op in the engine (R4)
+// ---------------------------------------------------------------------------
+
+describe("reduce · rich stream events are no-op (R4, structural sharing)", () => {
+  // The timeline accumulates in the GUI, not in StoreState — which keeps
+  // describing only the current turn. reduce must return the SAME reference so
+  // the store skips notifying and line-reporter's `next === state` guard filters
+  // them, leaving the Ink renderer byte-identical (D1).
+  const base = play(
+    { type: "task_registered", taskId: "T-001", title: "t" },
+    {
+      type: "step_started",
+      taskId: "T-001",
+      stepId: "implement",
+      stepType: "agent",
+    },
+  );
+
+  const call: ToolCallState = {
+    toolCallId: "tc-1",
+    title: "t",
+    kind: "read",
+    status: "pending",
+    locations: [],
+    content: [],
+  };
+
+  const richEvents: readonly StoreEvent[] = [
+    { type: "tool_call", taskId: "T-001", stepId: "implement", call },
+    {
+      type: "tool_call_update",
+      taskId: "T-001",
+      stepId: "implement",
+      delta: { toolCallId: "tc-1", status: "completed" },
+    },
+    { type: "thought_chunk", taskId: "T-001", text: "pensando" },
+    {
+      type: "plan",
+      taskId: "T-001",
+      entries: [{ content: "p", priority: "low", status: "pending" }],
+    },
+    { type: "mode_changed", taskId: "T-001", modeId: "plan" },
+    {
+      type: "agent_update",
+      taskId: "T-001",
+      updateKind: "session_info_update",
+      payload: {},
+    },
+  ];
+
+  for (const ev of richEvents) {
+    it(`${ev.type} returns the same state reference`, () => {
+      expect(reduce(base, ev)).toBe(base);
+    });
+  }
+
+  it("a rich event never notifies the observable store", () => {
+    const store = createStore();
+    store.dispatch({ type: "task_registered", taskId: "T-001", title: "t" });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: "mode_changed", taskId: "T-001", modeId: "plan" });
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reduce — stream_chunk's new optional fields are additive (C-0019 R3)
+// ---------------------------------------------------------------------------
+
+describe("reduce · stream_chunk additive stepId/messageId (R3)", () => {
+  it("still accumulates text when stepId/messageId are present", () => {
+    const state = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "stream_chunk",
+        taskId: "T-001",
+        text: "a",
+        stepId: "impl",
+        messageId: "m1",
+      },
+      {
+        type: "stream_chunk",
+        taskId: "T-001",
+        text: "b",
+        stepId: "impl",
+        messageId: "m1",
+      },
+    );
+    expect(findTask(state, "T-001").stream).toBe("ab");
+  });
+
+  it("reduces identically with or without the new fields (turn state unchanged)", () => {
+    const withNew = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      {
+        type: "stream_chunk",
+        taskId: "T-001",
+        text: "hi",
+        agent: "claude",
+        stepId: "impl",
+        messageId: "m1",
+      },
+    );
+    const withoutNew = play(
+      { type: "task_registered", taskId: "T-001", title: "t" },
+      { type: "stream_chunk", taskId: "T-001", text: "hi", agent: "claude" },
+    );
+    expect(findTask(withNew, "T-001").stream).toBe(
+      findTask(withoutNew, "T-001").stream,
+    );
+    expect(findTask(withNew, "T-001").streamAgent).toBe(
+      findTask(withoutNew, "T-001").streamAgent,
+    );
   });
 });

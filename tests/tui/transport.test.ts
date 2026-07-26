@@ -254,6 +254,163 @@ describe("transport — StoreEvent round-trip", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Rich stream StoreEvent round-trip (C-0019 T-001 — 6 new variants)
+// ---------------------------------------------------------------------------
+
+describe("transport — rich stream event round-trip (C-0019)", () => {
+  const call = {
+    toolCallId: "tc-1",
+    title: "Ler src/index.ts",
+    kind: "read",
+    status: "in_progress",
+    locations: [{ path: "src/index.ts", line: 42 }],
+    content: [{ kind: "text", text: "conteúdo" }],
+    rawInput: { path: "src/index.ts" },
+  } as const;
+
+  it("tool_call (with stepId and agent, full ToolCallState)", () => {
+    roundTripEvent({
+      type: "tool_call",
+      taskId: "T-001",
+      stepId: "implement",
+      agent: "claude",
+      call,
+    });
+  });
+
+  it("tool_call_update (delta round-trips content + rawOutput)", () => {
+    roundTripEvent({
+      type: "tool_call_update",
+      taskId: "T-001",
+      stepId: "implement",
+      delta: {
+        toolCallId: "tc-1",
+        status: "completed",
+        content: [{ kind: "diff", path: "a.ts", oldText: "x", newText: "y" }],
+        rawOutput: "ok",
+      },
+    });
+  });
+
+  it("thought_chunk (with messageId and agent)", () => {
+    roundTripEvent({
+      type: "thought_chunk",
+      taskId: "T-001",
+      agent: "codex",
+      text: "raciocinando…",
+      messageId: "m-7",
+    });
+  });
+
+  it("plan (entries round-trip priority + status)", () => {
+    roundTripEvent({
+      type: "plan",
+      taskId: "T-001",
+      entries: [
+        { content: "Ler o spec", priority: "high", status: "completed" },
+        { content: "Implementar", priority: "medium", status: "in_progress" },
+      ],
+    });
+  });
+
+  it("mode_changed", () => {
+    roundTripEvent({
+      type: "mode_changed",
+      taskId: "T-001",
+      agent: "claude",
+      modeId: "acceptEdits",
+    });
+  });
+
+  it("agent_update (catch-all preserves updateKind + arbitrary payload)", () => {
+    roundTripEvent({
+      type: "agent_update",
+      taskId: "T-001",
+      updateKind: "available_commands_update",
+      payload: { commands: ["/a", "/b"], nested: { x: 1 } },
+    });
+  });
+
+  it("stream_chunk with new stepId/messageId fields (R3, additive)", () => {
+    roundTripEvent({
+      type: "stream_chunk",
+      taskId: "T-001",
+      text: "olá\n",
+      agent: "claude",
+      stepId: "implement",
+      messageId: "m-1",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent_stream control frame round-trip (C-0019 T-001 / R7b) — the Interview's
+// live rich stream, carrying a StreamUpdate (not a StreamItem).
+// ---------------------------------------------------------------------------
+
+describe("transport — agent_stream control frame (C-0019 R7b)", () => {
+  it("carries a text StreamUpdate", () => {
+    roundTripControl({
+      control: "agent_stream",
+      phase: "spec",
+      update: { kind: "text", text: "escrevendo…", messageId: "m1" },
+    });
+  });
+
+  it("carries a tool_call StreamUpdate with a full ToolCallState", () => {
+    roundTripControl({
+      control: "agent_stream",
+      phase: "refine",
+      update: {
+        kind: "tool_call",
+        call: {
+          toolCallId: "tc-1",
+          title: "Buscar",
+          kind: "search",
+          status: "pending",
+          locations: [],
+          content: [],
+        },
+      },
+    });
+  });
+
+  it("carries a tool_delta StreamUpdate", () => {
+    roundTripControl({
+      control: "agent_stream",
+      phase: "plan",
+      update: {
+        kind: "tool_delta",
+        delta: { toolCallId: "tc-1", status: "completed" },
+      },
+    });
+  });
+
+  it("carries a raw catch-all StreamUpdate (D3 — nothing vanishes)", () => {
+    roundTripControl({
+      control: "agent_stream",
+      phase: "spec",
+      update: {
+        kind: "raw",
+        updateKind: "session_info_update",
+        payload: { title: "x" },
+      },
+    });
+  });
+
+  it("an old parser does not throw on the new frame (generic control parse)", () => {
+    const line = JSON.stringify({
+      frame: "control",
+      control: "agent_stream",
+      phase: "refine",
+      update: { kind: "mode", modeId: "plan" },
+    });
+    const result = parseTransportLine(line);
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Control frame round-trip
 // ---------------------------------------------------------------------------
 
