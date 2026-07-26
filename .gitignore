@@ -22,3 +22,5 @@ __pycache__/
 
 # Artefatos de spikes (saída crua capturada em runtime)
 spikes/*.out.json
+.lavish/
+skills-lock.json
