@@ -37,9 +37,13 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import type { ContentBlock } from "@agentclientprotocol/sdk";
+import type {
+  ContentBlock,
+  SessionNotification,
+} from "@agentclientprotocol/sdk";
 
 import { openAgent } from "../acp/agent";
+import { translateUpdate } from "../acp/client";
 import { createAgentProcessPool, type PerAgentOptions } from "../acp/pool";
 import { classifyStopReason } from "../acp/session";
 import type { LoggerPort, PermissionOnRequest, StopReason } from "../types";
@@ -403,9 +407,51 @@ function nonEndTurnReason(reason: StopReason): string {
   return `entrevista: o turno terminou com stopReason "${reason}" (esperado "end_turn").`;
 }
 
-/** The real Session opener: a one-Agent process pool, one Session at `cwd`. */
+/**
+ * Build the Interview's `onUpdate` (R1, C-0019 T-013) — the **filtered** live
+ * stream. Each ACP `SessionUpdate` is translated to a {@link StreamUpdate}
+ * ({@link translateUpdate}, T-002) and every one is forwarded as an
+ * `agent_stream` control frame **except** `text`: thoughts, tool calls, plan,
+ * mode and the `raw` catch-all narrate live, while the prose
+ * (`agent_message_chunk` → `text`) is dropped here and arrives once, at end of
+ * turn, via `agent_activity` — after {@link parseAsk} has stripped the Envelope.
+ *
+ * Filtering the raw text is the whole point (R1, the spec's "Never"): the Agent
+ * writes `<loopy-ask>{json}</loopy-ask>` **inside** its own message
+ * (`envelope.ts`), and `stripBlocks` (`parse-ask.ts`) only removes it at end of
+ * turn — streaming the live text would show the question's JSON being typed and
+ * deliver the same turn twice. On the Interview channel the `user_message_chunk`
+ * (our Envelope coming back — D3) survives as `raw`, behind a closed disclosure;
+ * it does not vanish.
+ *
+ * `translateUpdate` returns `undefined` for `usage_update` (its own path), so
+ * that update emits nothing here either, and a turn with no update emits no
+ * frame. There is no session map: one Phase, one Agent Process, one Session.
+ */
+export function createStreamForwarder(
+  transport: Pick<EventTransport, "emitControl">,
+  phase: Phase,
+): (notification: SessionNotification) => void {
+  return (notification) => {
+    const update = translateUpdate(notification.update);
+    if (!isForwardableStreamUpdate(update)) return;
+    transport.emitControl({ control: "agent_stream", phase, update });
+  };
+}
+
+function isForwardableStreamUpdate(
+  update: ReturnType<typeof translateUpdate>,
+): update is Exclude<ReturnType<typeof translateUpdate>, undefined | { kind: "text" }> {
+  return update !== undefined && update.kind !== "text";
+}
+
+/**
+ * The real Session opener: a one-Agent process pool, one Session at `cwd`. The
+ * `onUpdate` is the filtered live stream (R1) — see {@link createStreamForwarder}.
+ */
 async function defaultOpenSession(
   options: RunInterviewOptions,
+  onUpdate: (notification: SessionNotification) => void,
 ): Promise<InterviewSessionHandle> {
   const agentOptions = new Map<string, PerAgentOptions>([
     [options.agent, { command: options.command }],
@@ -418,6 +464,7 @@ async function defaultOpenSession(
         cwd: options.dir,
         env: opts.env,
         permissions: { on_request: options.permissionOnRequest ?? "allow" },
+        onUpdate,
         logger: options.logger,
       }),
     options.logger,
@@ -488,7 +535,9 @@ export async function runInterview(
   const fs = options.fs ?? defaultFs;
   const logger = options.logger;
   const openSession =
-    options.openSession ?? (() => defaultOpenSession(options));
+    options.openSession ??
+    (() =>
+      defaultOpenSession(options, createStreamForwarder(transport, phase)));
 
   const commands = createCommandReader(input);
   let handle: InterviewSessionHandle | undefined;
