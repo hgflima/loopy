@@ -298,8 +298,8 @@ describe("store-bridge", () => {
       const bridge = feedLines(lines);
 
       expect(bridge.transcript["T-001"]).toEqual([
-        { stepId: "implement", text: "hello " },
-        { stepId: "implement", text: "world" },
+        { stepId: "implement", item: { item: "text", text: "hello " } },
+        { stepId: "implement", item: { item: "text", text: "world" } },
       ]);
     });
 
@@ -332,8 +332,8 @@ describe("store-bridge", () => {
       const bridge = feedLines(lines);
 
       expect(bridge.transcript["T-001"]).toEqual([
-        { stepId: "implement", text: "code" },
-        { stepId: "simplify", text: "clean" },
+        { stepId: "implement", item: { item: "text", text: "code" } },
+        { stepId: "simplify", item: { item: "text", text: "clean" } },
       ]);
     });
 
@@ -362,7 +362,7 @@ describe("store-bridge", () => {
       // store.stream is empty (cleared by step_started / task lifecycle)
       // but transcript survives
       expect(bridge.transcript["T-001"]).toEqual([
-        { stepId: "implement", text: "work" },
+        { stepId: "implement", item: { item: "text", text: "work" } },
       ]);
     });
 
@@ -398,7 +398,7 @@ describe("store-bridge", () => {
       expect(entries).toHaveLength(1);
       expect(entries[0]).toMatchObject({
         stepId: "implement",
-        text: "hello",
+        item: { item: "text", text: "hello" },
         agent: "Claude Code",
         model: "claude-opus-4-6",
       });
@@ -437,7 +437,7 @@ describe("store-bridge", () => {
       // Second chunk: usage propagated from step
       expect(entries[1]).toMatchObject({
         stepId: "implement",
-        text: "b",
+        item: { item: "text", text: "b" },
         agent: "Codex",
         model: "codex-mini",
         usedTokens: 5000,
