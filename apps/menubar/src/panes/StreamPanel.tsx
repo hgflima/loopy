@@ -23,6 +23,7 @@ import type { StoreState } from "loopy/tui/store";
 import {
   segmentsFor,
   overlayStepUsage,
+  segmentText,
   type Transcript,
   type StreamSegment,
 } from "../state/stream-history";
@@ -133,7 +134,7 @@ function StreamPane({ col }: { readonly col: StreamColumn }) {
               />
             )}
             <MarkdownStream
-              text={seg.text}
+              text={segmentText(seg.items)}
               streaming={i === lastIdx}
             />
           </div>
