@@ -17,7 +17,8 @@ description: >-
 Esta skill configura o **loopy** (`@hgflima/loopy`), um motor de loop agêntico
 config-driven via ACP: para cada task pendente de um backlog, ele executa o
 `pipeline` declarado no `loopy.yml` (worktree isolado → agente implementa até
-os checks passarem → revisão → commit → merge com aprovação humana → cleanup).
+os checks passarem → revisão → commit → reconciliação do parent dentro do
+worktree → merge com aprovação humana → cleanup).
 O motor **interpreta** o yml — todo o comportamento do loop vive no arquivo que
 esta skill gera. Um yml ruim = um run que trava, conflita ou queima tokens; por
 isso o processo aqui é deliberado: preflight, proposta, iteração com o usuário
@@ -100,6 +101,13 @@ usuário:
   do alvo para escolher os checks reais (typecheck/lint/test/build — o que
   existir), e distribua papéis entre os agentes disponíveis (implementar /
   simplificar / revisar). Com um agente só, todos os papéis são dele.
+- **Merge pessimista, sempre**: os cinco steps de merge do template
+  (`reconcile-parent` → `resolve-merge` → `finalize-merge` → `merge` →
+  `abort-root-merge`) entram mesmo com `concurrency: 1`. O parent é integrado
+  **dentro do worktree**, que é o único lugar que o agente enxerga (cwd
+  imutável — AD-3), e o merge no root nunca escala sujo (senão a task quebrada
+  derruba as irmãs). Não troque isso por `on_merge_conflict: rebase`: a policy
+  só faz replay e para no primeiro conflito real.
 
 Checks e steps `shell` rodam **argv sem shell** — nada de `&&`, pipes ou
 redirects; quando precisar de composição, use um script npm do alvo como
