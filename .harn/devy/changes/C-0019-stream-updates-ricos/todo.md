@@ -23,7 +23,7 @@
 
 ## Fase 1 — Fundação: contrato de fio, tradução e o framer
 
-- [ ] T-001: Contrato — `StreamUpdate`/`StreamItem`/`mergeToolCall` + 6 eventos + `agent_stream`
+- [x] T-001: Contrato — `StreamUpdate`/`StreamItem`/`mergeToolCall` + 6 eventos + `agent_stream`
     `src/tui/store.ts` (subpath export `@hgflima/loopy/tui/store`, **browser-safe** — nada de
     `node:`) ganha o vocabulário inteiro da change, e `src/tui/transport.ts` o control frame
     da Entrevista. É a fundação: quinze tasks compilam contra isto.
