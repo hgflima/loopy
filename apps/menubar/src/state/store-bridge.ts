@@ -145,30 +145,18 @@ export function applyLine(state: BridgeState, line: string): BridgeState {
       const nextStore = reduce(state.store, result.event);
       if (nextStore === state.store) return state;
 
-      // Accumulate stream_chunk into append-only transcript (tagged by currentStepId)
-      // Telemetry (agent/model/used/size) is derived from the step in nextStore.
       if (result.event.type === "stream_chunk") {
-        const { taskId, text } = result.event;
-        const task = nextStore.tasks.find((t) => t.id === taskId);
-        const stepId = task?.currentStepId;
-        if (stepId) {
-          const step = task!.steps.find((s) => s.id === stepId);
-          const existing = state.transcript[taskId] ?? [];
-          const entry: TranscriptEntry = {
-            stepId,
-            text,
-            agent: step?.agentName,
-            model: step?.model,
-            usedTokens: step?.used,
-            size: step?.size,
-          };
+        const nextTranscript = appendStreamChunk(
+          state.transcript,
+          nextStore,
+          result.event.taskId,
+          result.event.text,
+        );
+        if (nextTranscript !== state.transcript) {
           return {
             ...state,
             store: nextStore,
-            transcript: {
-              ...state.transcript,
-              [taskId]: [...existing, entry],
-            },
+            transcript: nextTranscript,
           };
         }
       }
@@ -227,5 +215,32 @@ export function applySidecarExit(
       ...state.ui,
       sidecarFailure: { type, exitCode },
     },
+  };
+}
+
+function appendStreamChunk(
+  transcript: Transcript,
+  store: StoreState,
+  taskId: string,
+  text: string,
+): Transcript {
+  const task = store.tasks.find((t) => t.id === taskId);
+  const stepId = task?.currentStepId;
+  if (!stepId) return transcript;
+
+  const step = task.steps.find((s) => s.id === stepId);
+  const existing = transcript[taskId] ?? [];
+  const entry: TranscriptEntry = {
+    stepId,
+    item: { item: "text", text },
+    agent: step?.agentName,
+    model: step?.model,
+    usedTokens: step?.used,
+    size: step?.size,
+  };
+
+  return {
+    ...transcript,
+    [taskId]: [...existing, entry],
   };
 }

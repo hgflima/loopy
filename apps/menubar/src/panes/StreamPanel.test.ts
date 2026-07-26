@@ -62,20 +62,33 @@ describe("streamColumns", () => {
     ]);
     const transcript: Transcript = {
       "T-001": [
-        { stepId: "impl", text: "hello " },
-        { stepId: "impl", text: "world" },
+        { stepId: "impl", item: { item: "text", text: "hello " } },
+        { stepId: "impl", item: { item: "text", text: "world" } },
       ],
-      "T-003": [{ stepId: "audit", text: "checking..." }],
+      "T-003": [
+        { stepId: "audit", item: { item: "text", text: "checking..." } },
+      ],
     };
     const cols = streamColumns(store, transcript);
     expect(cols).toHaveLength(2);
     expect(cols[0]!.taskId).toBe("T-001");
     expect(cols[0]!.segments).toEqual([
-      { stepId: "impl", label: "impl", text: "hello world" },
+      {
+        stepId: "impl",
+        label: "impl",
+        items: [
+          { item: "text", text: "hello " },
+          { item: "text", text: "world" },
+        ],
+      },
     ]);
     expect(cols[1]!.taskId).toBe("T-003");
     expect(cols[1]!.segments).toEqual([
-      { stepId: "audit", label: "audit", text: "checking..." },
+      {
+        stepId: "audit",
+        label: "audit",
+        items: [{ item: "text", text: "checking..." }],
+      },
     ]);
   });
 
@@ -90,9 +103,9 @@ describe("streamColumns", () => {
     const store = makeStore([makeTask("T-001", "running")]);
     const transcript: Transcript = {
       "T-001": [
-        { stepId: "impl", text: "code..." },
-        { stepId: "simplify", text: "simplifying..." },
-        { stepId: "audit", text: "AUDIT: PASS" },
+        { stepId: "impl", item: { item: "text", text: "code..." } },
+        { stepId: "simplify", item: { item: "text", text: "simplifying..." } },
+        { stepId: "audit", item: { item: "text", text: "AUDIT: PASS" } },
       ],
     };
     const cols = streamColumns(store, transcript);
