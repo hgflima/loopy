@@ -339,7 +339,7 @@
     Size: M
     Risk: M
 
-- [ ] T-010: `ThoughtBlock`, `PlanBlock`, `RawUpdateRow` e o despachante `StreamTimeline`
+- [x] T-010: `ThoughtBlock`, `PlanBlock`, `RawUpdateRow` e o despachante `StreamTimeline`
     Os três blocos restantes, mais a peça que impede o Run e a Entrevista de divergirem.
     `ThoughtBlock.tsx` (novo): pensamento **colapsado por padrão**, com contador
     (`Pensando · N parágrafos`), abrindo por clique (D7). Nasce fechado — é o default, não
