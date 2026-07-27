@@ -399,7 +399,7 @@
 
 ## Fase 4 — As duas telas
 
-- [ ] T-012: `StreamPanel` renderiza a timeline, não uma string
+- [x] T-012: `StreamPanel` renderiza a timeline, não uma string
     `apps/menubar/src/panes/StreamPanel.tsx`: cada `StreamSegment` deixa de renderizar
     `<MarkdownStream text={seg.text}>` e passa a renderizar `<StreamTimeline items={seg.items}>`
     (T-010). Tudo o mais do painel **sobrevive intacto**: o fold, o teto de 4 colunas com o
