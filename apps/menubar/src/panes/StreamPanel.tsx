@@ -1,6 +1,6 @@
 /**
  * StreamPanel — streaming region with fold, max 4 panes, overflow chip,
- * cross-step markdown + labeled dividers + auto-stick scroll (T-008, T-009).
+ * cross-step timeline + labeled dividers + auto-stick scroll (T-008, T-009).
  *
  * Occupies `var(--stream-h)` (~45%) of the app height. **Fold** collapses to a
  * persistent thin bar `var(--stream-fold-h)` (~28px) showing "▸ Streams · N
@@ -9,10 +9,11 @@
  * Shows at most 4 panes; when >4 tasks are running, displays 4 + a "＋N rodando"
  * chip. Fold state is session-only (not persisted).
  *
- * Each pane renders the **cross-step transcript** (from `segmentsFor`, T-004)
- * with `MarkdownStream` (T-005). Steps are separated by a **labeled divider**
- * (hairline + centered pill). Scroll **auto-sticks** to the bottom when the
- * user is anchored there; completed segments are memoized.
+ * Each pane renders the **cross-step transcript** (from `segmentsFor`, T-004) as
+ * a `StreamTimeline` (T-010) — tool cards, thoughts, plan, mode and prose
+ * interleaved in arrival order, not a flattened string. Steps are separated by a
+ * **labeled divider** (hairline + centered pill). Scroll **auto-sticks** to the
+ * bottom when the user is anchored there; completed items are memoized.
  *
  * Pure data transformations ({@link streamColumns}, {@link visiblePanes}) are
  * exported for testing (AD-6).
@@ -23,11 +24,10 @@ import type { StoreState } from "loopy/tui/store";
 import {
   segmentsFor,
   overlayStepUsage,
-  segmentText,
   type Transcript,
   type StreamSegment,
 } from "../state/stream-history";
-import { StatusDot, MarkdownStream, StepDivider } from "../ui";
+import { StatusDot, StreamTimeline, StepDivider } from "../ui";
 import { formatUsage } from "../ui/context-window";
 import "./StreamPanel.css";
 
@@ -85,6 +85,10 @@ export function visiblePanes(columns: StreamColumn[]): {
   };
 }
 
+function chevronClassName(folded: boolean): string {
+  return `stream-panel__chevron${folded ? "" : " stream-panel__chevron--open"}`;
+}
+
 // ---------------------------------------------------------------------------
 // StreamPane — one pane with auto-stick scroll
 // ---------------------------------------------------------------------------
@@ -133,10 +137,7 @@ function StreamPane({ col }: { readonly col: StreamColumn }) {
                 usage={formatUsage(seg.usedTokens, seg.size, seg.model)}
               />
             )}
-            <MarkdownStream
-              text={segmentText(seg.items)}
-              streaming={i === lastIdx}
-            />
+            <StreamTimeline items={seg.items} streaming={i === lastIdx} />
           </div>
         ))}
       </div>
@@ -172,10 +173,7 @@ export function StreamPanel({ store, transcript }: StreamPanelProps) {
       <span className="stream-panel__fold-label t-label">
         ▸ Streams · {runningCount} rodando
       </span>
-      <span
-        className={`stream-panel__chevron${folded ? "" : " stream-panel__chevron--open"}`}
-        aria-hidden="true"
-      >
+      <span className={chevronClassName(folded)} aria-hidden="true">
         ▾
       </span>
     </button>
