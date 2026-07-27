@@ -156,6 +156,27 @@ describe("controlToInterviewEvent", () => {
     ).toEqual({ kind: "activity", text: "lendo src/auth.ts" });
   });
 
+  it("maps agent_stream → agent_stream, carrying the StreamUpdate verbatim (R7b)", () => {
+    const update = {
+      kind: "tool_call" as const,
+      call: {
+        toolCallId: "t1",
+        title: "Lendo src/auth.ts",
+        kind: "read" as const,
+        status: "in_progress" as const,
+        locations: [],
+        content: [],
+      },
+    };
+    expect(
+      controlToInterviewEvent({
+        control: "agent_stream",
+        phase: "spec",
+        update,
+      }),
+    ).toEqual({ kind: "agent_stream", update });
+  });
+
   it("maps phase_finished", () => {
     expect(
       controlToInterviewEvent({
@@ -382,6 +403,43 @@ describe("useInterviewProcess — a sequence of NDJSON lines drives the reducer"
     // spec/refine hand control to the human gate (D12).
     expect(result.current.state.stage).toBe("gate");
     expect(result.current.state.files).toEqual(["spec.md"]);
+  });
+
+  it("an agent_stream frame accumulates into the live timeline (T-014)", () => {
+    const { result } = renderHook(() => useInterviewProcess());
+
+    emitControl({
+      control: "phase_started",
+      phase: "spec",
+      command: "/devy:spec x",
+    });
+
+    emitControl({
+      control: "agent_stream",
+      phase: "spec",
+      update: {
+        kind: "tool_call",
+        call: {
+          toolCallId: "t1",
+          title: "Lendo src/auth.ts",
+          kind: "read",
+          status: "in_progress",
+          locations: [],
+          content: [],
+        },
+      },
+    });
+    expect(result.current.state.transcript.map((it) => it.item)).toEqual([
+      "tool",
+    ]);
+
+    // The turn's prose arrives at end of turn (agent_activity) — a text item
+    // AFTER the tool that streamed before it.
+    emitControl({ control: "agent_activity", phase: "spec", text: "Li tudo." });
+    expect(result.current.state.transcript.map((it) => it.item)).toEqual([
+      "tool",
+      "text",
+    ]);
   });
 
   it("ignores a malformed line without throwing (same reference)", () => {

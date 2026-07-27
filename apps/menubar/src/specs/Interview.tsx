@@ -30,6 +30,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Phase } from "loopy/tui/transport";
+import type { StreamItem } from "loopy/tui/store";
 import { Button, Pill } from "../ui";
 import { useInterviewProcess } from "./useInterviewProcess";
 import {
@@ -399,8 +400,8 @@ interface PhaseViewProps {
   readonly phase: Phase | null;
   readonly pending: PendingQuestion | null;
   readonly activityLine: string | null;
-  /** Everything the Agent narrated in this Phase (markdown, shown in full). */
-  readonly transcript: string;
+  /** The running Phase's timeline — tool cards + prose, in arrival order (T-014). */
+  readonly transcript: readonly StreamItem[];
   readonly wrappingUp: boolean;
   readonly onAnswer: (
     text: string,

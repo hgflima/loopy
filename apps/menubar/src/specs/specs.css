@@ -365,9 +365,10 @@
   min-width: 0;
 }
 /*
- * The narration renders IN FULL — never truncated. `agent_activity` carries the
- * turn's whole prose, so the box wraps, scrolls past a tall ceiling, and breaks
- * unbreakable runs (paths, urls) instead of pushing the flow sideways.
+ * The running Phase's timeline (T-014) — the same StreamTimeline the Run mounts:
+ * tool cards streamed live by `agent_stream`, plus the turn's whole prose as a
+ * `text` item. Nothing is truncated; the box wraps, scrolls past a tall ceiling,
+ * and breaks unbreakable runs (paths, urls) instead of pushing the flow sideways.
  */
 .spec-activity__narration {
   width: 100%;
