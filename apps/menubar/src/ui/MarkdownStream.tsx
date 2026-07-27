@@ -6,12 +6,17 @@
  * Code blocks use --font-mono from the design system tokens.
  *
  * Streaming perf: completed segments (split on \n\n) are memoized via
- * React.memo; only the tail in growth re-parses (avoids O(n²) live).
+ * React.memo; only the tail in growth re-parses. The tail is re-highlighted on
+ * every chunk by design — rehype-highlight is synchronous, so no
+ * MarkdownHooks/debounce is needed, and a block still streaming (its fence not
+ * yet closed) highlights as it grows just like a closed one. (The per-chunk
+ * markdown re-parse of the tail predates this file and is out of scope here.)
  */
 import type { HTMLAttributes, ReactNode } from "react";
 import { Fragment, memo, useMemo } from "react";
 import _Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import { splitSentences } from "./sentence-split";
 import "./MarkdownStream.css";
 
@@ -21,6 +26,7 @@ import "./MarkdownStream.css";
 const Markdown = _Markdown as any as React.FC<{
   readonly children: string;
   readonly remarkPlugins?: readonly unknown[];
+  readonly rehypePlugins?: readonly unknown[];
   readonly components?: Record<string, unknown>;
 }>;
 
@@ -33,6 +39,14 @@ export interface MarkdownStreamProps {
 
 const remarkPlugins = [remarkGfm];
 
+// rehype-highlight is synchronous, so it re-highlights on every streamed chunk
+// without MarkdownHooks/debounce. Defaults are deliberate: the `common` language
+// set (no curation — R7e) and `detect: false`, so only language-tagged blocks
+// are highlighted and inline / un-languaged code stays inert. Theme lives in
+// MarkdownStream.css (hljs-* mapped to the dedicated --syntax-* tokens), never a
+// highlight.js stylesheet. No rehype-raw — embedded HTML stays text (XSS barrier).
+const rehypePlugins = [rehypeHighlight];
+
 /**
  * Split one prose string and render each sentence boundary as a real <br>.
  *
@@ -42,9 +56,9 @@ const remarkPlugins = [remarkGfm];
  * keeping textContent byte-identical for the no-split case.
  */
 function proseToNodes(text: string, keyPrefix: string): ReactNode {
-  const split = splitSentences(text);
-  if (!split.includes("\n")) return split;
-  return split.split("\n").map((line, i) => (
+  const lines = splitSentences(text).split("\n");
+  if (lines.length === 1) return lines[0];
+  return lines.map((line, i) => (
     <Fragment key={`${keyPrefix}-${i}`}>
       {i > 0 ? <br /> : null}
       {line}
@@ -88,17 +102,28 @@ const mdComponents = {
   },
 };
 
+const markdownProps = {
+  remarkPlugins,
+  rehypePlugins,
+  components: mdComponents,
+} as const;
+
+function splitStreamingSegments(text: string): {
+  readonly completed: string[];
+  readonly tail: string;
+} {
+  const parts = text.split("\n\n");
+  const tail = parts.pop() ?? "";
+  return parts.length === 0 ? { completed: [], tail } : { completed: parts, tail };
+}
+
 /** A single markdown segment, memoized to avoid re-parsing completed blocks. */
 const MemoSegment = memo(function MemoSegment({
   text,
 }: {
   readonly text: string;
 }) {
-  return (
-    <Markdown remarkPlugins={remarkPlugins} components={mdComponents}>
-      {text}
-    </Markdown>
-  );
+  return <Markdown {...markdownProps}>{text}</Markdown>;
 });
 
 export function MarkdownStream({
@@ -106,25 +131,15 @@ export function MarkdownStream({
   streaming = false,
 }: MarkdownStreamProps) {
   const { completed, tail } = useMemo(() => {
-    if (streaming && text) {
-      const parts = text.split("\n\n");
-      if (parts.length > 1) {
-        return { completed: parts.slice(0, -1), tail: parts.at(-1) ?? "" };
-      }
-    }
-    return { completed: [] as string[], tail: text };
+    if (!streaming || !text) return { completed: [] as string[], tail: text };
+    return splitStreamingSegments(text);
   }, [text, streaming]);
-
   return (
     <div className="md-stream">
       {completed.map((seg, i) => (
         <MemoSegment key={i} text={seg} />
       ))}
-      {tail ? (
-        <Markdown remarkPlugins={remarkPlugins} components={mdComponents}>
-          {tail}
-        </Markdown>
-      ) : null}
+      {tail ? <Markdown {...markdownProps}>{tail}</Markdown> : null}
     </div>
   );
 }
