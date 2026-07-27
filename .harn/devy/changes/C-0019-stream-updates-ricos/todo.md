@@ -370,7 +370,7 @@
     Size: M
     Risk: M
 
-- [ ] T-011: Realce de código — `rehype-highlight` sobre os tokens OKLCH
+- [x] T-011: Realce de código — `rehype-highlight` sobre os tokens OKLCH
     **Dependência nova nº 2:** `rehype-highlight` (+ `highlight.js` transitivo), no workspace
     `apps/menubar`. Escolhida por ser **síncrona**: o texto chega em streaming e re-realça a
     cada chunk; um pipeline assíncrono (Shiki, `rehype-starry-night`) exigiria `MarkdownHooks`
