@@ -61,6 +61,114 @@
   font-size: 0.9em;
 }
 
+/* -- Syntax highlighting (rehype-highlight) ------------------------------- *
+ * A CSS-only theme: every `hljs-*` token maps to a dedicated --syntax-* token
+ * (tokens.css), so highlighting inherits both themes for free. We deliberately
+ * do NOT import a highlight.js stylesheet — its palettes are fixed hex and would
+ * break the design system in light and dark. We also do NOT borrow the --state-*
+ * or --tool-* vocabularies: those carry task-status / tool-family meaning, and a
+ * string painted "done-green" would read as a status. Base code text stays --ink
+ * (inherited). */
+
+/* Comments — muted, italic */
+.md-stream .hljs-comment,
+.md-stream .hljs-quote {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+/* Keywords & language literals */
+.md-stream .hljs-keyword,
+.md-stream .hljs-selector-tag,
+.md-stream .hljs-literal,
+.md-stream .hljs-doctag,
+.md-stream .hljs-meta .hljs-keyword {
+  color: var(--syntax-keyword);
+}
+
+/* Strings & regexp */
+.md-stream .hljs-string,
+.md-stream .hljs-regexp,
+.md-stream .hljs-char.escape_,
+.md-stream .hljs-meta .hljs-string {
+  color: var(--syntax-string);
+}
+
+/* Numbers, symbols & bullets */
+.md-stream .hljs-number,
+.md-stream .hljs-symbol,
+.md-stream .hljs-bullet {
+  color: var(--syntax-number);
+}
+
+/* Function & selector names */
+.md-stream .hljs-title,
+.md-stream .hljs-section,
+.md-stream .hljs-selector-id,
+.md-stream .hljs-selector-class {
+  color: var(--syntax-function);
+}
+
+/* Types, classes & built-ins (higher specificity than plain titles) */
+.md-stream .hljs-type,
+.md-stream .hljs-built_in,
+.md-stream .hljs-title.class_,
+.md-stream .hljs-title.class_.inherited__ {
+  color: var(--syntax-type);
+}
+
+/* Attributes, properties & variables */
+.md-stream .hljs-attr,
+.md-stream .hljs-attribute,
+.md-stream .hljs-property,
+.md-stream .hljs-variable,
+.md-stream .hljs-template-variable,
+.md-stream .hljs-selector-attr,
+.md-stream .hljs-selector-pseudo {
+  color: var(--syntax-variable);
+}
+
+/* Markup tags & names */
+.md-stream .hljs-tag,
+.md-stream .hljs-name,
+.md-stream .hljs-template-tag {
+  color: var(--syntax-tag);
+}
+
+/* Meta / preprocessor, operators & params */
+.md-stream .hljs-meta,
+.md-stream .hljs-operator,
+.md-stream .hljs-punctuation,
+.md-stream .hljs-params {
+  color: var(--syntax-meta);
+}
+
+/* Links — underlined */
+.md-stream .hljs-link {
+  color: var(--syntax-link);
+  text-decoration: underline;
+}
+
+/* Diff — foreground + a subtle tint from the syntax vocabulary */
+.md-stream .hljs-addition {
+  color: var(--syntax-addition-ink);
+  background: var(--syntax-addition-bg);
+}
+
+.md-stream .hljs-deletion {
+  color: var(--syntax-deletion-ink);
+  background: var(--syntax-deletion-bg);
+}
+
+/* Emphasis carried by the source */
+.md-stream .hljs-emphasis {
+  font-style: italic;
+}
+
+.md-stream .hljs-strong {
+  font-weight: 600;
+}
+
 /* -- Table (GFM) -- */
 .md-stream table {
   width: 100%;

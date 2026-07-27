@@ -74,6 +74,29 @@
   --tool-danger: var(--state-failed-ink); /* destruction IS the danger hue */
   --tool-other: var(--ink-tertiary); /* muted; keeps the vocabulary small */
 
+  /* ---- Syntax highlighting — code-block token vocabulary (T-011) -------- *
+   * A dedicated palette so rehype-highlight NEVER borrows the --state-* or
+   * --tool-* names: those mean task status / tool family, and a string painted
+   * "done-green" would read as a status. Scoped entirely to fenced code, where
+   * the mono surface already sets it apart from chrome — so the Meaning-Only
+   * Rule is honored (the meaning here is the code's own structure). Light tones
+   * sit at L≈0.50 for AA on --surface; the dark mirror lifts them. AA in both
+   * themes is verified visually by T-016. */
+  --syntax-comment: oklch(0.54 0.02 260);
+  --syntax-keyword: oklch(0.50 0.18 300);
+  --syntax-string: oklch(0.49 0.13 150);
+  --syntax-number: oklch(0.50 0.12 55);
+  --syntax-function: oklch(0.52 0.18 262);
+  --syntax-type: oklch(0.50 0.1 195);
+  --syntax-variable: oklch(0.52 0.17 25);
+  --syntax-tag: oklch(0.5 0.15 235);
+  --syntax-meta: oklch(0.5 0.01 260);
+  --syntax-link: oklch(0.52 0.18 262);
+  --syntax-addition-ink: oklch(0.46 0.13 150);
+  --syntax-addition-bg: oklch(0.955 0.03 150);
+  --syntax-deletion-ink: oklch(0.5 0.19 28);
+  --syntax-deletion-bg: oklch(0.955 0.028 28);
+
   /* ---- Elevation — flat until it floats (DESIGN.md §4) ------------------ */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-pop: 0 8px 32px rgba(0, 0, 0, 0.16);
@@ -168,6 +191,24 @@
     --tool-exec: oklch(0.74 0.11 180);
     --tool-think: oklch(0.74 0.14 270);
     --tool-mode: oklch(0.74 0.14 322);
+
+    /* Syntax palette brightens for dark surfaces (same hue/chroma family).
+       --syntax-comment sits at L 0.64 (not 0.60): the muted grey still needs to
+       clear 4.5:1 AA on the dark --surface, and 0.60 only reached 4.17:1. */
+    --syntax-comment: oklch(0.64 0.02 260);
+    --syntax-keyword: oklch(0.76 0.15 300);
+    --syntax-string: oklch(0.8 0.13 150);
+    --syntax-number: oklch(0.8 0.1 60);
+    --syntax-function: oklch(0.78 0.13 262);
+    --syntax-type: oklch(0.8 0.1 195);
+    --syntax-variable: oklch(0.76 0.15 25);
+    --syntax-tag: oklch(0.78 0.13 235);
+    --syntax-meta: oklch(0.72 0.01 260);
+    --syntax-link: oklch(0.78 0.13 262);
+    --syntax-addition-ink: oklch(0.8 0.13 150);
+    --syntax-addition-bg: oklch(0.32 0.06 150);
+    --syntax-deletion-ink: oklch(0.76 0.16 28);
+    --syntax-deletion-bg: oklch(0.33 0.08 28);
 
     /* Shadows read poorly on dark — elevation is tonal (surface → elevated);
        keep only a soft ambient lift on true floaters. */
