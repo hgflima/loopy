@@ -313,7 +313,7 @@
     Size: M
     Risk: L
 
-- [ ] T-009: `ToolCallCard` + `DiffView` — o card e o diff pintado
+- [x] T-009: `ToolCallCard` + `DiffView` — o card e o diff pintado
     `apps/menubar/src/ui/ToolCallCard.tsx` (novo): renderiza um `ToolCallState`. Glifo da
     família no traço colorido (T-008) + título + **pill de status** (`pending`/`in_progress`/
     `completed`/`failed`) nos hues de estado que já existem, + `locations` quando houver.
@@ -339,7 +339,7 @@
     Size: M
     Risk: M
 
-- [ ] T-010: `ThoughtBlock`, `PlanBlock`, `RawUpdateRow` e o despachante `StreamTimeline`
+- [x] T-010: `ThoughtBlock`, `PlanBlock`, `RawUpdateRow` e o despachante `StreamTimeline`
     Os três blocos restantes, mais a peça que impede o Run e a Entrevista de divergirem.
     `ThoughtBlock.tsx` (novo): pensamento **colapsado por padrão**, com contador
     (`Pensando · N parágrafos`), abrindo por clique (D7). Nasce fechado — é o default, não
@@ -478,7 +478,7 @@
 
 ## Fase 5 — Registro
 
-- [ ] T-015: ADR-0013 — o stream semântico, estendendo o ADR-0007
+- [x] T-015: ADR-0013 — o stream semântico, estendendo o ADR-0007
     `docs/adrs/0013-*.md` (novo, via a skill `adr_management` / `/adrs:create`, que tem
     enforcement por hook): registra a decisão de traduzir **todo** `session/update` em
     vocabulário do motor e levá-lo à tela como timeline semântica — cinco eventos tipados
