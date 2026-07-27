@@ -163,17 +163,46 @@ Dark is a **native neutral dark, not the old índigo `#0f0f23`.** Chroma stays n
 - ink `oklch(0.95 0.003 260)` · ink-secondary `oklch(0.72 0.004 260)` · ink-tertiary `oklch(0.56 0.005 260)`.
 - Semantic hues brighten for dark surfaces: running `0.72`, done `0.72`, blocked `0.80`, failed `0.68`, accent `0.66` L — same hue/chroma family.
 
+### Tertiary — Tool-Kind Vocabulary (C-0019)
+When the agent calls a tool, its **family** gets a hue — but the hue rides **only on the icon glyph's stroke** (`currentColor` on the SVG), never a fill, tint, border, or pill (C1). What fills the pill/dot is the tool's **status** (`pending`/`in_progress`/`completed`/`failed`), in the state hues above. So the tool distinction never rests on hue: it rests on **shape** — which glyph paired with which pill — and survives color-blindness exactly as the state palette does.
+
+The SDK's ten `ToolKind`s collapse into intent families: five take a new hue, two inherit (destruction *is* the danger hue; "other" stays neutral to keep the vocabulary small). Each new hue sits ≥30° from every reserved state hue in the wheel, so a tool colour never reads as "failed" or "interactive". The tokens are in `ui/tokens.css`; the family map in `ui/tool-kind.ts`.
+
+| Family (`ToolKind`) | Token | Light | Dark |
+|---|---|---|---|
+| Read (`read`, `search`, `fetch`) | `--tool-read` | `oklch(0.55 0.15 240)` | `oklch(0.74 0.13 240)` |
+| Write (`edit`, `move`) | `--tool-write` | `oklch(0.55 0.14 112)` | `oklch(0.74 0.13 112)` |
+| Execute (`execute`) | `--tool-exec` | `oklch(0.55 0.12 180)` | `oklch(0.74 0.11 180)` |
+| Think (`think`) | `--tool-think` | `oklch(0.55 0.15 270)` | `oklch(0.74 0.14 270)` |
+| Govern (`switch_mode`) | `--tool-mode` | `oklch(0.55 0.15 322)` | `oklch(0.74 0.14 322)` |
+| Destroy (`delete`) | `--tool-danger` | inherits `--state-failed-ink` | idem |
+| Other (`other`) | `--tool-other` | inherits `--ink-tertiary` | idem |
+
+**AA contrast — verified manually (C-0019 T-016).** The glyph is a graphical object, so the applicable bar is WCAG 1.4.11 non-text contrast (**3:1**) against the card's `--surface`. Measured ratios of the five new hues vs `--surface` in each theme (OKLCH → sRGB → relative luminance):
+
+| Token | Light (vs `oklch(0.975)`) | Dark (vs `oklch(0.24)`) |
+|---|---|---|
+| `--tool-read` | 4.33:1 | 7.25:1 |
+| `--tool-write` | 4.39:1 | 7.28:1 |
+| `--tool-exec` | 4.12:1 | 7.49:1 |
+| `--tool-think` | 4.66:1 | 6.96:1 |
+| `--tool-mode` | 4.88:1 | 6.72:1 |
+
+All five clear 3:1 in **both** themes (≥4.12:1 light, ≥6.72:1 dark) — comfortably legible even before the glyph's shape carries the meaning. The two inherited tokens ride their sources' already-verified ink tones.
+
 ### Named Rules
 **The Meaning-Only Rule.** Color is spent only on meaning. If a surface, border, or piece of chrome is colored for looks rather than to signal an interactive target or a state, it is wrong. Neutrals carry the room; the magenta and the four state hues carry the signal.
 
 **The Accent-Means-You Rule.** The magenta accent appears only where the dev is meant to look or act: interactive controls, the current selection, and — its most important job — a pending approval. Its rarity is what makes an approval impossible to miss.
+
+**The Glyph-Only Rule.** A tool call's family hue rides **only** on its icon glyph stroke — never a fill, tint, border, or pill. Status owns the pill in the state hues; the family owns the glyph. The distinction is carried by shape, so it survives color-blindness (C1).
 
 ## 3. Typography
 
 **UI Font:** `-apple-system` / SF Pro Text (with `system-ui`, `Segoe UI`, sans-serif fallback)
 **Data/Mono Font:** `ui-monospace` / SF Mono (with JetBrains Mono, Menlo, monospace fallback)
 
-**Character:** One native sans carries everything a person reads — headings, titles, labels, body. A single monospace is held in reserve for everything a *machine* wrote: task IDs where columns must align, agent stream text, and log tails. This is the honest reading of "nativo macOS polido" — sans-first, with mono as the data typeface (as Xcode and Linear's code blocks do), *not* monospace-everywhere.
+**Character:** One native sans carries everything a person reads — headings, titles, labels, body, **and the agent's prose in the stream** (rendered as Markdown, C-0019). A single monospace is held in reserve for everything a *machine* wrote *verbatim*: task IDs where columns must align, fenced code and tool output in the stream, and log tails. This is the honest reading of "nativo macOS polido" — sans-first, with mono as the data typeface (as Xcode and Linear's code blocks do), *not* monospace-everywhere.
 
 ### Hierarchy
 Fixed rem/px scale (never fluid clamp — this is product UI at consistent DPI), ratio ≈1.15.
@@ -181,7 +210,7 @@ Fixed rem/px scale (never fluid clamp — this is product UI at consistent DPI),
 - **Title** (600, 15px, 1.35): card titles, panel headers, the approval question.
 - **Body** (400, 13px, 1.5): default text. macOS base size. Prose capped at 65–75ch.
 - **Label** (590, 11px, +0.04em, 1.2): column headers (BACKLOG · STEPS · FIM), meta keys. The *one* place tracked small caps is allowed — a standardized system label, never an eyebrow above every section.
-- **Data** (450, 12px, mono, 1.45): task IDs (`T-001`), agent stream output, log tails, check names — anything verbatim from the machine.
+- **Data** (450, 12px, mono, 1.45): task IDs (`T-001`), fenced code and tool output in the stream, log tails, check names — anything verbatim from the machine. The agent's prose in the stream is *not* here — it reads as `body` sans Markdown (C-0019).
 
 ### Named Rules
 **The Machine-Voice Rule.** Monospace is reserved for text a machine emitted — IDs, streams, logs, check output. Everything a human reads is sans. If you're reaching for mono on a button, a heading, or a title, that's the terminal-mimicry reflex; stop.
@@ -226,8 +255,13 @@ The most important surface in the app — the moment the run needs a human. When
 - **Content:** the question in `title` type, the task/diff context in `body`/`data`, two unmistakable buttons — **Approve** (primary/accent) and **Reject** (secondary). Both keyboard-operable (⏎ / ⎋); a queue count shows if more gates wait.
 - **Never** let a gate blend into the board. It is the one place the UI is allowed to interrupt.
 
-### Stream Panel (Machine Voice)
-- Multi-column live agent output. `data` mono, `ink-secondary` on `surface`, 1.45 line-height. New chunks fade in over 120ms (reduced-motion → instant). No syntax decoration; this is a faithful terminal pane, just natively framed.
+### Stream Panel (Work Narrative)
+The pane is a **semantic timeline of the agent's turn**, not a raw terminal transcript. The same list backs both the Run's `StreamPanel` and the Interview's `ActivityLine` (C-0019 D1). Items arrive in stream order and intercalate freely.
+- **What the timeline carries:** **tool-call cards** whose status transitions live (`pending → in_progress → completed/failed`); real **diffs** — only the changed hunks, `+`/`−` coloured, never the file twice; **thoughts** collapsed by default with a "Pensando · N" counter that opens on click; the turn's **plan**; **mode** changes; and the agent's **prose rendered as Markdown with syntax-highlighted code**. An update the UI does not model still shows up as a `raw` row with its JSON behind a closed disclosure — nothing is silently dropped (D3).
+- **Code IS decorated now.** The earlier direction — an undecorated pane that mimicked a raw terminal — is **revoked** (D4/D5). Fenced code is highlighted through a dedicated `--syntax-*` palette (never the `--state-*`/`--tool-*` names — a string painted "done-green" would read as a status), scoped to the mono code surface so the Meaning-Only Rule still holds (the meaning is the code's own structure).
+- **Type split:** `data` mono for verbatim machine output (code, tool output, IDs, log tails); `body` sans for the agent's prose Markdown. New items fade in over 120ms (reduced-motion → instant).
+- **Payloads ride whole, render on demand (D6/C3):** `content`, `rawInput`, and `rawOutput` are sent untruncated but nest inside a closed `<details>`, and the card carries `content-visibility: auto`, so a giant payload never lays out until someone opens it. The ring cap (~500 items/task) and an `elided` cut marker keep the DOM bounded without lying about what was dropped.
+- **Tool colour is glyph-only** — see §2's Tool-Kind Vocabulary and **The Glyph-Only Rule**.
 
 ### View Switcher / Navigation
 - A native **segmented control** (Kanban / Graph / Streams), not tabs-with-underline. `surface` track, `surface-elevated` selected segment with `ink` text and a subtle lift; unselected `ink-secondary`. The default view is Kanban.
