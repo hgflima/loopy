@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { StreamUpdate } from "loopy/tui/store";
 import {
   advance,
   gateOptions,
@@ -40,6 +41,7 @@ describe("initialInterviewState", () => {
     expect(s.answers).toEqual([]);
     expect(s.warnings).toEqual([]);
     expect(s.pending).toBeNull();
+    expect(s.transcript).toEqual([]);
   });
 });
 
@@ -423,31 +425,34 @@ describe("frames de controle do processo", () => {
   // A narração antiga não pode sumir quando a próxima chega: cada
   // `agent_activity` é a prosa INTEIRA de um turno, e substituir apagava tudo
   // que o Agente contou antes da pergunta que o humano acabou de responder.
-  it("activity acumula as narrações no transcript, separadas por parágrafo", () => {
+  // Agora a timeline é `StreamItem[]`: cada narração vira um item `text`.
+  it("activity empurra um item text por narração, na ordem de chegada", () => {
     const started = run(
       { kind: "triaged", track: "feature" },
       { kind: "described", text: "demanda" },
     );
     const a = advance(started, { kind: "activity", text: "# Passos\n\nLi." });
-    expect(a.transcript).toBe("# Passos\n\nLi.");
+    expect(a.transcript).toEqual([{ item: "text", text: "# Passos\n\nLi." }]);
 
     const b = advance(a, { kind: "activity", text: "Agora escrevo a spec." });
-    expect(b.transcript).toBe("# Passos\n\nLi.\n\nAgora escrevo a spec.");
+    expect(b.transcript).toEqual([
+      { item: "text", text: "# Passos\n\nLi." },
+      { item: "text", text: "Agora escrevo a spec." },
+    ]);
+    // a última narração continua no activityLine (o header a usa)
     expect(b.activityLine).toBe("Agora escrevo a spec.");
   });
 
-  it("um frame de activity duplicado não duplica o transcript", () => {
+  it("um frame de activity duplicado é no-op (mesma referência)", () => {
     const started = run(
       { kind: "triaged", track: "feature" },
       { kind: "described", text: "demanda" },
     );
     const a = advance(started, { kind: "activity", text: "olhando o dir" });
-    expect(
-      advance(a, { kind: "activity", text: "olhando o dir" }).transcript,
-    ).toBe("olhando o dir");
+    expect(advance(a, { kind: "activity", text: "olhando o dir" })).toBe(a);
   });
 
-  it("cada Fase tem o seu transcript: entrar numa nova Fase zera", () => {
+  it("cada Fase tem a sua timeline: entrar numa nova Fase zera", () => {
     const started = run(
       { kind: "triaged", track: "feature" },
       { kind: "described", text: "demanda" },
@@ -462,13 +467,13 @@ describe("frames de controle do processo", () => {
       changeDir: ".harn/devy/changes/C-0018-x",
       files: ["spec.md"],
     });
-    expect(finished.transcript).toBe("");
+    expect(finished.transcript).toEqual([]);
 
     const refining = advance(finished, {
       kind: "gate_decision",
       next: "refine",
     });
-    expect(refining.transcript).toBe("");
+    expect(refining.transcript).toEqual([]);
   });
 
   it("failed leva ao estágio failed com a razão", () => {
@@ -479,5 +484,145 @@ describe("frames de controle do processo", () => {
     const s = advance(started, { kind: "failed", reason: "processo saiu 1" });
     expect(s.stage).toBe("failed");
     expect(s.failure).toBe("processo saiu 1");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent_stream (T-014) — a mesma timeline rica do Run, sem texto ao vivo (R1/R2)
+// ---------------------------------------------------------------------------
+
+describe("agent_stream (T-014)", () => {
+  const toolUpdate = (id: string, title: string): StreamUpdate => ({
+    kind: "tool_call",
+    call: {
+      toolCallId: id,
+      title,
+      kind: "read",
+      status: "in_progress",
+      locations: [],
+      content: [],
+    },
+  });
+
+  const inPhase = (): InterviewState =>
+    run(
+      { kind: "triaged", track: "feature" },
+      { kind: "described", text: "demanda" },
+    );
+
+  it("um agent_stream de tool aparece na timeline da Fase corrente", () => {
+    const s = advance(inPhase(), {
+      kind: "agent_stream",
+      update: toolUpdate("t1", "Lendo src/auth.ts"),
+    });
+    expect(s.transcript).toHaveLength(1);
+    const item = s.transcript[0]!;
+    expect(item.item).toBe("tool");
+    expect(item.item === "tool" && item.call.toolCallId).toBe("t1");
+  });
+
+  it("um agent_activity vira item text DEPOIS dos itens de tool anteriores", () => {
+    const withTool = advance(inPhase(), {
+      kind: "agent_stream",
+      update: toolUpdate("t1", "Lendo"),
+    });
+    const s = advance(withTool, { kind: "activity", text: "Li os arquivos." });
+    expect(s.transcript.map((it) => it.item)).toEqual(["tool", "text"]);
+    expect(s.transcript[1]).toEqual({ item: "text", text: "Li os arquivos." });
+  });
+
+  it("tool_delta intercalado volta ao card certo (a mergeToolCall do Run, R2)", () => {
+    const withTool = advance(inPhase(), {
+      kind: "agent_stream",
+      update: toolUpdate("t1", "Lendo"),
+    });
+    const narrated = advance(withTool, { kind: "activity", text: "olhando" });
+    const s = advance(narrated, {
+      kind: "agent_stream",
+      update: {
+        kind: "tool_delta",
+        delta: { toolCallId: "t1", status: "completed" },
+      },
+    });
+    // não fabricou card novo; o texto continua entre eles, o card foi mesclado
+    expect(s.transcript.map((it) => it.item)).toEqual(["tool", "text"]);
+    const tool = s.transcript[0]!;
+    expect(tool.item === "tool" && tool.call.status).toBe("completed");
+  });
+
+  it("um delta órfão (sem card) é no-op → mesma referência", () => {
+    const base = inPhase();
+    const s = advance(base, {
+      kind: "agent_stream",
+      update: {
+        kind: "tool_delta",
+        delta: { toolCallId: "fantasma", status: "completed" },
+      },
+    });
+    expect(s).toBe(base);
+  });
+
+  it("phase_finished zera a timeline mesmo com itens de tool acumulados", () => {
+    const narrated = run(
+      { kind: "triaged", track: "feature" },
+      { kind: "described", text: "demanda" },
+      { kind: "agent_stream", update: toolUpdate("t1", "Lendo") },
+      { kind: "activity", text: "prosa" },
+    );
+    expect(narrated.transcript).toHaveLength(2);
+
+    const finished = advance(narrated, {
+      kind: "phase_finished",
+      phase: "spec",
+      changeDir: "d",
+      files: ["spec.md"],
+    });
+    expect(finished.transcript).toEqual([]);
+  });
+
+  it("um agent_stream após um estágio terminal é absorvido (mesma referência)", () => {
+    const cancelled = advance(inPhase(), { kind: "cancel" });
+    expect(
+      advance(cancelled, {
+        kind: "agent_stream",
+        update: toolUpdate("t1", "x"),
+      }),
+    ).toBe(cancelled);
+  });
+
+  it("descarta o Envelope ecoado (raw user_message_chunk com <loopy-…>) → mesma referência", () => {
+    // O motor ecoa o NOSSO Envelope de volta como um raw `user_message_chunk`
+    // (a barreira T-013 só cobre `agent_message_chunk`). É plumbing, não
+    // conteúdo do agente: T-014 proíbe um bloco <loopy-…> na tela em estado
+    // nenhum. Nada apendado → mesma referência (structural sharing).
+    const base = inPhase();
+    const echoed: StreamUpdate = {
+      kind: "raw",
+      updateKind: "user_message_chunk",
+      payload: {
+        sessionUpdate: "user_message_chunk",
+        content: {
+          type: "text",
+          text: 'Regras: uma pergunta por turno, no bloco <loopy-ask>{"id":"x"}</loopy-ask>; <loopy-done/> ao terminar.',
+        },
+      },
+    };
+    const s = advance(base, { kind: "agent_stream", update: echoed });
+    expect(s).toBe(base);
+    expect(s.transcript).toEqual([]);
+  });
+
+  it("um raw legítimo (sem Envelope) continua entrando na timeline", () => {
+    const base = inPhase();
+    const raw: StreamUpdate = {
+      kind: "raw",
+      updateKind: "config_option_update",
+      payload: { sessionUpdate: "config_option_update", value: "high" },
+    };
+    const s = advance(base, { kind: "agent_stream", update: raw });
+    expect(s.transcript).toHaveLength(1);
+    const item = s.transcript[0]!;
+    expect(item.item).toBe("raw");
+    expect(item.item === "raw" && item.kind).toBe("config_option_update");
   });
 });

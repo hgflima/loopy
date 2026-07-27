@@ -1,31 +1,32 @@
 /**
- * ActivityLine — proof of life while a Phase runs (D14).
+ * ActivityLine — proof of life while a Phase runs (D14 / C-0019 T-014).
  *
  * The spike measured **328 s to the first question** (the agent spawns
  * sub-explorers before it asks), so a still screen reads as "frozen". This
- * component keeps a pulsing header alive and renders, below it, everything the
- * Agent has narrated so far in the running Phase.
+ * component keeps a pulsing header alive and, below it, mounts the running
+ * Phase's timeline — the **same** {@link StreamTimeline} the Run's StreamPanel
+ * uses, fed the Interview's `transcript` (`readonly StreamItem[]`).
  *
- * **The narration is markdown, not a line.** `agent_activity` carries the turn's
- * FULL prose (`decideTurn` → `parsed.prose`) — several paragraphs, headings,
- * lists. It used to be squeezed into a one-line `u-truncate`, which hid
- * everything past the first ~80 characters behind an ellipsis. It now goes
- * through the app's {@link MarkdownStream}, which also turns sentence
- * boundaries into real `<br>`s — the engine concatenates the Agent's paragraphs
- * without separators, so that split is what makes the text readable at all.
+ * That timeline is what closes the silence: tool cards stream live via
+ * `agent_stream`, and the turn's prose arrives once, at end of turn, as a
+ * `text` item (`agent_activity`, R1). One type, two channels, one React
+ * component — the Run and the Interview never diverge. `agent_message_chunk` is
+ * **never** streamed here (the barrier is the engine, T-013), so no raw
+ * `<loopy-…>` Envelope ever reaches the screen.
  *
  * The pulsing dot is the accent in its "alive" meaning — one of the three the
  * accent is allowed to carry.
  */
-import { MarkdownStream, StatusDot } from "../ui";
+import type { StreamItem } from "loopy/tui/store";
+import { StreamTimeline, StatusDot } from "../ui";
 import "./specs.css";
 
 interface ActivityLineProps {
-  /** The last narration — the readout before any transcript accumulates. */
+  /** The last narration — the readout the header shows above the timeline. */
   readonly line: string | null;
-  /** The accumulated markdown narration of the running Phase. */
-  readonly transcript?: string;
-  /** True while the Phase is still running (pulse + streaming markdown). */
+  /** The running Phase's timeline (tool cards + prose), in arrival order. */
+  readonly transcript?: readonly StreamItem[];
+  /** True while the Phase is still running (pulse + live-streaming timeline). */
   readonly busy?: boolean;
 }
 
@@ -44,7 +45,8 @@ export function headerLabel(
 }
 
 export function ActivityLine({ line, transcript, busy }: ActivityLineProps) {
-  const hasTranscript = transcript !== undefined && transcript !== "";
+  const items = transcript ?? [];
+  const hasTranscript = items.length > 0;
   return (
     <div className="spec-activity" role="status" aria-live="polite">
       <div className="spec-activity__line">
@@ -56,7 +58,7 @@ export function ActivityLine({ line, transcript, busy }: ActivityLineProps) {
 
       {hasTranscript && (
         <div className="spec-activity__narration">
-          <MarkdownStream text={transcript} streaming={busy} />
+          <StreamTimeline items={items} streaming={busy} />
         </div>
       )}
     </div>

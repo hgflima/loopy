@@ -12,7 +12,8 @@
  *   `gate_decision`, `wrap_up`, `cancel`;
  * - **process-driven** — control frames from `loopy interview` (T-001),
  *   adapted by `useInterviewProcess` (T-010): `phase_started`, `change_resolved`,
- *   `question_asked`, `activity`, `phase_finished`, `failed`, plus `warning`.
+ *   `question_asked`, `activity`, `agent_stream`, `phase_finished`, `failed`,
+ *   plus `warning`.
  *
  * The flow the reducer models (spec.md, "Fluxo, ponta a ponta"):
  *
@@ -26,6 +27,8 @@
  */
 
 import type { Phase, AskOption } from "loopy/tui/transport";
+import type { StreamItem, StreamUpdate } from "loopy/tui/store";
+import { appendStreamItem } from "../state/stream-history";
 
 // ---------------------------------------------------------------------------
 // Domain vocabulary
@@ -86,17 +89,25 @@ export interface InterviewState {
   /** The last narration the Agent emitted (`agent_activity`) — D14. */
   readonly activityLine: string | null;
   /**
-   * Every narration of the **running Phase**, accumulated in arrival order and
-   * separated by a blank line (markdown paragraph break).
+   * The **running Phase**'s timeline (C-0019, T-014) — the SAME `StreamItem[]`
+   * shape the Run accumulates, folded by the SAME `appendStreamItem`
+   * (`state/stream-history`) and the SAME `mergeToolCall` (R2). Two channels
+   * feed it, in arrival order:
    *
-   * `activityLine` alone was lossy: each `agent_activity` replaced the previous
-   * one, so answering a question erased everything the Agent had narrated. The
-   * engine sends the turn's FULL prose (`decideTurn` → `parsed.prose`), which is
-   * markdown and often several paragraphs — this is what the view renders.
-   * Reset per Phase (`enterPhase`/`phase_finished`): each Phase is its own
-   * process and its own conversation.
+   * - `agent_activity` (→ the `activity` event) pushes a `{ item: "text" }`
+   *   item — the turn's FULL prose (`decideTurn` → `parsed.prose`), markdown,
+   *   arriving once at end of turn (R1);
+   * - `agent_stream` pushes the rest (tool calls, thoughts, plan, raw) live.
+   *
+   * No `<loopy-…>` Envelope ever reaches this timeline, in any state (T-014):
+   * the agent's own `agent_message_chunk` is filtered in the engine (T-013),
+   * and our Envelope echoed back as a `raw` `user_message_chunk` — which T-013
+   * does **not** cover — is dropped in the `agent_stream` case (see
+   * {@link advance}). The ring, `elided` marker and ordering are identical to
+   * the Run's. Reset per Phase (`enterPhase`/`phase_finished`): each Phase is
+   * its own process and its own conversation.
    */
-  readonly transcript: string;
+  readonly transcript: readonly StreamItem[];
   readonly pending: PendingQuestion | null;
   readonly answers: readonly Answer[];
   readonly changeDir: string | null;
@@ -140,6 +151,7 @@ export type InterviewEvent =
   | { readonly kind: "change_resolved"; readonly changeDir: string }
   | { readonly kind: "question_asked"; readonly question: PendingQuestion }
   | { readonly kind: "activity"; readonly text: string }
+  | { readonly kind: "agent_stream"; readonly update: StreamUpdate }
   | {
       readonly kind: "phase_finished";
       readonly phase: Phase;
@@ -162,7 +174,7 @@ export function initialInterviewState(): InterviewState {
     command: null,
     activity: null,
     activityLine: null,
-    transcript: "",
+    transcript: [],
     pending: null,
     answers: [],
     changeDir: null,
@@ -227,10 +239,39 @@ function enterPhase(state: InterviewState, phase: Phase): InterviewState {
     command: null,
     activity: "running",
     activityLine: null,
-    transcript: "",
+    transcript: [],
     pending: null,
     wrappingUp: false,
   };
+}
+
+/**
+ * Spot our own Envelope coming back. The Interview prepends `<loopy-ask>` /
+ * `<loopy-change>` / `<loopy-done/>` blocks to each turn (`envelope.ts`), and
+ * adapters echo that prompt as a `user_message_chunk`, which the engine forwards
+ * as a `raw` {@link StreamUpdate} (D3). The engine's T-013 barrier strips only
+ * the agent's own `agent_message_chunk`, **not** this echo — so the reducer
+ * drops it: the echo is plumbing, not agent content, and T-014 forbids a
+ * `<loopy-…>` block on screen in ANY state (including an opened `RawUpdateRow`
+ * disclosure). A legitimate `raw` (no Envelope) still flows through.
+ */
+const ENVELOPE_TAG = /<loopy-[a-z]/i;
+
+function carriesEnvelope(update: StreamUpdate): boolean {
+  if (update.kind !== "raw") return false;
+  const { payload } = update;
+  return ENVELOPE_TAG.test(
+    typeof payload === "string" ? payload : safeJson(payload),
+  );
+}
+
+/** Stringify a raw payload for the Envelope scan; never throws (AD-5). */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -329,16 +370,34 @@ export function advance(
     case "activity":
       if (isTerminal(state.stage)) return state;
       // A repeated narration is a duplicate frame, not new work — same
-      // reference, and nothing appended (the transcript must not double up).
+      // reference, and nothing appended (the timeline must not double up).
       if (state.activityLine === event.text) return state;
+      // The turn's prose becomes a `text` item, appended in arrival order (R1):
+      // after every tool card that `agent_stream` streamed before it.
       return {
         ...state,
         activityLine: event.text,
-        transcript:
-          state.transcript === ""
-            ? event.text
-            : `${state.transcript}\n\n${event.text}`,
+        transcript: appendStreamItem(state.transcript, {
+          kind: "text",
+          text: event.text,
+        }),
       };
+
+    case "agent_stream": {
+      // The live rich stream (R7b): tool calls, thoughts, plan, raw — folded by
+      // the SAME `appendStreamItem`/`mergeToolCall` the Run uses (R2). An orphan
+      // delta (no matching card) leaves the list untouched, so we preserve
+      // structural sharing when nothing actually changed.
+      if (isTerminal(state.stage)) return state;
+      // Our Envelope echoed back (a `raw` `user_message_chunk`) is plumbing, not
+      // agent content: T-013 only strips `agent_message_chunk`, so drop it here
+      // — T-014 forbids a `<loopy-…>` block on screen in ANY state. A dropped
+      // frame is not new work, so structural sharing holds.
+      if (carriesEnvelope(event.update)) return state;
+      const transcript = appendStreamItem(state.transcript, event.update);
+      if (transcript === state.transcript) return state;
+      return { ...state, transcript };
+    }
 
     case "phase_finished": {
       if (isTerminal(state.stage)) return state;
@@ -347,7 +406,7 @@ export function advance(
         pending: null,
         activity: null,
         activityLine: null,
-        transcript: "",
+        transcript: [],
         wrappingUp: false,
         changeDir: event.changeDir,
         files: event.files,

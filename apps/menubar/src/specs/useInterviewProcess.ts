@@ -118,6 +118,18 @@ export function buildInterviewArgs(opts: InterviewStartOptions): string[] {
   return args;
 }
 
+function questionFromControl(control: Extract<ControlFrame, { control: "question_asked" }>) {
+  return {
+    questionId: control.questionId,
+    phase: control.phase,
+    prompt: control.prompt,
+    options: control.options,
+    otherLabel: control.otherLabel,
+    finding: control.finding,
+    source: control.source,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Frame → reducer event translation (pure, AD-6)
 // ---------------------------------------------------------------------------
@@ -143,18 +155,15 @@ export function controlToInterviewEvent(
     case "question_asked":
       return {
         kind: "question_asked",
-        question: {
-          questionId: control.questionId,
-          phase: control.phase,
-          prompt: control.prompt,
-          options: control.options,
-          otherLabel: control.otherLabel,
-          finding: control.finding,
-          source: control.source,
-        },
+        question: questionFromControl(control),
       };
     case "agent_activity":
       return { kind: "activity", text: control.text };
+    case "agent_stream":
+      // C-0019 R7b — the live rich stream. The frame carries a `StreamUpdate`
+      // (not a `StreamItem`); the reducer folds it with the SAME
+      // `appendStreamItem`/`mergeToolCall` the Run uses (R2).
+      return { kind: "agent_stream", update: control.update };
     case "phase_finished":
       return {
         kind: "phase_finished",
