@@ -498,7 +498,7 @@
     Size: S
     Risk: L
 
-- [ ] T-016: Documentação — `DESIGN.md` e os quatro intent nodes
+- [x] T-016: Documentação — `DESIGN.md` e os quatro intent nodes
     `apps/menubar/DESIGN.md`: reescrever a **§5 Stream Panel** (hoje diz "No syntax
     decoration; this is a faithful terminal pane" — revogado pelas D4/D5) e acrescentar à
     **§2** o vocabulário de ferramenta e a regra do glifo (C1: cor de ferramenta só no
