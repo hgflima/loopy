@@ -447,7 +447,7 @@
     Size: S
     Risk: M
 
-- [ ] T-014: Entrevista na GUI — a mesma timeline, sem texto ao vivo
+- [x] T-014: Entrevista na GUI — a mesma timeline, sem texto ao vivo
     Fecha o D14 (parcialmente, e por decisão): ferramentas ao vivo, prosa ainda no fim do
     turno. É o que mata o silêncio dos ~5 min até a primeira pergunta.
     `apps/menubar/src/specs/interview-state.ts`: `InterviewState.transcript` deixa de ser
