@@ -4,6 +4,7 @@
 > **Descoberto em:** 2026-07-29 · **Origem:** investigação `corpos-loopy-transcript-empty` (corrigiu o lado consumidor, não mexeu no motor)
 
 ## Sintoma
+
 Sob `--emit-events`, um chunk de stream que chega **tarde** — depois de o Step seguinte já ter emitido `step_started` — sai carimbado com o `stepId` **errado**: texto produzido pelo `implement` aparece no frame como se fosse do `settle`. O consumidor que agrupa a timeline por `stepId` põe o texto na gaveta errada.
 
 O contrato do frame é respeitado (o campo, quando presente, é uma string válida) e o motor nunca falha por causa disso. Mas o sintoma tem **duas faces**, e só a primeira é cosmética:
@@ -12,17 +13,22 @@ O contrato do frame é respeitado (o campo, quando presente, é uma string váli
 2. **Carimbo ausente** (o chunk cai na virada, entre `step_finished` e o `step_started` seguinte) — o `stepId` é omitido e o consumidor de referência **descarta** a entrada: o texto **some** da timeline. É o próprio sintoma `transcript empty` que originou a investigação.
 
 ## Causa raiz
+
 O carimbo é um `Map.get` feito no **instante da entrega**, não no instante em que o texto foi produzido:
 
 ```ts
 // src/index.ts:531-543
 export function dispatchStreamUpdate(
-  notification, infoFor, taskCurrentStep, agentName, dispatch,
+  notification,
+  infoFor,
+  taskCurrentStep,
+  agentName,
+  dispatch,
 ): void {
   const update = translateUpdate(notification.update);
   if (update === undefined) return;
   const { taskId, agent } = infoFor(notification.sessionId);
-  const stepId = taskCurrentStep.get(taskId);   // <-- lido AGORA, não quando o chunk nasceu
+  const stepId = taskCurrentStep.get(taskId); // <-- lido AGORA, não quando o chunk nasceu
   dispatch(toStoreEvent(update, { taskId, stepId, agent: agent ?? agentName }));
 }
 ```
@@ -41,6 +47,7 @@ Agravante: das sete variantes de timeline, só três carregam `stepId` (`stream_
 > O docstring de `dispatchStreamUpdate` (`src/index.ts:525-526`) ainda afirma que "a GUI degrada para `task.currentStepId`" nessa janela. Não degrada — descarta. Corrigir o docstring faz parte do fix.
 
 ## Impacto
+
 Duas coisas distintas, e por isso a severidade é **média**, não `baixa`:
 
 - **Atribuição errada na UI** (cosmético, mas silencioso): um consumidor que agrupa stream por `stepId` mostra as últimas linhas do Step anterior sob o cabeçalho do Step seguinte. Quem lê a timeline não tem como saber que aquele texto não é do Step sob o qual ele apareceu.
@@ -49,6 +56,7 @@ Duas coisas distintas, e por isso a severidade é **média**, não `baixa`:
 Não é `alta` porque **o motor não perde o dado**: o frame sai no fio com o texto íntegro, o contrato do Transport é respeitado (`stepId` é opcional) e o descarte é uma política do consumidor — que tem um âncora publicado (`lastStepId`) capaz de fechar essa metade sem tocar no motor (ver Workaround). Nada do que o motor decide depende desse campo: `RunLoopResult`, verdicts, checks e telemetria são indiferentes (o `reduce` da store trata as variantes ricas como no-op; o Ink não usa `stepId` de `stream_chunk`).
 
 ## Reprodução
+
 `dispatchStreamUpdate` é exportada e pura o bastante para demonstrar sem spawnar agente:
 
 1. Monte `taskCurrentStep = new Map([["T-001", "implement"]])`.
@@ -59,6 +67,7 @@ Não é `alta` porque **o motor não perde o dado**: o frame sai no fio com o te
 Ao vivo: `loopy --emit-events <dir>` num pipeline com dois Steps de Agente seguidos e stream volumoso; compare a última linha de stream do Step N com o `stepId` do frame que a carrega, e confira se ela chegou a aparecer na timeline da GUI.
 
 ## Correção proposta
+
 Carimbar na **produção**, não na entrega: capturar o `stepId` no momento em que o `session/update` é traduzido, associando o Step à **Sessão/turno** em vez de consultá-lo num mapa por-Task que muda debaixo do frame. O `sessionId` já resolve `taskId`/`agent` via `sessionToTask`; falta guardar ali o Step do turno em voo — escrito quando o step `agent` abre o turno e mantido até o turno seguinte sobrescrevê-lo, de modo que um chunk que chegue **depois** de o Step ter terminado ainda encontre o Step que o produziu.
 
 O que **não** resolve: prender a liberação do carimbo à barreira `flushSessionUpdates`. A barreira drena as microtasks já enfileiradas, e o chunk problemático é, por construção, um `session/update` que chegou do pipe **depois** dela — soltar a entrada ali só antecipa a janela de `stepId` omitido em vez de fechá-la.
@@ -66,6 +75,7 @@ O que **não** resolve: prender a liberação do carimbo à barreira `flushSessi
 Junto do fix: corrigir o docstring de `dispatchStreamUpdate` (`src/index.ts:525-526`) e cobrir com um teste que fixe as ordens dos passos 3 e 4 acima.
 
 ## Workaround atual
+
 **Não há workaround de consumidor para o carimbo errado.** Ancorar a timeline pelo Step corrente ditado por `step_started`/`step_finished` não ajuda: é exatamente disso que o `taskCurrentStep` do motor é feito, então o consumidor chega ao **mesmo** Step errado por outro caminho. Para o chunk tardio, os dois âncoras disponíveis concordam — e concordam errado.
 
 O que o lado consumidor de fato consegue fazer é conviver com o carimbo **ausente**, e foi isso que a investigação `corpos-loopy-transcript-empty` endereçou (o mesmo desenho que `applyTimeline` implementa aqui): usar `stepId` do evento quando ele vem, cair para o `currentStepId` da task quando não vem, e **descartar fail-closed** quando nenhum dos dois resolve — o que evita fabricar segmento fantasma, mas paga com o texto sumido na virada de Step.
