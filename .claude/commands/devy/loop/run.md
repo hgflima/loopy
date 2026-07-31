@@ -13,8 +13,12 @@ preparar e colocar o loop rodando **onde o usuário consegue interagir**.
 - `loopy.yml` existe na raiz? Se não: oriente `/devy:loop:setup` e pare.
 - `npx -y @hgflima/loopy@latest . --dry-run` passa? Se não: reporte o erro e
   ofereça corrigir (provavelmente re-invocando a skill `loopy`).
-- Parent limpo (`git status`)? Se sujo: mostre o que está pendente de commit e
-  pare — o motor exige `require_clean_parent`.
+- Parent limpo (`git status --porcelain`)? Se sujo: mostre o que está pendente
+  de commit e pare — o motor exige `require_clean_parent`. **Exceção única**:
+  se a saída inteira for só `?? loopy.yml` ou ` M loopy.yml` (o `loopy.yml` da
+  raiz, não rastreado ou modificado sem stage), o motor aceita — siga para o
+  passo 2. Qualquer outra linha junto, um `loopy.yml` staged (`A `/`M `/`MM`) ou
+  um `loopy.yml` em subdiretório continuam parando o run.
 
 ## 2. Escolher o veículo de execução (nesta ordem)
 

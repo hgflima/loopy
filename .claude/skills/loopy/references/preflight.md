@@ -112,6 +112,14 @@ Lint de repo-inteiro + `git add -A` fizeram tasks concorrentes editarem
 
 ### Tudo commitado antes do run
 
-O motor exige parent limpo. Depois do setup, liste o que precisa de commit:
-`loopy.yml`, o wrapper de cleanup (se gerado), `.gitignore`, os inputs da
-change (`.harn/devy/changes/C-…/`), lockfile e o harness `.claude/`.
+O motor exige parent limpo. Depois do setup, liste o que precisa de commit: o
+wrapper de cleanup (se gerado), `.gitignore`, os inputs da change
+(`.harn/devy/changes/C-…/`), lockfile e o harness `.claude/`.
+
+O `loopy.yml` **da raiz** é a única exceção compilada do motor: ele aceita o
+parent quando essa é a *única* mudança pendente, e só nas formas `??` (não
+rastreado) ou ` M` (modificado, índice limpo). Não vale um `loopy.yml` staged,
+nem um em subdiretório, nem um arquivo apontado por `-c/--config`, e qualquer
+outra sujeira junto volta a recusar. Ou seja: não peça o commit do `loopy.yml`
+como pré-requisito do run — inclua-o no commit da change por higiene, não por
+exigência do motor.
