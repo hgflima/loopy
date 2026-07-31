@@ -303,6 +303,22 @@ max_concurrency: 4   # teto do auto; default 4
 | `require_clean_parent` | `boolean` | — | Exige o parent limpo antes de operações de git. |
 | `on_merge_conflict` | `"escalate" \| "rebase"` | `"escalate"` | Como reagir a conflito de merge. |
 
+**A única exceção de `require_clean_parent`.** O parent é aceito sujo quando a
+**única** mudança pendente é o `loopy.yml` **da raiz do repo**, e só nas duas
+formas que a autoria do config produz: **não rastreado** (`??`) ou **modificado
+sem estar staged** (` M`). É o caminho natural do produto — criar o config pela
+Aba `Config`, salvar, clicar Start — que antes esbarrava na recusa.
+
+A exceção é estreita e não configurável (não há knob, modo permissivo nem lista):
+
+- **só na raiz** — um `packages/x/loopy.yml` é sujeira comum e recusa;
+- **só com esse nome** — `-c/--config <path>` não move a exceção;
+- **nunca staged** — um `loopy.yml` no índice entraria de carona no commit de
+  mark-done do motor (`git add -- todo.md` + `git commit` commita o índice
+  inteiro); não rastreado e modificado-unstaged não têm como entrar;
+- **mais nada junto** — qualquer outro arquivo sujo recusa, com a mensagem
+  inalterada.
+
 ## `logging`
 
 | Chave | Tipo | Descrição |

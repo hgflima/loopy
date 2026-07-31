@@ -318,6 +318,12 @@ Quase sempre é `.gitignore` incompleto: os artefatos de runtime (`.worktrees/`,
 `.loopy/`, `.loopy.stop`) aparecem como não-rastreados e sujam o parent. Volte ao
 passo 5 e ignore-os.
 
+O **`loopy.yml` da raiz** é a única exceção: se ele for a *única* mudança
+pendente — não rastreado ou modificado sem estar staged — a run segue. Qualquer
+outra sujeira (inclusive um `loopy.yml` staged, ou um em subdiretório) recusa
+como sempre. Detalhes em
+[`docs/reference/configuration.md`](../reference/configuration.md#policiesgit).
+
 ### `npm ci` falha num projeto-alvo sem lockfile
 
 `npm ci` exige um `package-lock.json`. Num repo novo ainda sem lockfile, troque
