@@ -1,7 +1,7 @@
 # Steps — os 4 primitivos e o registry (AD-2)
 
 ## Purpose & Scope
-Implementa os intérpretes dos 4 tipos de step (`agent`/`shell`/`checks`/`approval`) e o `type → interpreter` registry por onde o orquestrador roteia cada step. Cada intérprete é **mecânica pura de um tipo**; nenhum sabe a ordem do pipeline nem hardcoda comportamento (AD-1). Retorna `StepResult` (`{ ok, reason?, report?, output? }`) — erros são valores (AD-5), exceções só para faltas genuínas (var de interpolação desconhecida, `verify.run`/`checks` apontando lista de checks inexistente, `mode` inválido para o Agente, step do `type` errado via `assertStepType`).
+Implementa os intérpretes dos 4 tipos de step (`agent`/`shell`/`checks`/`approval`) e o `type → interpreter` registry por onde o orquestrador roteia cada step. Cada intérprete é **mecânica pura de um tipo**; nenhum sabe a ordem do pipeline nem hardcoda comportamento (AD-1). Retorna `StepResult` (`{ ok, reason?, report?, output?, approvalRejected? }`) — erros são valores (AD-5), exceções só para faltas genuínas (var de interpolação desconhecida, `verify.run`/`checks` apontando lista de checks inexistente, `mode` inválido para o Agente, step do `type` errado via `assertStepType`).
 
 ## Entry Points & Contracts
 - `createStepRegistry(steps)` / `createNonAgentRegistry(opts)` / `createFullRegistry(opts)` (`index.ts`). O registry só mapeia `type → Step`; `get(type)` retorna `undefined` para tipos sem intérprete → o orquestrador **pula** (não falha).
@@ -14,7 +14,7 @@ Implementa os intérpretes dos 4 tipos de step (`agent`/`shell`/`checks`/`approv
   - **Sem `verify`, `maxAttempts = 1`**: o loop interno só existe se `verify` existir. `expect` sozinho **não** re-prompta.
 - **`shell`** (`shell.ts` + `tokenize.ts`): tokeniza+resolve TODOS os comandos *antes* de rodar (fail-fast, sem efeito parcial), roda argv direto via execa. Para no 1º erro — exceto `always:true` (best-effort, ex.: `cleanup` tenta `worktree remove` E `branch -D`).
 - **`checks`** (`checks.ts`): roda uma lista nomeada de `checks:` standalone. Sem fail-fast: roda todos em ordem e agrega o Report.
-- **`approval`** (`approval.ts`): gate humano via `ctx.ui`, opcionalmente roda `run:` após aprovar. Honra `ctx.flags.yes` **internamente** (`--yes` é comportamento *de step*, não do orquestrador); rejeição **não roda nada** e devolve `ok:false`. **A espera humana fica FORA da seção crítica** — só o `run:` entra no mutex. Inverter isso trava o Run inteiro.
+- **`approval`** (`approval.ts`): gate humano via `ctx.ui`, opcionalmente roda `run:` após aprovar. Honra `ctx.flags.yes` **internamente** (`--yes` é comportamento *de step*, não do orquestrador); rejeição **não roda nada** e devolve `ok:false` **com `approvalRejected: true`** — a marca de "a ação nunca rodou" que a recuperação de merge do orquestrador lê para jamais reparar o merge que o humano acabou de negar (`../loop/CLAUDE.md`). **A espera humana fica FORA da seção crítica** — só o `run:` entra no mutex. Inverter isso trava o Run inteiro.
 
 ## Anti-patterns
 - Nunca passar dados interpolados para um shell: `shell` roda **argv sem shell** — sem pipes/redirect dentro de um comando. Ver Pitfalls.

@@ -335,6 +335,11 @@ por cima do `loopy.yml` recém-merjado, ou seja, ela **sombreia** na working tre
 (e na Aba `Config`) o conteúdo que a Task integrou — o histórico tem as duas
 versões; um `git checkout -- loopy.yml` descarta a local e revela a merjada.
 
+Enquanto a edição está fora da working tree, o motor guarda uma cópia durável em
+`.loopy/loopy.yml.aside` (Artefato, gitignored) e a apaga assim que devolve o
+arquivo. Se a run morrer nessa janela, é de lá que se recupera um `loopy.yml`
+ainda não rastreado — a única cópia que existia dele.
+
 ## `logging`
 
 | Chave | Tipo | Descrição |

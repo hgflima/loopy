@@ -279,7 +279,7 @@ Campo aditivo de Step (default `false`) — opt-out declarativo da Seção crít
 _Avoid_: thread-safe (conceito distinto)
 
 **`on_merge_conflict`**:
-Policy de git (`policies.git.on_merge_conflict`): `escalate` (default) | `rebase`. `rebase` = o motor faz `git rebase <parent>` + re-tenta o merge uma vez dentro do mutex antes de cair no `on_fail`. Config decide; mecânica é do motor (AD-1).
+Policy de git (`policies.git.on_merge_conflict`): `escalate` (default) | `rebase`. `rebase` = o motor recupera, dentro do mutex e antes de cair no `on_fail`, **duas** formas de falha do Merge: o **conflito de conteúdo** (`git rebase <parent>` + re-tenta o merge uma vez) e a **recusa pré-merge** — o git recusa _antes de começar_, sem deixar `MERGE_HEAD`, quando o `loopy.yml` tolerado sujo no parent está num path que a branch escreve; aí o motor tira a edição local do caminho, re-tenta e a devolve byte a byte (mecânica e fronteiras em `docs/reference/configuration.md`). Config decide; mecânica é do motor (AD-1).
 _Avoid_: conflict resolution (sem qualificar o mecanismo)
 
 **Cancelamento** (_cancellation_):
