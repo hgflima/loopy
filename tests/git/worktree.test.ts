@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createGit } from "../../src/git/worktree";
+import { createGit, isParentCleanPorcelain } from "../../src/git/worktree";
 
 // ---------------------------------------------------------------------------
 // Real-repo harness (AD-6: git is exercised against a temporary repo, not
@@ -397,6 +397,157 @@ describe("createGit — isParentClean (require_clean_parent)", () => {
     await writeFile(join(root, "sub", "b.txt"), "staged\n");
     await git(root, ["add", "-A"]);
     expect(await g.isParentClean()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isParentClean — the ONE tolerated dirty path: the root `loopy.yml` (B2).
+//
+// The product's natural path (author the config in the GUI, save, hit Start)
+// leaves `loopy.yml` in the working tree — untracked when the project had none.
+// That single change is tolerated; everything else stays exactly as strict.
+// ---------------------------------------------------------------------------
+
+describe("createGit — isParentClean tolerates only the root loopy.yml", () => {
+  /** Commit a tracked `loopy.yml` so it can later be *modified*. */
+  async function commitConfig(): Promise<void> {
+    await writeFile(join(root, "loopy.yml"), "version: 1\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "add config"]);
+  }
+
+  it("(1) is true when only loopy.yml is modified", async () => {
+    const g = createGit({ root });
+    await commitConfig();
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# edited\n");
+    expect(await g.isParentClean()).toBe(true);
+  });
+
+  it("(2) is true when only loopy.yml is new/untracked", async () => {
+    const g = createGit({ root });
+    await writeFile(join(root, "loopy.yml"), "version: 1\n");
+    expect(await g.isParentClean()).toBe(true);
+  });
+
+  it("(3) is false when loopy.yml plus another modified file are dirty", async () => {
+    const g = createGit({ root });
+    await commitConfig();
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# edited\n");
+    await writeFile(join(root, "file.txt"), "unstaged edit\n");
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("(4) is false when loopy.yml plus another untracked file are present", async () => {
+    const g = createGit({ root });
+    await writeFile(join(root, "loopy.yml"), "version: 1\n");
+    await writeFile(join(root, "stray.txt"), "new\n");
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("(5) is false for ordinary dirt with no loopy.yml involved", async () => {
+    const g = createGit({ root });
+    await writeFile(join(root, "file.txt"), "unstaged edit\n");
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("(6) is true for a clean working tree, as before", async () => {
+    const g = createGit({ root });
+    expect(await g.isParentClean()).toBe(true);
+  });
+
+  // --- Ambiguous cases, resolved to the most restrictive reading ------------
+
+  it("is false when the loopy.yml lives in a subdirectory", async () => {
+    const g = createGit({ root });
+    await mkdir(join(root, "packages", "x"), { recursive: true });
+    await writeFile(join(root, "packages", "x", "loopy.yml"), "version: 1\n");
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("is false when a new loopy.yml is staged", async () => {
+    const g = createGit({ root });
+    await writeFile(join(root, "loopy.yml"), "version: 1\n");
+    await git(root, ["add", "--", "loopy.yml"]);
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("is false when a modified loopy.yml is staged", async () => {
+    const g = createGit({ root });
+    await commitConfig();
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# edited\n");
+    await git(root, ["add", "--", "loopy.yml"]);
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("is false when loopy.yml is deleted from the working tree", async () => {
+    const g = createGit({ root });
+    await commitConfig();
+    await rm(join(root, "loopy.yml"));
+    expect(await g.isParentClean()).toBe(false);
+  });
+
+  it("stays true when `.loopy/` is gitignored, and false when it is not", async () => {
+    const g = createGit({ root });
+    await writeFile(join(root, "loopy.yml"), "version: 1\n");
+    await mkdir(join(root, ".loopy"), { recursive: true });
+    await writeFile(join(root, ".loopy", "state.json"), "{}\n");
+    // The harness repo ignores `.loopy/`: engine state never dirties the parent.
+    expect(await g.isParentClean()).toBe(true);
+
+    // Un-ignore it (committing only `.gitignore`, so the two files above stay
+    // pending): the state dir is ordinary dirt again and is refused.
+    await writeFile(join(root, ".gitignore"), ".worktrees/\n");
+    await git(root, ["add", "--", ".gitignore"]);
+    await git(root, ["commit", "-m", "stop ignoring .loopy"]);
+    expect(await g.isParentClean()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isParentCleanPorcelain — the pure verdict (AD-6)
+// ---------------------------------------------------------------------------
+
+describe("isParentCleanPorcelain", () => {
+  it("accepts an empty dump", () => {
+    expect(isParentCleanPorcelain("")).toBe(true);
+    expect(isParentCleanPorcelain("\n")).toBe(true);
+  });
+
+  it("accepts exactly the untracked and modified-unstaged root loopy.yml", () => {
+    expect(isParentCleanPorcelain("?? loopy.yml")).toBe(true);
+    expect(isParentCleanPorcelain(" M loopy.yml")).toBe(true);
+    expect(isParentCleanPorcelain(" M loopy.yml\n")).toBe(true);
+  });
+
+  it("rejects any staged, renamed or otherwise-coded loopy.yml entry", () => {
+    for (const line of [
+      "A  loopy.yml",
+      "M  loopy.yml",
+      "MM loopy.yml",
+      "AM loopy.yml",
+      " D loopy.yml",
+      " T loopy.yml",
+      "R  old.yml -> loopy.yml",
+    ]) {
+      expect(isParentCleanPorcelain(line), line).toBe(false);
+    }
+  });
+
+  it("rejects a loopy.yml outside the repo root, and lookalike names", () => {
+    for (const line of [
+      "?? packages/x/loopy.yml",
+      "?? sub/loopy.yml",
+      "?? loopy.yaml",
+      "?? my-loopy.yml",
+      "?? loopy.yml.bak",
+    ]) {
+      expect(isParentCleanPorcelain(line), line).toBe(false);
+    }
+  });
+
+  it("rejects the tolerated entry as soon as anything else rides along", () => {
+    expect(isParentCleanPorcelain("?? loopy.yml\n M file.txt")).toBe(false);
+    expect(isParentCleanPorcelain(" M file.txt\n?? loopy.yml")).toBe(false);
   });
 });
 

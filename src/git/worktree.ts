@@ -15,7 +15,8 @@
  *    `{ ok: false, conflict: true }` so the orchestrator can escalate while
  *    preserving the worktree (`on_fail: escalate`, Q5).
  *  - **isParentClean** — `require_clean_parent`: is the parent working tree
- *    free of uncommitted changes before the next task starts.
+ *    free of uncommitted changes before the next task starts, modulo the one
+ *    named exception documented on {@link isParentCleanPorcelain}.
  *
  * Design notes:
  *  - **Errors as values only where a failure is a normal outcome (AD-5).**
@@ -34,6 +35,58 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { execa } from "execa";
 import type { GitPort, MergeResult } from "../types";
+
+/**
+ * The single path `require_clean_parent` tolerates dirty: the repo-root
+ * `loopy.yml`. Literal and repo-root-relative on purpose — see
+ * {@link isParentCleanPorcelain}.
+ */
+const TOLERATED_DIRTY_PATH = "loopy.yml";
+
+/**
+ * The two `git status --porcelain` (v1) status codes we tolerate for
+ * {@link TOLERATED_DIRTY_PATH}: `??` (untracked — the file the Config view just
+ * created) and ` M` (tracked, modified in the working tree, **index clean**).
+ */
+const TOLERATED_DIRTY_CODES = ["??", " M"] as const;
+
+/**
+ * Pure verdict of `require_clean_parent` over a `git status --porcelain` (v1)
+ * dump (AD-6). Clean ⇔ every reported entry is tolerated.
+ *
+ * The policy stays exactly as strict as it always was, minus **one narrow,
+ * named exception**: a working tree whose *only* pending change is the
+ * repo-root `loopy.yml`, either untracked or modified-unstaged. The product's
+ * natural path — author the config in the GUI's Config view, save, hit Start —
+ * writes that file and nothing else, and used to be refused; nothing else about
+ * the policy moves. There is no knob, no permissive mode, and no list: this one
+ * path is compiled in.
+ *
+ * Deliberately restrictive where the exception could stretch:
+ *  - **Only the repo root.** Porcelain paths are repo-root-relative, so a
+ *    `packages/x/loopy.yml` reads as `packages/x/loopy.yml` and is refused.
+ *  - **Only `loopy.yml` by name.** `-c/--config <path>` can load any file; the
+ *    exception does not follow it.
+ *  - **Never when staged.** A staged entry (`A `, `M `, `MM`, …) would be swept
+ *    into the engine's own mark-done commit — {@link Git.commitPaths} stages its
+ *    paths and then runs a plain `git commit`, which commits the *whole* index.
+ *    Untracked and modified-unstaged entries cannot be swept in that way, which
+ *    is exactly why they are the two we tolerate.
+ *  - **Only `??` and ` M`.** A deleted (` D`) or type-changed (` T`) `loopy.yml`
+ *    is not "the config was just authored", so it is refused.
+ *  - **Nothing else rides along.** `.loopy/` and `.worktrees/` are gitignored
+ *    Artefatos and never show up here; if a project fails to ignore them they
+ *    dirty the parent and are refused, unchanged from before.
+ */
+export function isParentCleanPorcelain(porcelain: string): boolean {
+  const tolerated = TOLERATED_DIRTY_CODES.map(
+    (code) => `${code} ${TOLERATED_DIRTY_PATH}`,
+  );
+  return porcelain
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .every((line) => tolerated.includes(line));
+}
 
 /** Options for {@link createGit}. */
 export interface CreateGitOptions {
@@ -156,9 +209,11 @@ export function createGit(options: CreateGitOptions): Git {
     async isParentClean() {
       // Porcelain is empty exactly when the tree has no staged, unstaged, or
       // untracked (non-ignored) changes. `.worktrees/`/`.loopy/` are gitignored
-      // so a live worktree never dirties the parent.
+      // so a live worktree never dirties the parent. The one entry a non-empty
+      // dump may still contain is the root `loopy.yml` — see
+      // `isParentCleanPorcelain` for the exception and its boundaries.
       const out = await run(["status", "--porcelain"]);
-      return out.trim() === "";
+      return isParentCleanPorcelain(out);
     },
 
     async isMergeInProgress() {
