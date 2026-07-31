@@ -127,6 +127,7 @@ const inertGit: GitPort = {
   merge: async () => ({ ok: true, conflict: false }),
   isParentClean: async () => true,
   isMergeInProgress: async () => false,
+  withToleratedDirtyAside: async () => null,
   rebaseOnto: async () => ({ ok: true, conflict: false }),
   revParseHead: async () => null,
   remoteOriginUrl: async () => null,

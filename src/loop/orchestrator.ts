@@ -661,6 +661,7 @@ const notWiredGit: GitPort = {
   merge: notWired("git.merge"),
   isParentClean: notWired("git.isParentClean"),
   isMergeInProgress: notWired("git.isMergeInProgress"),
+  withToleratedDirtyAside: notWired("git.withToleratedDirtyAside"),
   rebaseOnto: notWired("git.rebaseOnto"),
   revParseHead: notWired("git.revParseHead"),
   remoteOriginUrl: notWired("git.remoteOriginUrl"),
@@ -1219,18 +1220,38 @@ async function runTaskPipeline(
       `[orchestrator] step "${step.id}" falhou: ${result.reason ?? "(sem motivo)"}`,
     );
 
-    // --- Merge-conflict recovery (T-008) ---
-    // When the git policy is `rebase` and a merge is in progress on the parent
-    // (MERGE_HEAD present), the engine aborts the conflict, rebases the task
-    // branch onto the parent, and retries the merge once — all inside the mutex.
-    // If the rebase or retry fails, control falls through to the normal on_fail.
+    // --- Merge recovery (T-008) ---
+    // Under `on_merge_conflict: rebase` the engine repairs two shapes of merge
+    // failure, both inside the parent mutex. Anything else — and any repair
+    // that does not stick — falls through to the normal on_fail.
+    //
+    //  - **Content conflict.** Git got far enough to leave `MERGE_HEAD`: abort
+    //    it, rebase the task branch onto the parent, retry the merge once.
+    //  - **Pre-merge refusal.** Git refused *before* starting, because the
+    //    tolerated-dirty root `loopy.yml` (the exception `isParentClean`
+    //    carries — see `../git/worktree.ts`) sits on a path the branch writes.
+    //    No `MERGE_HEAD` is ever created, so the conflict shape above cannot
+    //    see it. Take that local edit out of the tree, retry, hand it back.
     if (
       config.policies.git.on_merge_conflict === "rebase" &&
-      deps.git !== undefined &&
-      (await deps.git.isMergeInProgress())
+      deps.git !== undefined
     ) {
-      const recovered = await guarded(deps.parentMutex, async () => {
-        const rebase = await deps.git!.rebaseOnto(
+      const git = deps.git;
+      const mergeMessage = `merge(${task.id}): ${task.title}`;
+
+      /** Retry the merge once; `false` (logged) when git still refuses. */
+      const retryMerge = async (): Promise<boolean> => {
+        const retry = await git.merge(task.branch, { message: mergeMessage });
+        if (retry.ok) return true;
+        deps.logger.error(
+          `[orchestrator] retry merge de "${task.branch}" falhou — escalando`,
+        );
+        return false;
+      };
+
+      /** Rebase the task branch onto the parent, then retry the merge once. */
+      const rebaseAndRetry = async (): Promise<boolean> => {
+        const rebase = await git.rebaseOnto(
           worktreePath,
           config.workspace.parent_branch,
         );
@@ -1243,19 +1264,27 @@ async function runTaskPipeline(
         deps.logger.info(
           `[orchestrator] rebase ok — re-tentando merge de "${task.branch}"`,
         );
-        const retry = await deps.git!.merge(task.branch, {
-          message: `merge(${task.id}): ${task.title}`,
-        });
-        if (retry.ok) return true;
-        deps.logger.error(
-          `[orchestrator] retry merge de "${task.branch}" falhou — escalando`,
+        return retryMerge();
+      };
+
+      const inMerge = await git.isMergeInProgress();
+      const recovered = await guarded(deps.parentMutex, async () => {
+        if (inMerge) return rebaseAndRetry();
+        // No MERGE_HEAD: the merge may never have started. The port resolves
+        // `null` — leaving the body unrun — unless the pre-merge refusal is
+        // exactly what happened, so an unrelated step failure never reaches a
+        // merge. With the path clear, a content conflict surfacing on the retry
+        // still gets the rebase treatment.
+        const aside = await git.withToleratedDirtyAside(
+          task.branch,
+          async () => (await retryMerge()) || rebaseAndRetry(),
         );
-        return false;
+        return aside ?? false;
       });
 
       if (recovered) {
         deps.logger.info(
-          `[orchestrator] step "${step.id}" recuperado via rebase`,
+          `[orchestrator] step "${step.id}" recuperado (${inMerge ? "rebase" : "merge com o loopy.yml local fora do caminho"})`,
         );
         pc = resolveNextPc(step);
         continue;

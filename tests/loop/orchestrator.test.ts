@@ -571,13 +571,26 @@ describe("runLoop — on_merge_conflict policy", () => {
     };
   }
 
-  /** A mock GitPort where `isMergeInProgress`, `rebaseOnto`, and `merge` are scripted. */
+  /**
+   * A mock GitPort where `isMergeInProgress`, `withToleratedDirtyAside`,
+   * `rebaseOnto`, and `merge` are scripted.
+   *
+   * `toleratedDirty` models the pre-merge refusal: `true` ⇒ the parent carries
+   * the tolerated-dirty `loopy.yml` on a path the branch writes, so the real
+   * port would move it aside and run the body; `false` ⇒ it resolves `null`
+   * without running it. `mergeOutcomes` scripts successive merge attempts (the
+   * retry-with-the-file-aside, then the post-rebase one); it falls back to
+   * `retryMergeOk` once exhausted.
+   */
   function mockGit(opts: {
     mergeInProgress?: boolean;
     rebaseOk?: boolean;
     retryMergeOk?: boolean;
+    toleratedDirty?: boolean;
+    mergeOutcomes?: readonly boolean[];
   }): GitPort & { readonly calls: string[] } {
     const calls: string[] = [];
+    const outcomes = [...(opts.mergeOutcomes ?? [])];
     return {
       calls,
       addWorktree: async () => {},
@@ -587,6 +600,11 @@ describe("runLoop — on_merge_conflict policy", () => {
         calls.push("isMergeInProgress");
         return opts.mergeInProgress ?? false;
       },
+      withToleratedDirtyAside: async (_branch, fn) => {
+        calls.push("withToleratedDirtyAside");
+        if (!(opts.toleratedDirty ?? false)) return null;
+        return fn();
+      },
       rebaseOnto: async () => {
         calls.push("rebaseOnto");
         const ok = opts.rebaseOk ?? true;
@@ -594,7 +612,7 @@ describe("runLoop — on_merge_conflict policy", () => {
       },
       merge: async () => {
         calls.push("merge");
-        const ok = opts.retryMergeOk ?? true;
+        const ok = outcomes.shift() ?? opts.retryMergeOk ?? true;
         return { ok, conflict: !ok };
       },
       revParseHead: async () => null,
@@ -696,18 +714,122 @@ describe("runLoop — on_merge_conflict policy", () => {
     });
     const { port } = recordingMarkDone();
     const config = mergeConfig([shell("merge-step")], "rebase");
-    const git = mockGit({ mergeInProgress: false });
+    const git = mockGit({ mergeInProgress: false, toleratedDirty: false });
 
     const result = await runLoop(config, [makeTask("T-1")], {
       ...makeDeps({ registry: reg, markDone: port }),
       git,
     });
 
-    // No merge in progress → no rebase, normal escalation.
+    // No merge in progress and nothing tolerated-dirty explaining the failure →
+    // nothing is retried at all, just normal escalation.
     expect(result.completed).toEqual([]);
     expect(result.paused).toContain("T-1");
     expect(git.calls).toContain("isMergeInProgress");
     expect(git.calls).not.toContain("rebaseOnto");
+    expect(git.calls).not.toContain("merge");
+  });
+
+  // --- Pre-merge refusal: the dirty root loopy.yml blocks the merge before it
+  // starts, so no MERGE_HEAD is ever created for the conflict path to see.
+
+  it("rebase: recovers from a pre-merge refusal by retrying with the local loopy.yml aside", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "local changes would be overwritten" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    const git = mockGit({
+      mergeInProgress: false,
+      toleratedDirty: true,
+      retryMergeOk: true,
+    });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    // Recovered without ever needing a rebase: the file was the whole problem.
+    expect(result.completed).toEqual(["T-1"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(git.calls).toContain("withToleratedDirtyAside");
+    expect(git.calls).toContain("merge");
+    expect(git.calls).not.toContain("rebaseOnto");
+  });
+
+  it("rebase: a content conflict hiding behind the refusal still gets the rebase", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge refused" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    // With the file aside the merge finally runs — and conflicts for real.
+    const git = mockGit({
+      mergeInProgress: false,
+      toleratedDirty: true,
+      rebaseOk: true,
+      mergeOutcomes: [false, true],
+    });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    expect(result.completed).toEqual(["T-1"]);
+    expect(marked).toEqual(["T-1"]);
+    expect(git.calls).toEqual([
+      "isMergeInProgress",
+      "withToleratedDirtyAside",
+      "merge",
+      "rebaseOnto",
+      "merge",
+    ]);
+  });
+
+  it("rebase: falls through to on_fail when the retry with the file aside still fails", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge refused" },
+    });
+    const { port } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "rebase");
+    const git = mockGit({
+      mergeInProgress: false,
+      toleratedDirty: true,
+      rebaseOk: false,
+      retryMergeOk: false,
+    });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-1");
+  });
+
+  it("escalate: a pre-merge refusal is not repaired either", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      "merge-step": { ok: false, reason: "merge refused" },
+    });
+    const { port } = recordingMarkDone();
+    const config = mergeConfig([shell("merge-step")], "escalate");
+    const git = mockGit({ mergeInProgress: false, toleratedDirty: true });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    expect(git.calls).not.toContain("withToleratedDirtyAside");
   });
 
   it("byte-identical at concurrency:1 when no conflicts occur", async () => {
