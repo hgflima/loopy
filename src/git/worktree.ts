@@ -35,8 +35,14 @@
  *    when, and how conflicts escalate is decided by `loopy.yml` + the
  *    orchestrator.
  */
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { execa } from "execa";
 import type { GitPort, MergeResult } from "../types";
 
@@ -53,6 +59,14 @@ const TOLERATED_DIRTY_PATH = "loopy.yml";
  * created) and ` M` (tracked, modified in the working tree, **index clean**).
  */
 const TOLERATED_DIRTY_CODES = ["??", " M"] as const;
+
+/**
+ * Where {@link GitPort.withToleratedDirtyAside} parks the local edit while it is
+ * out of the working tree — under `.loopy/`, the run's gitignored Artefato dir,
+ * so it is durable without ever dirtying the parent. Present only inside that
+ * window: written before the file is removed, deleted after it is handed back.
+ */
+const ASIDE_BACKUP_PATH = ".loopy/loopy.yml.aside";
 
 /**
  * Pure verdict of `require_clean_parent` over a `git status --porcelain` (v1)
@@ -275,6 +289,15 @@ export function createGit(options: CreateGitOptions): Git {
 
       const absolute = join(root, entry.path);
       const saved = readFileSync(absolute, "utf8");
+      // Land a durable copy BEFORE the file leaves the tree. `fn` spans a merge
+      // (and possibly a rebase plus a second merge), and an untracked `??`
+      // config has no other copy anywhere — held only in memory, a Ctrl-C in
+      // that window would destroy the config the Config view just authored.
+      // `.loopy/` is a gitignored Artefato, so the copy never dirties the
+      // parent; it is removed once the edit is safely back.
+      const backup = join(root, ASIDE_BACKUP_PATH);
+      mkdirSync(dirname(backup), { recursive: true });
+      writeFileSync(backup, saved, "utf8");
       try {
         // `??` exists only in the working tree — deleting it is the whole undo.
         // ` M` is tracked with a clean index, so `checkout --` restores HEAD's
@@ -285,8 +308,11 @@ export function createGit(options: CreateGitOptions): Git {
       } finally {
         // Give the local edit back byte-for-byte. It goes to the working tree
         // and never to the index, so it still cannot ride along in a later
-        // `commitPaths` — the PR #5 boundary holds.
+        // `commitPaths` — the PR #5 boundary holds. Only once that write lands
+        // does the durable copy go away; if it throws, the copy survives for
+        // the operator.
         writeFileSync(absolute, saved, "utf8");
+        rmSync(backup, { force: true });
       }
     },
 

@@ -659,6 +659,27 @@ describe("createGit — withToleratedDirtyAside", () => {
     expect(ran).toBe(false);
   });
 
+  it("keeps a durable copy while the edit is out of the tree, and removes it after", async () => {
+    // The `??` case is the one with no other copy anywhere: untracked, so git
+    // holds nothing. A kill during the merge must not take the config with it.
+    await branchWritingConfig("T-069");
+    const local = "version: 1\n# authored in the GUI\n";
+    await writeFile(join(root, "loopy.yml"), local);
+    const backup = join(root, ".loopy", "loopy.yml.aside");
+
+    await g().withToleratedDirtyAside("loopy/T-069", async () => {
+      // Mid-flight: the working tree no longer has it, the backup does.
+      expect(await exists(join(root, "loopy.yml"))).toBe(false);
+      expect(await readFile(backup, "utf8")).toBe(local);
+      return g().merge("loopy/T-069", { message: "merge(T-069)" });
+    });
+
+    // Handed back → the copy is no longer needed and leaves nothing behind.
+    expect(await readFile(join(root, "loopy.yml"), "utf8")).toBe(local);
+    expect(await exists(backup)).toBe(false);
+    expect(await g().isParentClean()).toBe(true);
+  });
+
   it("restores the local edit even when the body throws", async () => {
     await commitConfig();
     await branchWritingConfig("T-067");

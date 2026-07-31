@@ -132,6 +132,13 @@ export interface StepResult {
   readonly report?: ChecksReport;
   /** Free-form textual output (e.g. an agent turn's text / verdict line). */
   readonly output?: string;
+  /**
+   * The human refused an Approval Gate, so the step's `run:` action never ran.
+   * A failure of the *decision*, not of a command — the distinction the merge
+   * recovery keys on, since a refused gate must never be repaired into the very
+   * merge the human just declined.
+   */
+  readonly approvalRejected?: boolean;
 }
 
 // ---------------------------------------------------------------------------

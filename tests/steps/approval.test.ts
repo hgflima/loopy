@@ -208,6 +208,9 @@ describe("createApprovalStep — execute", () => {
     expect(prompts).toHaveLength(1);
     expect(result.ok).toBe(false);
     expect(ran).toEqual([]);
+    // And the result says *why* it failed: the decision, not a command. The
+    // merge recovery reads this to know no merge of this step was ever tried.
+    expect(result.approvalRejected).toBe(true);
   });
 
   it("treats a failing action as a conflict and respects on_fail", async () => {
@@ -233,6 +236,9 @@ describe("createApprovalStep — execute", () => {
     expect(result.reason).toContain("on_fail");
     expect(result.reason).toContain("escalate");
     expect(result.output).toContain("CONFLICT");
+    // The human approved here — the command is what failed, so this failure is
+    // the merge attempt the recovery may repair.
+    expect(result.approvalRejected).toBeUndefined();
   });
 
   it("renders an on_fail goto as 'goto <id>', never '[object Object]' (D-0007)", async () => {

@@ -7,6 +7,7 @@ import {
   formatDryRunPlan,
   planDryRun,
   runLoop,
+  stepRunsGitMerge,
   stripDepsLine,
   worktreePathFor,
 } from "../../src/loop/orchestrator";
@@ -15,12 +16,15 @@ import type {
   GitPort,
   LoopyConfig,
   MergeConflictStrategy,
+  StepConfig,
   StepContext,
   StepResult,
   StepType,
   Task,
 } from "../../src/types";
 import {
+  agent,
+  checks,
   makeConfig as makeLoopConfig,
   makeDeps,
   makeTask,
@@ -556,6 +560,24 @@ describe("runLoop — DAG pool scheduler", () => {
 // ---------------------------------------------------------------------------
 
 describe("runLoop — on_merge_conflict policy", () => {
+  /**
+   * A step that declares the merge itself, the way the canonical pipeline does.
+   * The pre-merge-refusal repair keys on this: a step with no `git merge` of
+   * its own never attempted one, so there is no refusal of its to repair.
+   */
+  const mergingShell = (id: string) =>
+    shell(id, {
+      run: ['git -C "${workspace.root}" merge --no-ff "${task.branch}"'],
+    });
+
+  /** The canonical merge gate: an approval whose action is the `git merge`. */
+  const mergeGate = (id: string): StepConfig => ({
+    id,
+    type: "approval",
+    prompt: "Aprovar merge?",
+    run: ['git -C "${workspace.root}" merge --no-ff "${task.branch}"'],
+  });
+
   /** Build a config with a specific merge-conflict policy. */
   function mergeConfig(
     pipeline: Parameters<typeof makeLoopConfig>[0],
@@ -739,7 +761,7 @@ describe("runLoop — on_merge_conflict policy", () => {
       "merge-step": { ok: false, reason: "local changes would be overwritten" },
     });
     const { port, marked } = recordingMarkDone();
-    const config = mergeConfig([shell("merge-step")], "rebase");
+    const config = mergeConfig([mergingShell("merge-step")], "rebase");
     const git = mockGit({
       mergeInProgress: false,
       toleratedDirty: true,
@@ -765,7 +787,7 @@ describe("runLoop — on_merge_conflict policy", () => {
       "merge-step": { ok: false, reason: "merge refused" },
     });
     const { port, marked } = recordingMarkDone();
-    const config = mergeConfig([shell("merge-step")], "rebase");
+    const config = mergeConfig([mergingShell("merge-step")], "rebase");
     // With the file aside the merge finally runs — and conflicts for real.
     const git = mockGit({
       mergeInProgress: false,
@@ -796,7 +818,7 @@ describe("runLoop — on_merge_conflict policy", () => {
       "merge-step": { ok: false, reason: "merge refused" },
     });
     const { port } = recordingMarkDone();
-    const config = mergeConfig([shell("merge-step")], "rebase");
+    const config = mergeConfig([mergingShell("merge-step")], "rebase");
     const git = mockGit({
       mergeInProgress: false,
       toleratedDirty: true,
@@ -819,7 +841,7 @@ describe("runLoop — on_merge_conflict policy", () => {
       "merge-step": { ok: false, reason: "merge refused" },
     });
     const { port } = recordingMarkDone();
-    const config = mergeConfig([shell("merge-step")], "escalate");
+    const config = mergeConfig([mergingShell("merge-step")], "escalate");
     const git = mockGit({ mergeInProgress: false, toleratedDirty: true });
 
     const result = await runLoop(config, [makeTask("T-1")], {
@@ -830,6 +852,72 @@ describe("runLoop — on_merge_conflict policy", () => {
     expect(result.completed).toEqual([]);
     expect(result.paused).toContain("T-1");
     expect(git.calls).not.toContain("withToleratedDirtyAside");
+  });
+
+  // --- The repair is for a merge THIS step attempted. The parent's state alone
+  // does not say one was: it stays tolerated-dirty from the commit until the
+  // merge, so every failure in that window would otherwise look repairable.
+
+  it("rebase: a refused approval gate is never repaired into the merge it declined", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      // Exactly what `createApprovalStep` returns when the human says no: the
+      // action never ran, so git never refused anything.
+      "merge-gate": {
+        ok: false,
+        reason: "rejeitado pelo gate humano",
+        approvalRejected: true,
+      },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = mergeConfig([mergeGate("merge-gate")], "rebase");
+    // The parent is in the exact state the repair looks for — and it must not
+    // be enough on its own.
+    const git = mockGit({
+      mergeInProgress: false,
+      toleratedDirty: true,
+      retryMergeOk: true,
+    });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(marked).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    expect(git.calls).not.toContain("withToleratedDirtyAside");
+    expect(git.calls).not.toContain("merge");
+  });
+
+  it("rebase: a step that declares no merge is not repaired into one", async () => {
+    const rec: Recorder = { order: [] };
+    const reg = scriptedRegistry(rec, {
+      // An audit/checks-shaped failure after the commit landed.
+      "audit-step": { ok: false, reason: "AUDIT: FAIL" },
+    });
+    const { port, marked } = recordingMarkDone();
+    const config = mergeConfig(
+      [shell("audit-step"), mergingShell("merge-step")],
+      "rebase",
+    );
+    const git = mockGit({
+      mergeInProgress: false,
+      toleratedDirty: true,
+      retryMergeOk: true,
+    });
+
+    const result = await runLoop(config, [makeTask("T-1")], {
+      ...makeDeps({ registry: reg, markDone: port }),
+      git,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(marked).toEqual([]);
+    expect(result.paused).toContain("T-1");
+    expect(git.calls).not.toContain("withToleratedDirtyAside");
+    expect(git.calls).not.toContain("merge");
   });
 
   it("byte-identical at concurrency:1 when no conflicts occur", async () => {
@@ -858,6 +946,62 @@ describe("runLoop — on_merge_conflict policy", () => {
     expect(resultRebase.completed).toEqual(resultEscalate.completed);
     expect(resultRebase.stoppedBy).toEqual(resultEscalate.stoppedBy);
     expect(marked2).toEqual(["A", "B"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stepRunsGitMerge — the config half of the pre-merge-refusal gate (AD-6)
+// ---------------------------------------------------------------------------
+
+describe("stepRunsGitMerge", () => {
+  const withRun = (run: readonly string[]): StepConfig =>
+    ({ id: "s", type: "shell", run }) as StepConfig;
+
+  it("sees the merge through git's global options and quoting", () => {
+    expect(
+      stepRunsGitMerge(
+        withRun([
+          'git -C "${workspace.root}" merge --no-ff "${task.branch}" -m "merge(${task.id}): ${task.title}"',
+        ]),
+      ),
+    ).toBe(true);
+    expect(stepRunsGitMerge(withRun(["git merge ${task.branch}"]))).toBe(true);
+    // Any command of the list counts — the merge need not be the first.
+    expect(
+      stepRunsGitMerge(withRun(["git fetch origin", "git merge FETCH_HEAD"])),
+    ).toBe(true);
+  });
+
+  it("is false for every other git subcommand, merge-flavored text included", () => {
+    expect(stepRunsGitMerge(withRun([]))).toBe(false);
+    expect(
+      stepRunsGitMerge(
+        withRun(['git -C "${worktree.path}" commit -m "merge stuff"']),
+      ),
+    ).toBe(false);
+    expect(
+      stepRunsGitMerge(withRun(["git worktree remove --force ${worktree.path}"])),
+    ).toBe(false);
+    // Not git at all, and a malformed line (unterminated quote) is not evidence.
+    expect(stepRunsGitMerge(withRun(["npm run merge"]))).toBe(false);
+    expect(stepRunsGitMerge(withRun(['git merge "unterminated']))).toBe(false);
+  });
+
+  it("is false for the step types that carry no commands", () => {
+    expect(stepRunsGitMerge(agent("a"))).toBe(false);
+    expect(stepRunsGitMerge(checks("c"))).toBe(false);
+    // An approval declares its action the same way a shell step does.
+    expect(
+      stepRunsGitMerge({
+        id: "merge",
+        type: "approval",
+        prompt: "ok?",
+        run: ['git -C "${workspace.root}" merge --no-ff "${task.branch}"'],
+      }),
+    ).toBe(true);
+    expect(
+      stepRunsGitMerge({ id: "merge", type: "approval", prompt: "ok?" }),
+    ).toBe(false);
   });
 });
 

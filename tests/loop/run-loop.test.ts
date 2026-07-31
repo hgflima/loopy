@@ -1296,6 +1296,50 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     expect(result.completed).toEqual([]);
     expect(result.paused).toContain("T-100");
   });
+
+  // The repair may never outrank the human. The parent sits in exactly the
+  // state the pre-merge refusal produces — tolerated-dirty `loopy.yml` on a
+  // path the branch writes — but the gate said no, so no merge was ever
+  // attempted and there is nothing to repair.
+  it("never merges a task whose approval gate the human rejected", { timeout: 30_000 }, async () => {
+    const config = parseConfig(
+      E2E_YML.replace("feature.txt", "loopy.yml")
+        .replace("git: { require_clean_parent: true }", "git: { require_clean_parent: true, on_merge_conflict: rebase }"),
+    );
+    const todoPath = join(root, "tasks", "todo.md");
+    const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+    const tasks = pendingTasks(
+      parseBacklog(readFileSync(todoPath, "utf8"), backlogOptions),
+    );
+    const g = createGit({ root });
+    const authored = "version: '1'\n# authored in the Config view\n";
+    writeFileSync(join(root, "loopy.yml"), authored);
+    const headBefore = await g.revParseHead();
+
+    const result = await runLoop(config, tasks, {
+      root,
+      // `yes: false` so the gate is really consulted, and it answers no.
+      flags: { ...DEFAULT_FLAGS, yes: false },
+      registry: createNonAgentRegistry(),
+      checks: passingChecks,
+      ui: { requestApproval: async () => false },
+      logger: makeLogger(),
+      markDone: createMarkDonePort({
+        todoPath,
+        commit: g.commitPaths,
+        backlogOptions,
+      }),
+      git: g,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-100");
+    // Nothing landed: the parent tip never moved and the task stays pending.
+    expect(await g.revParseHead()).toBe(headBefore);
+    expect(readFileSync(todoPath, "utf8")).toContain("- [ ] T-100:");
+    // The operator's local edit is untouched where they left it.
+    expect(readFileSync(join(root, "loopy.yml"), "utf8")).toBe(authored);
+  });
 });
 
 // ---------------------------------------------------------------------------

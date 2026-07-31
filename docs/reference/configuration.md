@@ -327,6 +327,14 @@ tira a edição local do caminho, re-tenta o merge e a devolve byte a byte — e
 nunca chega ao índice, então continua sem poder entrar em commit nenhum. Com o
 default `escalate`, a recusa vai para o operador como qualquer outra falha.
 
+O reparo é reativo e exige que o **próprio Step** tenha tentado o merge: ele só
+vale para um Step cujo `run:` declara um `git merge` **e** que chegou a rodar
+essa ação — um Gate de Aprovação que o humano recusou nunca é reparado no merge
+que ele acabou de negar. Depois de um reparo bem-sucedido a edição local volta
+por cima do `loopy.yml` recém-merjado, ou seja, ela **sombreia** na working tree
+(e na Aba `Config`) o conteúdo que a Task integrou — o histórico tem as duas
+versões; um `git checkout -- loopy.yml` descarta a local e revela a merjada.
+
 ## `logging`
 
 | Chave | Tipo | Descrição |
