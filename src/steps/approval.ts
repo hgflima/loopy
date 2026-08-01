@@ -117,8 +117,10 @@ export function createApprovalStep(
         ctx.logger.info(reason);
         // The action never runs; ok:false lets the orchestrator escalate. The
         // rejection is the one mechanical fail_reason an approval carries (D5).
+        // `approvalRejected` says it in the result contract too: no command of
+        // this step ever ran, so no repair may act as if one had.
         recorder?.setFailReason("human-rejected");
-        return { ok: false, reason };
+        return { ok: false, reason, approvalRejected: true };
       }
 
       // Mutex (T-004): only command execution runs inside the critical section;

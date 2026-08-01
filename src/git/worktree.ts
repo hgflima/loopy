@@ -17,6 +17,10 @@
  *  - **isParentClean** — `require_clean_parent`: is the parent working tree
  *    free of uncommitted changes before the next task starts, modulo the one
  *    named exception documented on {@link isParentCleanPorcelain}.
+ *  - **withToleratedDirtyAside** — the flip side of that exception: tolerating
+ *    the dirty root `loopy.yml` leaves it in the tree all run, so a branch that
+ *    writes the same file gets its merge refused *before it starts*. Moves the
+ *    local edit out of the way for one operation and hands it back untouched.
  *
  * Design notes:
  *  - **Errors as values only where a failure is a normal outcome (AD-5).**
@@ -31,8 +35,14 @@
  *    when, and how conflicts escalate is decided by `loopy.yml` + the
  *    orchestrator.
  */
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { execa } from "execa";
 import type { GitPort, MergeResult } from "../types";
 
@@ -49,6 +59,14 @@ const TOLERATED_DIRTY_PATH = "loopy.yml";
  * created) and ` M` (tracked, modified in the working tree, **index clean**).
  */
 const TOLERATED_DIRTY_CODES = ["??", " M"] as const;
+
+/**
+ * Where {@link GitPort.withToleratedDirtyAside} parks the local edit while it is
+ * out of the working tree — under `.loopy/`, the run's gitignored Artefato dir,
+ * so it is durable without ever dirtying the parent. Present only inside that
+ * window: written before the file is removed, deleted after it is handed back.
+ */
+const ASIDE_BACKUP_PATH = ".loopy/loopy.yml.aside";
 
 /**
  * Pure verdict of `require_clean_parent` over a `git status --porcelain` (v1)
@@ -77,6 +95,10 @@ const TOLERATED_DIRTY_CODES = ["??", " M"] as const;
  *  - **Nothing else rides along.** `.loopy/` and `.worktrees/` are gitignored
  *    Artefatos and never show up here; if a project fails to ignore them they
  *    dirty the parent and are refused, unchanged from before.
+ *
+ * What tolerating costs: the file stays dirty in the parent working tree for
+ * the whole run, so a task branch that writes it gets its merge refused before
+ * git even starts — see {@link GitPort.withToleratedDirtyAside}.
  */
 export function isParentCleanPorcelain(porcelain: string): boolean {
   const tolerated = TOLERATED_DIRTY_CODES.map(
@@ -86,6 +108,34 @@ export function isParentCleanPorcelain(porcelain: string): boolean {
     .split("\n")
     .filter((line) => line.trim() !== "")
     .every((line) => tolerated.includes(line));
+}
+
+/** The local edit {@link isParentCleanPorcelain} is carrying, if any. */
+export interface ToleratedDirtyEntry {
+  /** The `git status --porcelain` (v1) status code — one of {@link TOLERATED_DIRTY_CODES}. */
+  readonly code: (typeof TOLERATED_DIRTY_CODES)[number];
+  /** Repo-root-relative path — always {@link TOLERATED_DIRTY_PATH}. */
+  readonly path: string;
+}
+
+/**
+ * The mirror image of {@link isParentCleanPorcelain} (AD-6): where that one
+ * answers *whether* the tree passes, this answers *which* entry the exception
+ * is carrying — `null` when there is none.
+ *
+ * Deliberately `null` for a tree that is dirty beyond the exception: an entry
+ * only reads as "the config the user just authored" when it is the whole story.
+ * A tree dirty for other reasons is nobody's to touch.
+ */
+export function toleratedDirtyEntry(
+  porcelain: string,
+): ToleratedDirtyEntry | null {
+  if (!isParentCleanPorcelain(porcelain)) return null;
+  const lines = porcelain.split("\n");
+  const code = TOLERATED_DIRTY_CODES.find((c) =>
+    lines.includes(`${c} ${TOLERATED_DIRTY_PATH}`),
+  );
+  return code === undefined ? null : { code, path: TOLERATED_DIRTY_PATH };
 }
 
 /** Options for {@link createGit}. */
@@ -218,6 +268,52 @@ export function createGit(options: CreateGitOptions): Git {
 
     async isMergeInProgress() {
       return mergeInProgress();
+    },
+
+    async withToleratedDirtyAside(branch, fn) {
+      const entry = toleratedDirtyEntry(await run(["status", "--porcelain"]));
+      if (entry === null) return null;
+
+      // Does `branch` actually write that path? `HEAD...<branch>` is what the
+      // branch introduces over the merge base — i.e. what a merge would have to
+      // write into the working tree. No overlap ⇒ git never refused over this
+      // file, so there is nothing here to repair.
+      const changed = await tryRunOut([
+        "diff",
+        "--name-only",
+        `HEAD...${branch}`,
+        "--",
+        entry.path,
+      ]);
+      if (changed === null || changed === "") return null;
+
+      const absolute = join(root, entry.path);
+      const saved = readFileSync(absolute, "utf8");
+      // Land a durable copy BEFORE the file leaves the tree. `fn` spans a merge
+      // (and possibly a rebase plus a second merge), and an untracked `??`
+      // config has no other copy anywhere — held only in memory, a Ctrl-C in
+      // that window would destroy the config the Config view just authored.
+      // `.loopy/` is a gitignored Artefato, so the copy never dirties the
+      // parent; it is removed once the edit is safely back.
+      const backup = join(root, ASIDE_BACKUP_PATH);
+      mkdirSync(dirname(backup), { recursive: true });
+      writeFileSync(backup, saved, "utf8");
+      try {
+        // `??` exists only in the working tree — deleting it is the whole undo.
+        // ` M` is tracked with a clean index, so `checkout --` restores HEAD's
+        // bytes and leaves git seeing no local change at all.
+        if (entry.code === "??") rmSync(absolute);
+        else await run(["checkout", "--", entry.path]);
+        return await fn();
+      } finally {
+        // Give the local edit back byte-for-byte. It goes to the working tree
+        // and never to the index, so it still cannot ride along in a later
+        // `commitPaths` — the PR #5 boundary holds. Only once that write lands
+        // does the durable copy go away; if it throws, the copy survives for
+        // the operator.
+        writeFileSync(absolute, saved, "utf8");
+        rmSync(backup, { force: true });
+      }
     },
 
     async rebaseOnto(worktreePath, parentBranch) {

@@ -292,7 +292,10 @@ Por default `concurrency: 1` — comportamento sequencial, byte-idêntico ao loo
    merge pode conflitar com o 1.º. `on_merge_conflict: escalate` (default)
    entrega ao operador; `rebase` faz o motor rodar `git rebase <parent>` na
    branch da task e re-tentar o merge uma vez, dentro do mutex — persistindo o
-   conflito, cai no `on_fail`.
+   conflito, cai no `on_fail`. `rebase` também cobre o caso em que o git recusa
+   o merge *antes de começar*, porque o `loopy.yml` da raiz tolerado sujo (ver
+   [`configuration.md`](../reference/configuration.md#policiesgit)) está num
+   caminho que a branch escreve.
 
    ```yaml
    policies:

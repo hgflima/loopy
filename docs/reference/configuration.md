@@ -319,6 +319,27 @@ A exceção é estreita e não configurável (não há knob, modo permissivo nem
 - **mais nada junto** — qualquer outro arquivo sujo recusa, com a mensagem
   inalterada.
 
+**O que a exceção custa.** O arquivo fica sujo na working tree do parent a run
+inteira. Se uma Task escrever esse mesmo `loopy.yml`, o git **recusa o merge
+antes de começar** ("local changes would be overwritten by merge") e não deixa
+`MERGE_HEAD`. Com `on_merge_conflict: rebase`, o motor reconhece essa recusa,
+tira a edição local do caminho, re-tenta o merge e a devolve byte a byte — ela
+nunca chega ao índice, então continua sem poder entrar em commit nenhum. Com o
+default `escalate`, a recusa vai para o operador como qualquer outra falha.
+
+O reparo é reativo e exige que o **próprio Step** tenha tentado o merge: ele só
+vale para um Step cujo `run:` declara um `git merge` **e** que chegou a rodar
+essa ação — um Gate de Aprovação que o humano recusou nunca é reparado no merge
+que ele acabou de negar. Depois de um reparo bem-sucedido a edição local volta
+por cima do `loopy.yml` recém-merjado, ou seja, ela **sombreia** na working tree
+(e na Aba `Config`) o conteúdo que a Task integrou — o histórico tem as duas
+versões; um `git checkout -- loopy.yml` descarta a local e revela a merjada.
+
+Enquanto a edição está fora da working tree, o motor guarda uma cópia durável em
+`.loopy/loopy.yml.aside` (Artefato, gitignored) e a apaga assim que devolve o
+arquivo. Se a run morrer nessa janela, é de lá que se recupera um `loopy.yml`
+ainda não rastreado — a única cópia que existia dele.
+
 ## `logging`
 
 | Chave | Tipo | Descrição |

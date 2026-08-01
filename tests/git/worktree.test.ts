@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createGit, isParentCleanPorcelain } from "../../src/git/worktree";
+import {
+  createGit,
+  isParentCleanPorcelain,
+  toleratedDirtyEntry,
+} from "../../src/git/worktree";
 
 // ---------------------------------------------------------------------------
 // Real-repo harness (AD-6: git is exercised against a temporary repo, not
@@ -504,6 +508,216 @@ describe("createGit — isParentClean tolerates only the root loopy.yml", () => 
 });
 
 // ---------------------------------------------------------------------------
+// withToleratedDirtyAside — the flip side of the tolerated-dirty exception.
+//
+// Tolerating a dirty root `loopy.yml` leaves it in the parent working tree for
+// the whole run. When a task's branch writes that same file, git refuses the
+// merge *before starting it* — no MERGE_HEAD, so the conflict path is blind to
+// it. These tests pin the real git behavior and the repair.
+// ---------------------------------------------------------------------------
+
+describe("createGit — withToleratedDirtyAside", () => {
+  /** Commit a tracked root `loopy.yml` so it can later be *modified*. */
+  async function commitConfig(): Promise<void> {
+    await writeFile(join(root, "loopy.yml"), "version: 1\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "add config"]);
+  }
+
+  /** A task branch whose single commit writes the root `loopy.yml`. */
+  async function branchWritingConfig(name: string): Promise<void> {
+    const path = worktreePath(root, name);
+    await g().addWorktree(path, `loopy/${name}`, "main");
+    await writeFile(join(path, "loopy.yml"), "version: 1\nsteps: [a]\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", `${name}: edit config`]);
+  }
+
+  const g = (): ReturnType<typeof createGit> => createGit({ root });
+
+  it("reproduces the refusal it repairs: a dirty loopy.yml blocks the merge with no MERGE_HEAD", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-060");
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# authored in the GUI\n");
+
+    // The bare merge is refused before it starts...
+    const merged = await g().merge("loopy/T-060", { message: "merge" });
+    expect(merged.ok).toBe(false);
+    // ...and leaves nothing for the conflict path to see.
+    expect(merged.conflict).toBe(false);
+    expect(await g().isMergeInProgress()).toBe(false);
+  });
+
+  it("merges with a modified loopy.yml aside, then restores it byte-for-byte", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-061");
+    const local = "version: 1\n# authored in the GUI\n";
+    await writeFile(join(root, "loopy.yml"), local);
+
+    const merged = await g().withToleratedDirtyAside("loopy/T-061", () =>
+      g().merge("loopy/T-061", { message: "merge(T-061)" }),
+    );
+
+    expect(merged).toEqual({ ok: true, conflict: false });
+    // The branch's version is what got committed...
+    expect(await git(root, ["show", "HEAD:loopy.yml"])).toBe(
+      "version: 1\nsteps: [a]",
+    );
+    // ...while the user's local edit is back, unchanged, and still only in the
+    // working tree — the parent is tolerated-dirty again, exactly as before.
+    expect(await readFile(join(root, "loopy.yml"), "utf8")).toBe(local);
+    expect(await git(root, ["status", "--porcelain"])).toBe(" M loopy.yml");
+    expect(await g().isParentClean()).toBe(true);
+  });
+
+  it("merges with an untracked loopy.yml aside, then restores it", async () => {
+    // No committed config: the GUI just authored one (`??`).
+    await branchWritingConfig("T-062");
+    const local = "version: 1\n# authored in the GUI\n";
+    await writeFile(join(root, "loopy.yml"), local);
+
+    const merged = await g().withToleratedDirtyAside("loopy/T-062", () =>
+      g().merge("loopy/T-062", { message: "merge(T-062)" }),
+    );
+
+    expect(merged).toEqual({ ok: true, conflict: false });
+    expect(await git(root, ["show", "HEAD:loopy.yml"])).toBe(
+      "version: 1\nsteps: [a]",
+    );
+    expect(await readFile(join(root, "loopy.yml"), "utf8")).toBe(local);
+    expect(await git(root, ["status", "--porcelain"])).toBe(" M loopy.yml");
+  });
+
+  it("never lets the local edit reach the index (the PR #5 boundary)", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-063");
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# local only\n");
+
+    await g().withToleratedDirtyAside("loopy/T-063", () =>
+      g().merge("loopy/T-063", { message: "merge(T-063)" }),
+    );
+    // A mark-done commit right after must not sweep the user's config in.
+    await writeFile(join(root, "todo.md"), "- [x] T-063\n");
+    await g().commitPaths([join(root, "todo.md")], "chore(loopy): mark done");
+
+    const names = await git(root, [
+      "show",
+      "--name-only",
+      "--pretty=format:",
+      "HEAD",
+    ]);
+    expect(names.trim()).toBe("todo.md");
+    expect(await git(root, ["status", "--porcelain"])).toBe(" M loopy.yml");
+  });
+
+  it("does not apply when the branch leaves loopy.yml alone", async () => {
+    await commitConfig();
+    const path = worktreePath(root, "T-064");
+    await g().addWorktree(path, "loopy/T-064", "main");
+    await writeFile(join(path, "file.txt"), "task work\n");
+    await git(path, ["add", "-A"]);
+    await git(path, ["commit", "-m", "unrelated"]);
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# local\n");
+
+    let ran = false;
+    const out = await g().withToleratedDirtyAside("loopy/T-064", async () => {
+      ran = true;
+      return "unreachable";
+    });
+
+    expect(out).toBeNull();
+    expect(ran).toBe(false);
+  });
+
+  it("does not apply when the parent is dirty beyond the exception", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-065");
+    await writeFile(join(root, "loopy.yml"), "version: 1\n# local\n");
+    await writeFile(join(root, "file.txt"), "unrelated dirt\n");
+
+    let ran = false;
+    const out = await g().withToleratedDirtyAside("loopy/T-065", async () => {
+      ran = true;
+      return "unreachable";
+    });
+
+    expect(out).toBeNull();
+    expect(ran).toBe(false);
+  });
+
+  it("does not apply when the parent is clean", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-066");
+
+    let ran = false;
+    const out = await g().withToleratedDirtyAside("loopy/T-066", async () => {
+      ran = true;
+      return "unreachable";
+    });
+
+    expect(out).toBeNull();
+    expect(ran).toBe(false);
+  });
+
+  it("keeps a durable copy while the edit is out of the tree, and removes it after", async () => {
+    // The `??` case is the one with no other copy anywhere: untracked, so git
+    // holds nothing. A kill during the merge must not take the config with it.
+    await branchWritingConfig("T-069");
+    const local = "version: 1\n# authored in the GUI\n";
+    await writeFile(join(root, "loopy.yml"), local);
+    const backup = join(root, ".loopy", "loopy.yml.aside");
+
+    await g().withToleratedDirtyAside("loopy/T-069", async () => {
+      // Mid-flight: the working tree no longer has it, the backup does.
+      expect(await exists(join(root, "loopy.yml"))).toBe(false);
+      expect(await readFile(backup, "utf8")).toBe(local);
+      return g().merge("loopy/T-069", { message: "merge(T-069)" });
+    });
+
+    // Handed back → the copy is no longer needed and leaves nothing behind.
+    expect(await readFile(join(root, "loopy.yml"), "utf8")).toBe(local);
+    expect(await exists(backup)).toBe(false);
+    expect(await g().isParentClean()).toBe(true);
+  });
+
+  it("restores the local edit even when the body throws", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-067");
+    const local = "version: 1\n# local\n";
+    await writeFile(join(root, "loopy.yml"), local);
+
+    await expect(
+      g().withToleratedDirtyAside("loopy/T-067", async () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(await readFile(join(root, "loopy.yml"), "utf8")).toBe(local);
+    expect(await g().isParentClean()).toBe(true);
+  });
+
+  it("surfaces a genuine content conflict instead of hiding it", async () => {
+    await commitConfig();
+    await branchWritingConfig("T-068");
+    // The parent advances with a *conflicting* committed edit to the same file.
+    await writeFile(join(root, "loopy.yml"), "version: 1\nsteps: [b]\n");
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-m", "parent edits config"]);
+    // ...and the GUI leaves a local edit on top.
+    await writeFile(join(root, "loopy.yml"), "version: 1\nsteps: [b]\n# local\n");
+
+    const merged = await g().withToleratedDirtyAside("loopy/T-068", () =>
+      g().merge("loopy/T-068", { message: "merge(T-068)" }),
+    );
+
+    // The refusal is gone, so the real conflict can finally be reported
+    // (and `merge` aborted it, so the parent is usable for a rebase).
+    expect(merged).toEqual({ ok: false, conflict: true });
+    expect(await g().isMergeInProgress()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isParentCleanPorcelain — the pure verdict (AD-6)
 // ---------------------------------------------------------------------------
 
@@ -548,6 +762,32 @@ describe("isParentCleanPorcelain", () => {
   it("rejects the tolerated entry as soon as anything else rides along", () => {
     expect(isParentCleanPorcelain("?? loopy.yml\n M file.txt")).toBe(false);
     expect(isParentCleanPorcelain(" M file.txt\n?? loopy.yml")).toBe(false);
+  });
+});
+
+describe("toleratedDirtyEntry", () => {
+  it("names the entry the exception is carrying, with its code", () => {
+    expect(toleratedDirtyEntry("?? loopy.yml")).toEqual({
+      code: "??",
+      path: "loopy.yml",
+    });
+    expect(toleratedDirtyEntry(" M loopy.yml\n")).toEqual({
+      code: " M",
+      path: "loopy.yml",
+    });
+  });
+
+  it("is null for a clean tree — there is nothing to move aside", () => {
+    expect(toleratedDirtyEntry("")).toBeNull();
+    expect(toleratedDirtyEntry("\n")).toBeNull();
+  });
+
+  it("is null whenever the tree is dirty beyond the exception", () => {
+    // Not tolerated at all...
+    expect(toleratedDirtyEntry(" M file.txt")).toBeNull();
+    expect(toleratedDirtyEntry("M  loopy.yml")).toBeNull();
+    // ...and not even when the tolerated entry is only part of the story.
+    expect(toleratedDirtyEntry("?? loopy.yml\n M file.txt")).toBeNull();
   });
 });
 

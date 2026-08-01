@@ -1195,6 +1195,151 @@ describe("runLoop — e2e over a real repo (non-agent spine)", () => {
     expect(row?.size_added).toBe(1);
     expect(row?.size_removed).toBe(0);
   });
+
+  // The regression the tolerated-dirty exception opened: the root `loopy.yml`
+  // stays dirty in the parent for the whole run, so a task that writes it gets
+  // its merge refused *before git starts* — no MERGE_HEAD, nothing for the
+  // conflict path to catch, and the run stopped on a conflict the operator had
+  // explicitly asked the engine to resolve on its own.
+  it("recovers a merge refused by the dirty root loopy.yml (on_merge_conflict: rebase)", { timeout: 30_000 }, async () => {
+    // The task's `implement` writes the root `loopy.yml` — the same path the
+    // parent is carrying dirty.
+    const config = parseConfig(
+      E2E_YML.replace("feature.txt", "loopy.yml")
+        .replace("git: { require_clean_parent: true }", "git: { require_clean_parent: true, on_merge_conflict: rebase }"),
+    );
+    const todoPath = join(root, "tasks", "todo.md");
+    const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+    const tasks = pendingTasks(
+      parseBacklog(readFileSync(todoPath, "utf8"), backlogOptions),
+    );
+    const g = createGit({ root });
+
+    // The product's natural path: the Config view authored a `loopy.yml` and it
+    // was never committed. `isParentClean` tolerates it, so the run starts.
+    const authored = "version: '1'\n# authored in the Config view\n";
+    writeFileSync(join(root, "loopy.yml"), authored);
+    expect(await g.isParentClean()).toBe(true);
+
+    const result = await runLoop(config, tasks, {
+      root,
+      flags: { ...DEFAULT_FLAGS, yes: true },
+      registry: createNonAgentRegistry(),
+      checks: passingChecks,
+      ui: { requestApproval: async () => true },
+      logger: makeLogger(),
+      markDone: createMarkDonePort({
+        todoPath,
+        commit: g.commitPaths,
+        backlogOptions,
+      }),
+      git: g,
+    });
+
+    // Recovered instead of escalating: the task completed and was marked done.
+    expect(result.completed).toEqual(["T-100"]);
+    expect(result.paused).toEqual([]);
+    expect(result.escalated).toEqual([]);
+    expect(readFileSync(todoPath, "utf8")).toContain("- [x] T-100:");
+
+    // The branch's config is what landed in history...
+    const merged = await execa("git", ["show", "HEAD:loopy.yml"], {
+      cwd: root,
+      env: { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    });
+    expect(merged.stdout.trim()).toBe("T-100");
+    // ...while the operator's local edit is back untouched, and never got
+    // swept into the mark-done commit that followed it (the PR #5 boundary).
+    expect(readFileSync(join(root, "loopy.yml"), "utf8")).toBe(authored);
+    const markDoneFiles = await execa(
+      "git",
+      ["show", "--name-only", "--pretty=format:", "HEAD"],
+      {
+        cwd: root,
+        env: { GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+      },
+    );
+    expect(markDoneFiles.stdout.trim()).toBe("tasks/todo.md");
+    // The parent is tolerated-dirty again — exactly the state it started in.
+    expect(await g.isParentClean()).toBe(true);
+  });
+
+  // The other half of criterion 2: with the default policy the same refusal is
+  // the operator's to resolve, unchanged.
+  it("escalates the same refusal under the default on_merge_conflict: escalate", { timeout: 30_000 }, async () => {
+    const config = parseConfig(
+      E2E_YML.replace("feature.txt", "loopy.yml"),
+    );
+    const todoPath = join(root, "tasks", "todo.md");
+    const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+    const tasks = pendingTasks(
+      parseBacklog(readFileSync(todoPath, "utf8"), backlogOptions),
+    );
+    const g = createGit({ root });
+    writeFileSync(join(root, "loopy.yml"), "version: '1'\n# authored\n");
+
+    const result = await runLoop(config, tasks, {
+      root,
+      flags: { ...DEFAULT_FLAGS, yes: true },
+      registry: createNonAgentRegistry(),
+      checks: passingChecks,
+      ui: { requestApproval: async () => true },
+      logger: makeLogger(),
+      markDone: createMarkDonePort({
+        todoPath,
+        commit: g.commitPaths,
+        backlogOptions,
+      }),
+      git: g,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-100");
+  });
+
+  // The repair may never outrank the human. The parent sits in exactly the
+  // state the pre-merge refusal produces — tolerated-dirty `loopy.yml` on a
+  // path the branch writes — but the gate said no, so no merge was ever
+  // attempted and there is nothing to repair.
+  it("never merges a task whose approval gate the human rejected", { timeout: 30_000 }, async () => {
+    const config = parseConfig(
+      E2E_YML.replace("feature.txt", "loopy.yml")
+        .replace("git: { require_clean_parent: true }", "git: { require_clean_parent: true, on_merge_conflict: rebase }"),
+    );
+    const todoPath = join(root, "tasks", "todo.md");
+    const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
+    const tasks = pendingTasks(
+      parseBacklog(readFileSync(todoPath, "utf8"), backlogOptions),
+    );
+    const g = createGit({ root });
+    const authored = "version: '1'\n# authored in the Config view\n";
+    writeFileSync(join(root, "loopy.yml"), authored);
+    const headBefore = await g.revParseHead();
+
+    const result = await runLoop(config, tasks, {
+      root,
+      // `yes: false` so the gate is really consulted, and it answers no.
+      flags: { ...DEFAULT_FLAGS, yes: false },
+      registry: createNonAgentRegistry(),
+      checks: passingChecks,
+      ui: { requestApproval: async () => false },
+      logger: makeLogger(),
+      markDone: createMarkDonePort({
+        todoPath,
+        commit: g.commitPaths,
+        backlogOptions,
+      }),
+      git: g,
+    });
+
+    expect(result.completed).toEqual([]);
+    expect(result.paused).toContain("T-100");
+    // Nothing landed: the parent tip never moved and the task stays pending.
+    expect(await g.revParseHead()).toBe(headBefore);
+    expect(readFileSync(todoPath, "utf8")).toContain("- [ ] T-100:");
+    // The operator's local edit is untouched where they left it.
+    expect(readFileSync(join(root, "loopy.yml"), "utf8")).toBe(authored);
+  });
 });
 
 // ---------------------------------------------------------------------------

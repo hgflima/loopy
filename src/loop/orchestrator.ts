@@ -49,6 +49,7 @@ import {
   type ResumePoint,
 } from "../resume/state";
 import type { StepRegistry } from "../steps/index";
+import { tokenizeCommand } from "../steps/tokenize";
 import type { TelemetryDb } from "../telemetry/db";
 import { createVisitRecorder, insertChange, insertTask } from "../telemetry/write";
 import type { StoreEvent } from "../tui/store";
@@ -330,6 +331,68 @@ const prompt = (label: string, value: string): ResolvedField => ({
 const command = (value: string): ResolvedField => ({ kind: "command", value });
 export const formatOnFail = (a: OnFailAction): string =>
   typeof a === "string" ? a : `goto ${a.goto}`;
+
+/**
+ * Git's global options that swallow the next argv token — skipped (with their
+ * value) when looking for the subcommand, so `git -C <path> merge …` reads as
+ * `merge` and not as `<path>`.
+ */
+const GIT_GLOBAL_OPTS_WITH_VALUE = new Set([
+  "-C",
+  "-c",
+  "--git-dir",
+  "--work-tree",
+  "--namespace",
+  "--exec-path",
+  "--config-env",
+]);
+
+/**
+ * The git subcommand a `run:` line invokes, or `null` when the line is not a
+ * git invocation at all. Pure (AD-6), so the merge-recovery gate that depends
+ * on it is testable without a repo.
+ *
+ * The line is read as the config declares it: `${…}` placeholders tokenize as
+ * opaque single tokens and only ever fill *data* positions (a path, a branch,
+ * a message), never the subcommand slot, so resolving them first could not
+ * change this verdict. A malformed line yields `null` — the step itself is the
+ * one that reports that as a config error.
+ */
+export function gitSubcommandOf(line: string): string | null {
+  let argv: readonly string[];
+  try {
+    argv = tokenizeCommand(line);
+  } catch {
+    return null;
+  }
+  const [program, ...rest] = argv;
+  if (program === undefined) return null;
+  if (basename(program) !== "git") return null;
+  for (let i = 0; i < rest.length; i += 1) {
+    const token = rest[i]!;
+    if (GIT_GLOBAL_OPTS_WITH_VALUE.has(token)) {
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("-")) continue;
+    return token;
+  }
+  return null;
+}
+
+/**
+ * Does this step declare a `git merge` of its own? The config-derived half of
+ * the pre-merge-refusal gate (see {@link runLoop}): only a step that actually
+ * *ran* a merge can have hit a refusal worth repairing, and only `shell` and
+ * `approval` steps carry commands. Everything else — an `approval` the human
+ * rejected before its action ran, a failing audit, a failing checks list — is
+ * not a merge attempt, whatever the parent's working tree happens to look like.
+ */
+export function stepRunsGitMerge(step: StepConfig): boolean {
+  const run =
+    step.type === "shell" || step.type === "approval" ? step.run : undefined;
+  return (run ?? []).some((line) => gitSubcommandOf(line) === "merge");
+}
 
 /**
  * Resolve the template fields of one step against `resolve`. Each primitive
@@ -661,6 +724,7 @@ const notWiredGit: GitPort = {
   merge: notWired("git.merge"),
   isParentClean: notWired("git.isParentClean"),
   isMergeInProgress: notWired("git.isMergeInProgress"),
+  withToleratedDirtyAside: notWired("git.withToleratedDirtyAside"),
   rebaseOnto: notWired("git.rebaseOnto"),
   revParseHead: notWired("git.revParseHead"),
   remoteOriginUrl: notWired("git.remoteOriginUrl"),
@@ -1219,18 +1283,45 @@ async function runTaskPipeline(
       `[orchestrator] step "${step.id}" falhou: ${result.reason ?? "(sem motivo)"}`,
     );
 
-    // --- Merge-conflict recovery (T-008) ---
-    // When the git policy is `rebase` and a merge is in progress on the parent
-    // (MERGE_HEAD present), the engine aborts the conflict, rebases the task
-    // branch onto the parent, and retries the merge once — all inside the mutex.
-    // If the rebase or retry fails, control falls through to the normal on_fail.
+    // --- Merge recovery (T-008) ---
+    // Under `on_merge_conflict: rebase` the engine repairs two shapes of merge
+    // failure, both inside the parent mutex. Anything else — and any repair
+    // that does not stick — falls through to the normal on_fail.
+    //
+    //  - **Content conflict.** Git got far enough to leave `MERGE_HEAD`: abort
+    //    it, rebase the task branch onto the parent, retry the merge once.
+    //  - **Pre-merge refusal.** Git refused *before* starting, because the
+    //    tolerated-dirty root `loopy.yml` (the exception `isParentClean`
+    //    carries — see `../git/worktree.ts`) sits on a path the branch writes.
+    //    No `MERGE_HEAD` is ever created, so the conflict shape above cannot
+    //    see it. Take that local edit out of the tree, retry, hand it back.
+    //    Gated by a conjunction: this step must have *attempted* a merge — it
+    //    declares a `git merge` in its own `run:` (config) and its action ran
+    //    at all (a refused Approval Gate fails before it) — AND the parent must
+    //    be in the state that produces the refusal (repo). Repo state alone
+    //    would be far too wide: it holds from the commit step until the merge,
+    //    so any failure in between — a refused gate above all — would be
+    //    "repaired" into the very merge nobody approved.
     if (
       config.policies.git.on_merge_conflict === "rebase" &&
-      deps.git !== undefined &&
-      (await deps.git.isMergeInProgress())
+      deps.git !== undefined
     ) {
-      const recovered = await guarded(deps.parentMutex, async () => {
-        const rebase = await deps.git!.rebaseOnto(
+      const git = deps.git;
+      const mergeMessage = `merge(${task.id}): ${task.title}`;
+
+      /** Retry the merge once; `false` (logged) when git still refuses. */
+      const retryMerge = async (): Promise<boolean> => {
+        const retry = await git.merge(task.branch, { message: mergeMessage });
+        if (retry.ok) return true;
+        deps.logger.error(
+          `[orchestrator] retry merge de "${task.branch}" falhou — escalando`,
+        );
+        return false;
+      };
+
+      /** Rebase the task branch onto the parent, then retry the merge once. */
+      const rebaseAndRetry = async (): Promise<boolean> => {
+        const rebase = await git.rebaseOnto(
           worktreePath,
           config.workspace.parent_branch,
         );
@@ -1243,19 +1334,37 @@ async function runTaskPipeline(
         deps.logger.info(
           `[orchestrator] rebase ok — re-tentando merge de "${task.branch}"`,
         );
-        const retry = await deps.git!.merge(task.branch, {
-          message: `merge(${task.id}): ${task.title}`,
-        });
-        if (retry.ok) return true;
-        deps.logger.error(
-          `[orchestrator] retry merge de "${task.branch}" falhou — escalando`,
+        return retryMerge();
+      };
+
+      const inMerge = await git.isMergeInProgress();
+      // Did *this* step attempt a merge? It has to declare one (config) and it
+      // has to have actually run it: a refused Approval Gate fails before its
+      // action, and the merge it declares is precisely the one the human said
+      // no to.
+      const attemptedMerge =
+        stepRunsGitMerge(step) && result.approvalRejected !== true;
+      const recovered = await guarded(deps.parentMutex, async () => {
+        if (inMerge) return rebaseAndRetry();
+        // No MERGE_HEAD: the merge may never have started. Repair only what
+        // this step itself tried — a step with no `git merge` in its `run:`
+        // never reaches a merge here, so a rejected approval or an unrelated
+        // failure keeps its normal `on_fail`. The port is the second half of
+        // the gate: it resolves `null`, leaving the body unrun, unless the
+        // pre-merge refusal is exactly the state the parent is in. With the
+        // path clear, a content conflict surfacing on the retry still gets the
+        // rebase treatment.
+        if (!attemptedMerge) return false;
+        const aside = await git.withToleratedDirtyAside(
+          task.branch,
+          async () => (await retryMerge()) || rebaseAndRetry(),
         );
-        return false;
+        return aside ?? false;
       });
 
       if (recovered) {
         deps.logger.info(
-          `[orchestrator] step "${step.id}" recuperado via rebase`,
+          `[orchestrator] step "${step.id}" recuperado (${inMerge ? "rebase" : "merge com o loopy.yml local fora do caminho"})`,
         );
         pc = resolveNextPc(step);
         continue;

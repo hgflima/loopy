@@ -54,6 +54,7 @@ function gitStub(over: Partial<GitPort> = {}): GitPort {
     merge: async () => ({ ok: true, conflict: false }),
     isParentClean: async () => true,
     isMergeInProgress: async () => false,
+    withToleratedDirtyAside: async () => null,
     rebaseOnto: async () => ({ ok: true, conflict: false }),
     revParseHead: async () => "base0000",
     remoteOriginUrl: async () => null,

@@ -132,6 +132,13 @@ export interface StepResult {
   readonly report?: ChecksReport;
   /** Free-form textual output (e.g. an agent turn's text / verdict line). */
   readonly output?: string;
+  /**
+   * The human refused an Approval Gate, so the step's `run:` action never ran.
+   * A failure of the *decision*, not of a command — the distinction the merge
+   * recovery keys on, since a refused gate must never be repaired into the very
+   * merge the human just declined.
+   */
+  readonly approvalRejected?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -582,6 +589,21 @@ export interface GitPort {
   isParentClean(): Promise<boolean>;
   /** `true` when a merge is in progress (`MERGE_HEAD` present on the parent). */
   isMergeInProgress(): Promise<boolean>;
+  /**
+   * Run `fn` with the parent's tolerated-dirty root `loopy.yml` (the one
+   * exception `isParentClean` carries) moved out of the working tree, then put
+   * it back byte-for-byte — including when `fn` throws.
+   *
+   * Applies **only** when that file is both tolerated-dirty on the parent and
+   * written by `branch`. That intersection is exactly the state in which git
+   * refuses a merge *before* starting it ("local changes would be overwritten
+   * by merge"), leaving no `MERGE_HEAD` for {@link GitPort.isMergeInProgress}
+   * to detect. Outside it, resolves to `null` without running `fn`.
+   */
+  withToleratedDirtyAside<T>(
+    branch: string,
+    fn: () => Promise<T>,
+  ): Promise<T | null>;
   /**
    * Rebase the branch checked out in `worktreePath` onto `parentBranch`.
    * Aborts any in-progress merge on the parent first. On rebase conflict,
