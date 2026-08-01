@@ -18,8 +18,12 @@ Depois que a skill salvar o `loopy.yml`, complete o setup do repo:
 3. **Validação final**: rode `npx -y @hgflima/loopy@latest . --dry-run` e
    reporte tasks encontradas, camadas do DAG e concorrência efetiva.
 4. **Sugira o commit**: liste os arquivos que precisam estar commitados para o
-   run (o motor exige parent limpo): `loopy.yml`, `scripts/loopy-cleanup.sh`,
-   `.gitignore`, os inputs da change, lockfile, harness. Proponha a mensagem
-   de commit, mas **deixe o usuário decidir** — não commite sem pedido.
+   run (o motor exige parent limpo): `scripts/loopy-cleanup.sh`, `.gitignore`,
+   os inputs da change, lockfile, harness. O `loopy.yml` **da raiz** é a única
+   exceção — o motor aceita o parent quando ele é a *única* mudança pendente e
+   está não rastreado ou modificado sem stage; inclua-o no commit proposto
+   mesmo assim (é o config da change), mas não o trate como pré-requisito.
+   Proponha a mensagem de commit, mas **deixe o usuário decidir** — não commite
+   sem pedido.
 
 Encerre indicando o próximo passo: `/devy:loop:run` para executar.
