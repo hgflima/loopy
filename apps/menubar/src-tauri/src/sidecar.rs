@@ -16,8 +16,8 @@ use tauri::{AppHandle, Emitter, Manager};
 /// The target triple is embedded at compile-time by `tauri_build::build()`.
 pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
     let triple = env!("TAURI_ENV_TARGET_TRIPLE");
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve executable path: {e}"))?;
+    let exe =
+        std::env::current_exe().map_err(|e| format!("Failed to resolve executable path: {e}"))?;
     let dir = exe
         .parent()
         .ok_or_else(|| "Executable has no parent directory".to_string())?;
@@ -33,13 +33,8 @@ pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
     // `tauri build` bundles `externalBin: ["bin/loopy"]` it STRIPS both the
     // `bin/` prefix and the `-<triple>` suffix, placing it flat beside the main
     // executable as `Contents/MacOS/loopy`. `tauri dev` keeps the triple. Try
-    // every layout and take the first that exists.
-    let candidates = [
-        dir.join("loopy"),                       // bundled .app (Contents/MacOS/loopy)
-        dir.join(format!("loopy-{triple}")),     // dev / flat, triple kept
-        dir.join(format!("bin/loopy-{triple}")), // dev with bin/ prefix
-        dir.join("bin/loopy"),                   // flat bin/, triple stripped
-    ];
+    // every layout and take the first that exists (see sidecar_candidates).
+    let candidates = sidecar_candidates(dir, triple, std::env::consts::EXE_SUFFIX);
 
     for candidate in &candidates {
         if is_executable_file(candidate) {
@@ -59,7 +54,22 @@ pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    Err(format!("No runnable sidecar binary found. Searched:\n{searched}"))
+    Err(format!(
+        "No runnable sidecar binary found. Searched:\n{searched}"
+    ))
+}
+
+/// Every layout the sidecar may have, in lookup order, each with `exe_suffix`
+/// appended (`std::env::consts::EXE_SUFFIX`: `".exe"` on Windows, `""` elsewhere).
+///
+/// Pure (no I/O) so the Windows naming is testable on any host.
+fn sidecar_candidates(dir: &Path, triple: &str, exe_suffix: &str) -> Vec<PathBuf> {
+    vec![
+        dir.join(format!("loopy{exe_suffix}")), // bundled .app (Contents/MacOS/loopy)
+        dir.join(format!("loopy-{triple}{exe_suffix}")), // dev / flat, triple kept
+        dir.join(format!("bin/loopy-{triple}{exe_suffix}")), // dev with bin/ prefix
+        dir.join(format!("bin/loopy{exe_suffix}")), // flat bin/, triple stripped
+    ]
 }
 
 /// Whether `path` is a regular, non-empty file with an executable bit set.
@@ -458,10 +468,7 @@ mod tests {
     fn ndjson_split_across_chunks() {
         let mut f = LineFramer::new();
         assert!(f.feed(b"{\"type\":\"run").is_empty());
-        assert_eq!(
-            f.feed(b"_started\"}\n"),
-            vec!["{\"type\":\"run_started\"}"]
-        );
+        assert_eq!(f.feed(b"_started\"}\n"), vec!["{\"type\":\"run_started\"}"]);
     }
 
     // -- linearity invariant (kills the O(N²) framer cliff, T-004) -----------
@@ -605,6 +612,38 @@ mod tests {
         let result = is_executable_file(&p);
         let _ = std::fs::remove_file(&p);
         assert!(result, "mode-755 non-empty file must be accepted");
+    }
+
+    // -- sidecar_candidates tests -------------------------------------------
+
+    const TRIPLE: &str = "x86_64-pc-windows-msvc";
+
+    #[test]
+    fn candidates_without_suffix_match_unix_layouts() {
+        let dir = Path::new("/app");
+        assert_eq!(
+            sidecar_candidates(dir, TRIPLE, ""),
+            vec![
+                dir.join("loopy"),
+                dir.join(format!("loopy-{TRIPLE}")),
+                dir.join(format!("bin/loopy-{TRIPLE}")),
+                dir.join("bin/loopy"),
+            ]
+        );
+    }
+
+    #[test]
+    fn candidates_with_exe_suffix_append_it_to_every_layout() {
+        let dir = Path::new("/app");
+        assert_eq!(
+            sidecar_candidates(dir, TRIPLE, ".exe"),
+            vec![
+                dir.join("loopy.exe"),
+                dir.join(format!("loopy-{TRIPLE}.exe")),
+                dir.join(format!("bin/loopy-{TRIPLE}.exe")),
+                dir.join("bin/loopy.exe"),
+            ]
+        );
     }
 
     #[test]
