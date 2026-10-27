@@ -3,6 +3,9 @@
 mod changes;
 mod config;
 mod interview_process;
+// Parsing do argv da GUI (E2); o uso (single-instance + take_launch_args) é T-012.
+#[allow(dead_code)]
+mod launch_args;
 #[cfg(target_os = "macos")]
 mod panel;
 mod project_fs;
