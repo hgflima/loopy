@@ -1,0 +1,109 @@
+name: ci
+
+# Gate de PR (C-0020, T-002): suítes TS (motor + menubar), testes Rust da GUI,
+# lint dos próprios workflows e a guarda de portabilidade entre repositórios (E11).
+# Toolchain via mise lendo o `mise.toml` da raiz (E7) — a mesma do dev.
+on:
+  pull_request:
+  push:
+    branches: ["**"]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  ts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: jdx/mise-action@v5
+
+      - run: node --version && npm --version
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm test
+
+      # O `npm test` da raiz só cobre `tests/**`; o menubar tem a própria suíte.
+      - run: npm test -w apps/menubar
+
+  rust:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # Bibliotecas de sistema do Tauri v2 no Linux (não vêm do mise) — mesma
+      # lista de docs/how-to/plataformas.md §2.
+      - name: Instalar libs de sistema do Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: rust
+
+      # O build.rs cria o placeholder do sidecar e, sem a feature
+      # `custom-protocol`, o Tauri usa o devUrl — nem `bun build` nem `vite build`.
+      - run: cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml
+
+  actionlint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+    steps:
+      - uses: actions/checkout@v7
+
+      # Só o mise; o actionlint é instalado pinado, sem a toolchain do mise.toml.
+      - uses: jdx/mise-action@v5
+        with:
+          install: false
+
+      - name: actionlint
+        run: |
+          mise install "actionlint@${ACTIONLINT_VERSION}"
+          mise exec "actionlint@${ACTIONLINT_VERSION}" -- actionlint -color
+
+  portabilidade:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # E11: nenhum owner/repo literal em workflows, scripts de release ou no guia
+      # de instalação — o repo vem de `github.repository` / `--repo`. O padrão é
+      # montado em partes para que este arquivo não contenha o literal que procura.
+      # Caminhos ainda inexistentes são ignorados (nascem em tasks posteriores).
+      - name: Guarda de portabilidade (E11)
+        run: |
+          owner="hgflima"
+          pattern="${owner}/loopy"
+          paths=()
+          for p in .github scripts/release docs/how-to/instalar.md; do
+            if [ -e "$p" ]; then paths+=("$p"); fi
+          done
+          if [ "${#paths[@]}" -eq 0 ]; then
+            echo "nenhum caminho guardado existe — nada a checar"
+            exit 0
+          fi
+          if grep -rnF -- "$pattern" "${paths[@]}"; then
+            echo "::error::'$pattern' literal encontrado — use \${{ github.repository }} ou --repo (E11)"
+            exit 1
+          fi
+          echo "ok: nenhum '$pattern' literal em ${paths[*]}"
