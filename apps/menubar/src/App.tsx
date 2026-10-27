@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { isTauri, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { BridgeState } from "./state/store-bridge";
 import type { TaskStatus } from "loopy/tui/store";
 import { ViewSwitcher } from "./panes/ViewSwitcher";
@@ -18,6 +19,12 @@ import {
   reorderStep as reorderStepPure,
   orphanRefs as computeOrphanRefs,
 } from "./config/pipeline-edit";
+import {
+  normalizeDir,
+  planLaunchArgs,
+  type LaunchArgs,
+  type LaunchArgsSource,
+} from "./state/launch-args";
 import { Pill, Button, type Tone } from "./ui";
 // Brand wordmark (pink loop + text). Dark text for light surfaces, white text
 // for dark surfaces — the visible one is chosen by theme in App.css.
@@ -37,11 +44,22 @@ export interface LaunchFlags {
   verbose: boolean;
 }
 
+/**
+ * Launch argv from the Rust side (C-0020 / E2+E3): the initial argv is *pulled*
+ * once (`take_launch_args`), later instances are *pushed* (`launch-args`).
+ */
+const TAURI_LAUNCH_ARGS: LaunchArgsSource = {
+  take: () => invoke<LaunchArgs | null>("take_launch_args"),
+  subscribe: (onArgs) => listen<LaunchArgs>("launch-args", (e) => onArgs(e.payload)),
+};
+
 interface AppProps {
   state: BridgeState;
   /** `dir` is the target repo; `flags` are CLI-only (never written to loopy.yml). */
   onStartRun: (dir: string, flags: LaunchFlags) => void;
   onApprovalDecision?: (requestId: string, approved: boolean) => void;
+  /** Where launch argv comes from; defaults to Tauri (none in dev:web). */
+  launchArgsSource?: LaunchArgsSource | null;
 }
 
 /** Run-level status → the header pill tone + label. */
@@ -61,7 +79,12 @@ function countByStatus(tasks: readonly { status: TaskStatus }[]) {
   return { done, running, total: tasks.length };
 }
 
-function App({ state, onStartRun, onApprovalDecision }: AppProps) {
+function App({
+  state,
+  onStartRun,
+  onApprovalDecision,
+  launchArgsSource = IS_TAURI ? TAURI_LAUNCH_ARGS : null,
+}: AppProps) {
   const { store, ui } = state;
   const isIdle = ui.runStatus === "idle";
   const isRunning = ui.runStatus === "running";
@@ -96,52 +119,97 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
   // --- Dirty guard confirm state (T-014/R10) ------------------------------
   const [dirtyConfirm, setDirtyConfirm] = useState<string | null>(null);
 
-  // Load persisted dir on mount (same source as the old LaunchConfig)
+  // --- Launch argv (C-0020 / T-013) --------------------------------------
+  // `--run` waiting for its dir's loopy.yml to load (`loaded`), then canStart.
+  const [pendingStart, setPendingStart] = useState<{ dir: string; loaded: boolean } | null>(null);
+  // Argv received while a Run is active: held (with `run` dropped) until it ends.
+  const [deferredLaunch, setDeferredLaunch] = useState<LaunchArgs | null>(null);
+  const [launchWarning, setLaunchWarning] = useState<string | null>(null);
+
+  // Load persisted dir on mount (same source as the old LaunchConfig), then
+  // apply the initial launch argv on top of it.
   useEffect(() => {
+    let persisted: Promise<void>;
     if (!IS_TAURI) {
       // dev:web — useConfigDraft auto-loads the sample
       setDir("/sample");
-      return;
+      persisted = Promise.resolve();
+    } else {
+      persisted = invoke<{ dir: string; yes?: boolean; task_id?: string; verbose?: boolean }>("load_launch_config")
+        .then((cfg) => {
+          if (cfg.yes) setFlagYes(cfg.yes);
+          if (cfg.task_id) setFlagTaskId(cfg.task_id);
+          if (cfg.verbose) setFlagVerbose(cfg.verbose);
+          if (cfg.dir) {
+            setDir(cfg.dir);
+            return configDraft.load(cfg.dir);
+          }
+        })
+        .catch(() => { /* defaults are fine */ });
     }
-    invoke<{ dir: string; yes?: boolean; task_id?: string; verbose?: boolean }>("load_launch_config")
-      .then((cfg) => {
-        if (cfg.dir) {
-          setDir(cfg.dir);
-          void configDraft.load(cfg.dir);
-        }
-        if (cfg.yes) setFlagYes(cfg.yes);
-        if (cfg.task_id) setFlagTaskId(cfg.task_id);
-        if (cfg.verbose) setFlagVerbose(cfg.verbose);
+    if (!launchArgsSource) return;
+    // Not cancelled on cleanup: `take` hands the argv out once, so under
+    // StrictMode's double mount the first effect is the one that gets it.
+    void persisted
+      .then(() => launchArgsSource.take())
+      .then((args) => {
+        if (args) applyLaunchArgsRef.current(args);
       })
-      .catch(() => { /* defaults are fine */ });
+      .catch(() => { /* launched bare / not in Tauri */ });
   }, []);
 
-  // Reload draft when dir changes (with dirty guard)
-  const handleDirChange = useCallback(
+  // Point the GUI at a dir and load its draft; a pending `--run` for that dir
+  // learns the load finished.
+  const loadDir = useCallback(
+    (newDir: string) => {
+      setDir(newDir);
+      const target = newDir.trim();
+      if (!target) return;
+      void Promise.resolve(configDraft.load(target)).then(() =>
+        setPendingStart((p) =>
+          p && normalizeDir(p.dir) === normalizeDir(target) ? { ...p, loaded: true } : p,
+        ),
+      );
+    },
+    [configDraft.load],
+  );
+
+  // Switch dir through the dirty guard (shared by the user and the launch argv).
+  const requestDir = useCallback(
     (newDir: string) => {
       if (configDraft.dirty) {
         setDirtyConfirm(newDir);
         return;
       }
-      setDir(newDir);
-      if (newDir.trim()) {
-        void configDraft.load(newDir.trim());
-      }
+      loadDir(newDir);
     },
-    [configDraft.dirty, configDraft.load],
+    [configDraft.dirty, loadDir],
+  );
+
+  // Reload draft when the user changes dir (with dirty guard). A manual change
+  // supersedes any `--run` still waiting.
+  const handleDirChange = useCallback(
+    (newDir: string) => {
+      setPendingStart(null);
+      requestDir(newDir);
+    },
+    [requestDir],
   );
 
   // Dirty guard resolution — shared "apply pending dir" logic
   const applyPendingDir = useCallback(
     (pendingDir: string) => {
       setDirtyConfirm(null);
-      setDir(pendingDir);
-      if (pendingDir.trim()) {
-        void configDraft.load(pendingDir.trim());
-      }
+      loadDir(pendingDir);
     },
-    [configDraft.load],
+    [loadDir],
   );
+
+  // Cancel keeps the current dir and drops a `--run` waiting on the switch.
+  const handleDirtyConfirmCancel = useCallback(() => {
+    setDirtyConfirm(null);
+    setPendingStart(null);
+  }, []);
 
   const handleDirtyConfirmSave = useCallback(async () => {
     if (!dirtyConfirm) return;
@@ -183,6 +251,79 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
     setPopoverOpen(false);
     onStartRun(dir.trim(), flags);
   }, [canStart, dir, configDraft.dirty, configDraft.save, flagYes, flagTaskId, flagVerbose, onStartRun]);
+
+  // Apply a launch argv (planner in state/launch-args.ts — pure, AD-6).
+  const applyLaunchArgs = useCallback(
+    (args: LaunchArgs) => {
+      let switched = false;
+      for (const action of planLaunchArgs(args, { currentDir: dir, isRunning })) {
+        switch (action.kind) {
+          case "setFlags":
+            if (action.flags.yes) setFlagYes(true);
+            if (action.flags.verbose) setFlagVerbose(true);
+            if (action.flags.taskId) setFlagTaskId(action.flags.taskId);
+            break;
+          case "switchDir":
+            switched = true;
+            setPendingStart(null);
+            requestDir(action.dir);
+            break;
+          case "startAfterLoad":
+            // Without a switch, the current dir is already loaded.
+            setPendingStart({ dir: action.dir, loaded: !switched });
+            break;
+          case "warnRunActive":
+            setDeferredLaunch(action.deferred);
+            setLaunchWarning(
+              (action.dir
+                ? `Um Run está em andamento — ${action.dir} será aberto quando ele terminar.`
+                : "Um Run está em andamento — as flags de launch serão aplicadas quando ele terminar.") +
+                (action.runIgnored ? " O --run foi ignorado: um Run por vez." : ""),
+            );
+            break;
+        }
+      }
+    },
+    [dir, isRunning, requestDir],
+  );
+  // Latest closure for the mount-time `take` and the `launch-args` listener.
+  const applyLaunchArgsRef = useRef(applyLaunchArgs);
+  applyLaunchArgsRef.current = applyLaunchArgs;
+
+  // Later instances (E3) forward their argv as the `launch-args` event.
+  useEffect(() => {
+    if (!launchArgsSource) return;
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+    launchArgsSource
+      .subscribe((args) => applyLaunchArgsRef.current(args))
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => { /* not in Tauri */ });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [launchArgsSource]);
+
+  // `--run` fires only after its dir's loopy.yml loaded, and only if it can start.
+  useEffect(() => {
+    if (!pendingStart?.loaded) return;
+    setPendingStart(null);
+    if (!isRunning && canStart && normalizeDir(dir) === normalizeDir(pendingStart.dir)) {
+      void handleLaunch();
+    }
+  }, [pendingStart, isRunning, canStart, dir, handleLaunch]);
+
+  // The Run ended: apply what arrived while it was active (never a `--run`).
+  useEffect(() => {
+    if (isRunning || !deferredLaunch) return;
+    setDeferredLaunch(null);
+    setLaunchWarning(null);
+    applyLaunchArgsRef.current(deferredLaunch);
+  }, [isRunning, deferredLaunch]);
 
   // The active store depends on run status
   const activeStore = isIdle && idleStore ? idleStore : store;
@@ -400,6 +541,17 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
 
       <Banner ui={ui} />
 
+      {launchWarning && (
+        <section className="banner banner--blocked" role="status" data-testid="launch-warning">
+          <header className="banner__headline">
+            <span className="t-title">{launchWarning}</span>
+            <Button variant="ghost" data-testid="launch-warning-dismiss" onClick={() => setLaunchWarning(null)}>
+              OK
+            </Button>
+          </header>
+        </section>
+      )}
+
       {/* Dirty guard confirm dialog (R10) */}
       {dirtyConfirm && (
         <div className="dirty-confirm-overlay" data-testid="dirty-confirm">
@@ -412,7 +564,7 @@ function App({ state, onStartRun, onApprovalDecision }: AppProps) {
               <Button variant="secondary" data-testid="dirty-discard" onClick={handleDirtyConfirmDiscard}>
                 Descartar
               </Button>
-              <Button variant="ghost" data-testid="dirty-cancel" onClick={() => setDirtyConfirm(null)}>
+              <Button variant="ghost" data-testid="dirty-cancel" onClick={handleDirtyConfirmCancel}>
                 Cancelar
               </Button>
             </div>
