@@ -3,8 +3,6 @@
 mod changes;
 mod config;
 mod interview_process;
-// Parsing do argv da GUI (E2); o uso (single-instance + take_launch_args) é T-012.
-#[allow(dead_code)]
 mod launch_args;
 #[cfg(target_os = "macos")]
 mod panel;
@@ -15,6 +13,7 @@ mod telemetry;
 use changes::{discard_change, read_changes};
 use config::{load_launch_config, save_launch_config};
 use interview_process::InterviewState;
+use launch_args::{parse_launch_args, LaunchArgs};
 use project_fs::{probe_agent, read_backlog, read_capabilities_cache, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
 use telemetry::{
@@ -22,10 +21,12 @@ use telemetry::{
     read_change_insights, read_change_list, read_step_insights, read_task_insights,
     telemetry_db_exists,
 };
+use std::path::Path;
+use std::sync::Mutex;
 use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -222,6 +223,50 @@ fn log_error(source: String, message: String, stack: String, component_stack: St
 }
 
 // ---------------------------------------------------------------------------
+// Launch argv (C-0020 / E2-E3)
+// ---------------------------------------------------------------------------
+
+/// The initial launch argv, parsed in `setup` and handed to the webview once.
+///
+/// *Pull*, not *push*: an `emit` from `setup` fires before the webview has a
+/// listener and is silently lost, so the webview asks via [`take_launch_args`]
+/// when it mounts. Only a second instance (E3) arrives as the `launch-args` event.
+struct LaunchArgsState(Mutex<Option<LaunchArgs>>);
+
+/// Hand the initial launch argv to the webview, once (later calls get `None`).
+/// `None` also means "launched bare" — today's behaviour, nothing to apply.
+#[tauri::command]
+fn take_launch_args(state: tauri::State<'_, LaunchArgsState>) -> Option<LaunchArgs> {
+    state.0.lock().ok().and_then(|mut slot| slot.take())
+}
+
+/// Parse a launch argv into what the webview should apply. A bare launch (no
+/// dir, no flags) is `None`, as is a parse error — which is logged, never fatal
+/// (AD-5): the app still comes up, it just doesn't switch project.
+fn launch_args_to_apply(argv: &[String], cwd: &Path) -> Option<LaunchArgs> {
+    match parse_launch_args(argv, cwd) {
+        Ok(args) if args == LaunchArgs::default() => None,
+        Ok(args) => Some(args),
+        Err(e) => {
+            eprintln!("[launch-args] argv ignorado: {e}");
+            None
+        }
+    }
+}
+
+/// Second instance (E3): the plugin hands us its argv and the *caller's* cwd.
+/// Forward what it asked for to the `main` webview and bring the window up —
+/// on a parse error or a bare launch, only the focus happens.
+fn on_second_instance(app: &tauri::AppHandle, argv: Vec<String>, cwd: String) {
+    if let Some(args) = launch_args_to_apply(&argv, Path::new(&cwd)) {
+        if let Err(e) = app.emit_to("main", "launch-args", args) {
+            eprintln!("[launch-args] falha ao emitir: {e}");
+        }
+    }
+    let _ = surface_main_window(app);
+}
+
+// ---------------------------------------------------------------------------
 // Quit (shares the Run-active guard with Cmd+Q — see quit_if_confirmed)
 // ---------------------------------------------------------------------------
 
@@ -240,6 +285,9 @@ fn quit_app(app: tauri::AppHandle) {
 fn main() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
+        // Single instance (E3) must be the FIRST plugin registered: a second
+        // launch exits here, forwarding its argv + cwd to the live instance.
+        .plugin(tauri_plugin_single_instance::init(on_second_instance))
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -257,6 +305,13 @@ fn main() {
         .manage(SidecarState::new())
         .manage(InterviewState::new())
         .setup(|app| {
+            // Initial launch argv (E2), kept for the webview to pull on mount.
+            let argv: Vec<String> = std::env::args().collect();
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let initial = launch_args_to_apply(&argv, &cwd);
+            let surface_on_launch = initial.is_some();
+            app.manage(LaunchArgsState(Mutex::new(initial)));
+
             // Start as accessory on macOS (no Dock icon, menu bar only)
             #[cfg(target_os = "macos")]
             {
@@ -363,6 +418,12 @@ fn main() {
             #[cfg(target_os = "linux")]
             surface_main_window(app.handle())?;
 
+            // Launched with a dir or flags (`loopy open`): show the window the
+            // webview will apply them to. Bare launch keeps today's tray start.
+            if surface_on_launch {
+                surface_main_window(app.handle())?;
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -405,6 +466,8 @@ fn main() {
             insights_set_change_status,
             log_error,
             quit_app,
+            // Launch argv (C-0020 / E2): the webview pulls the initial argv once.
+            take_launch_args,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")
@@ -568,6 +631,47 @@ mod tests {
         // A Run is active → the verdict is exactly what the dialog returns.
         assert!(confirm_quit(true, || true), "confirmed quit must proceed");
         assert!(!confirm_quit(true, || false), "cancelled quit must be blocked");
+    }
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        std::iter::once("Loopy")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    // A bare launch is today's behaviour: nothing to apply, window stays hidden.
+    #[test]
+    fn launch_args_bare_launch_is_none() {
+        let cwd = std::env::temp_dir();
+        assert_eq!(launch_args_to_apply(&argv(&[]), &cwd), None);
+        assert_eq!(launch_args_to_apply(&argv(&["-psn_0_123"]), &cwd), None);
+    }
+
+    #[test]
+    fn launch_args_dir_resolves_against_given_cwd() {
+        let cwd = std::env::temp_dir().join("caller");
+        let got = launch_args_to_apply(&argv(&["proj", "--run"]), &cwd).expect("args");
+        assert_eq!(
+            got.dir,
+            Some(cwd.join("proj").to_string_lossy().into_owned())
+        );
+        assert!(got.run);
+    }
+
+    #[test]
+    fn launch_args_flags_only_is_applied() {
+        let got = launch_args_to_apply(&argv(&["--yes"]), &std::env::temp_dir()).expect("args");
+        assert!(got.yes);
+        assert_eq!(got.dir, None);
+    }
+
+    // A parse error never takes the app down: it degrades to "nothing to apply".
+    #[test]
+    fn launch_args_parse_error_is_none() {
+        let cwd = std::env::temp_dir();
+        assert_eq!(launch_args_to_apply(&argv(&["--bogus"]), &cwd), None);
+        assert_eq!(launch_args_to_apply(&argv(&["--task"]), &cwd), None);
     }
 
     // About window: closing it reverts to Accessory only when the main window is

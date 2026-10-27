@@ -32,6 +32,10 @@ tauri-plugin-notification = "2"
 # to the two loopy destinations via `opener:allow-open-url` (capabilities). Pinned
 # to the current release confirmed against crates.io (C-0012, source-driven).
 tauri-plugin-opener = "2.5.4"
+# Single instance (C-0020 / E3): a second launch (`loopy open <dir>` with the app
+# already up) forwards its argv + cwd to the live instance instead of opening a
+# second GUI. Official Tauri v2 plugin; must be the FIRST plugin registered.
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # SELECT-only reader of the engine's telemetry SQLite (`<dir>/.db/telemetry.db`,
