@@ -24,7 +24,7 @@
 
 ## Fase 1 — Linha de base e gate de CI
 
-- [ ] T-001: Linha de base — commitar a portabilidade já feita e alinhar a versão do menubar
+- [x] T-001: Linha de base — commitar a portabilidade já feita e alinhar a versão do menubar
     O trabalho de portabilidade da sessão da spec está na working tree, sem commit:
     `mise.toml`; `apps/menubar/scripts/build-sidecar.mjs` (cross-platform, já lê
     `TAURI_ENV_TARGET_TRIPLE`) e `install-linux-desktop.mjs`; o script `build:sidecar`
@@ -48,7 +48,7 @@
     Size: M
     Risk: L
 
-- [ ] T-002: `ci.yml` — gate de PR com suítes TS, `cargo test`, `actionlint` e guarda de portabilidade
+- [x] T-002: `ci.yml` — gate de PR com suítes TS, `cargo test`, `actionlint` e guarda de portabilidade
     Novo `.github/workflows/ci.yml`, disparado em `pull_request` e `push` (todas as
     branches). Toolchain via `jdx/mise-action` lendo o `mise.toml` da raiz (E7); libs de
     sistema do Tauri via `apt` (a lista está em `docs/how-to/plataformas.md` §2 —
@@ -75,7 +75,7 @@
 
 ## Fase 2 — Release: fundações (alto risco primeiro)
 
-- [ ] T-003: GUI compila no Windows — placeholder `.exe` no `build.rs` (W7) e `EXE_SUFFIX` no `sidecar.rs` (W8)
+- [x] T-003: GUI compila no Windows — placeholder `.exe` no `build.rs` (W7) e `EXE_SUFFIX` no `sidecar.rs` (W8)
     Mínimo para o job Windows do release gerar o NSIS (escopo: compilar, não rodar).
     `apps/menubar/src-tauri/build.rs`: o placeholder hoje é `bin/loopy-<triple>`; quando
     `CARGO_CFG_TARGET_OS == "windows"` o `tauri_build` espera `bin/loopy-<triple>.exe`.
@@ -113,7 +113,7 @@
     Size: S
     Risk: M
 
-- [ ] T-005: Spike + config do semantic-release com sincronização de versão (E4)
+- [x] T-005: Spike + config do semantic-release com sincronização de versão (E4)
     Prova, localmente e sem efeitos, o cálculo de versão do qual o `release.yml` (T-008)
     vai depender. Adicione como devDependencies da raiz **somente** `semantic-release`,
     `@semantic-release/{commit-analyzer,release-notes-generator,changelog,github,git,exec}`
@@ -140,7 +140,7 @@
     Size: M
     Risk: H
 
-- [ ] T-006: `instructions_install.txt` — template versionado + renderizador puro (E9)
+- [x] T-006: `instructions_install.txt` — template versionado + renderizador puro (E9)
     `scripts/release/instructions_install.template.txt`: um **prompt autocontido para um
     modelo agêntico** instalar o loopy numa máquina: detectar SO/arch; pré-requisitos
     (Node ≥22.13; no Linux `libfuse2` para o AppImage, checar antes de instalar);
@@ -171,7 +171,7 @@
     Size: M
     Risk: M
 
-- [ ] T-007: `set-repo.mjs` — apontar `repository`/`bugs`/`homepage` para outro `owner/repo` (E11)
+- [x] T-007: `set-repo.mjs` — apontar `repository`/`bugs`/`homepage` para outro `owner/repo` (E11)
     `scripts/release/set-repo.mjs <owner/repo>`: reescreve os campos `repository.url`,
     `bugs.url` e `homepage` do `package.json` da raiz para o repo dado, preservando o
     resto do arquivo (ordem de chaves, indentação de 2 espaços, newline final). Lógica
@@ -225,7 +225,7 @@
 
 ## Fase 4 — `loopy open` e a GUI que o recebe
 
-- [ ] T-009: `resolveApp` — resolução pura do executável da GUI (E1)
+- [x] T-009: `resolveApp` — resolução pura do executável da GUI (E1)
     `src/open/resolve-app.ts` (função pura sobre `(platform, env, selfDir, home,
     exists)` — a assinatura está no "Code Style" da spec): candidatos em ordem —
     (1) `env.LOOPY_APP`; (2) GUI **irmã** do executável corrente (`selfDir`: o caso do
@@ -251,7 +251,7 @@
     Size: S
     Risk: L
 
-- [ ] T-010: Subcomando `loopy open [dir] [flags]` — spawn destacado da GUI (D1, E2)
+- [x] T-010: Subcomando `loopy open [dir] [flags]` — spawn destacado da GUI (D1, E2)
     Registre `open` em `src/index.ts` (commander) no mesmo padrão dos subcomandos
     existentes (`probe-agent`, `interview`): `loopy open [dir] [--task <id>] [--yes]
     [--verbose] [--run]`. `dir` é resolvido para **absoluto** contra o cwd de quem chamou;
