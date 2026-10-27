@@ -1,8 +1,8 @@
 /**
  * `loopy open` — find and launch the Loopy GUI (E1/E2).
  *
- * Re-exports the pure resolution of the GUI executable; the detached spawn
- * (I/O) lives beside it.
+ * Re-exports the pure resolution of the GUI executable and the thin I/O shell
+ * that builds the argv and spawns the GUI detached.
  */
 export type {
   AppSource,
@@ -10,3 +10,5 @@ export type {
   ResolveAppResult,
 } from "./resolve-app";
 export { resolveApp } from "./resolve-app";
+export type { LaunchApp, LaunchResult, LocateApp, OpenRequest } from "./launch";
+export { buildGuiArgv, launchDetached, locateApp } from "./launch";

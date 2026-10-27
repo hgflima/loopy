@@ -8,6 +8,7 @@ O comando `loopy` e todas as suas flags. Derivado de `src/index.ts`
 ```
 loopy [dir] [opções]
 loopy probe-agent <nome> [--json] [opções]
+loopy open [dir] [--task <id>] [--yes] [--verbose] [--run]
 loopy verdict set --task <id> --pass|--fail [dir]
 loopy verdict clear --task <id> [dir]
 loopy bug add --task <id> --severity <nível> --title <t> [dir]
@@ -120,6 +121,57 @@ $ loopy probe-agent opencode --model zai-coding-plan/glm-5.2
 modes: build, plan
 efforts: high, max
 ```
+
+### `open`
+
+```
+loopy open [dir] [--task <id>] [--yes] [--verbose] [--run]
+```
+
+Abre a GUI do loopy instalada, no estilo `code .`. Acha o executável da GUI (ordem
+abaixo) e o lança **destacado** do terminal — o comando retorna na hora e a GUI
+segue aberta. O lançamento é um `spawn` direto, **sem shell**; no macOS é o binário
+em `Loopy.app/Contents/MacOS/` (não `open -a`, que engoliria os argumentos numa
+instância já aberta).
+
+| Argumento / flag  | Descrição                                                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[dir]`           | Projeto a abrir. Relativo é resolvido para **absoluto** contra o cwd de quem chamou. **Sem `dir`**, só abre/foca o app, sem trocar de projeto. |
+| `-t, --task <id>` | Pré-preenche a task do launch na GUI.                                                                                                          |
+| `-y, --yes`       | Pré-preenche a auto-aprovação dos Gates de Aprovação.                                                                                          |
+| `--verbose`       | Pré-preenche o log de tráfego ACP.                                                                                                             |
+| `--run`           | Inicia o Run assim que o projeto carregar. **Sem `--run`, abrir nunca dispara um Run.**                                                        |
+
+A GUI recebe o argv `[dir] [--task <id>] [--yes] [--verbose] [--run]`, nessa ordem,
+qualquer que tenha sido a ordem digitada.
+
+**Onde a GUI é procurada**, em ordem (o primeiro que existir vence):
+
+1. A variável de ambiente `LOOPY_APP` — o caminho explícito do executável (no macOS,
+   pode ser o `.app`). Se apontar para algo inexistente, a busca segue para o próximo.
+2. A GUI **ao lado do próprio executável** do `loopy` (o caso do `loopy` embutido no
+   app instalado).
+3. Os locais padrão de instalação:
+   - **macOS:** `/Applications/Loopy.app` e `~/Applications/Loopy.app`;
+   - **Linux:** `loopy-menubar` no `PATH` (o `.deb`), depois `~/Applications/Loopy*.AppImage`
+     e `~/.local/bin/Loopy*.AppImage`;
+   - **Windows:** `%LOCALAPPDATA%\Programs\Loopy\`, `%LOCALAPPDATA%\Loopy\` e
+     `%ProgramFiles%\Loopy\`.
+
+Nada achado → sai com código ≠ 0, lista no stderr cada lugar onde procurou e aponta
+a instalação: o `instructions_install.txt` anexado a cada release do GitHub (guia em
+`docs/how-to/instalar.md`) ou `LOOPY_APP`.
+
+```bash
+loopy open .                               # abre a GUI nesta pasta
+loopy open ~/proj --task T-003 --yes       # abre e pré-preenche flags de launch
+loopy open ~/proj --run                    # abre e já inicia o Run
+LOOPY_APP=/caminho/Loopy.AppImage loopy open .
+```
+
+> **Pasta chamada `open`:** `loopy open` é sempre o subcomando. Para rodar o loop
+> numa pasta com esse nome, use um caminho: `loopy ./open`. `loopy [dir]` (sem
+> `open`) continua rodando o loop, como sempre.
 
 ### Anotações de telemetria (`verdict` · `bug` · `change`)
 

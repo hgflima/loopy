@@ -78,6 +78,13 @@ import {
 import { InterpolationError } from "./interp/resolver";
 import { CHANGES_DIR } from "./interview/phases";
 import { runInterview, type RunInterviewOptions } from "./interview/run";
+import {
+  buildGuiArgv,
+  launchDetached,
+  locateApp,
+  type LaunchApp,
+  type LocateApp,
+} from "./open";
 import { createLogFactory, type AcpTrafficEntry } from "./logging/logger";
 import {
   createCheckpointPort,
@@ -188,6 +195,17 @@ export interface RunHooks {
    * agent — the same seam pattern as {@link RunHooks.runLive}.
    */
   readonly runInterview?: (options: RunInterviewOptions) => Promise<number>;
+  /**
+   * Finds the GUI executable for `loopy open` (default: the real
+   * {@link locateApp} over the host filesystem). Injected so tests are
+   * deterministic regardless of what is installed on the machine.
+   */
+  readonly locateApp?: LocateApp;
+  /**
+   * Spawns the GUI for `loopy open` (default: the detached
+   * {@link launchDetached}). Injected so tests never spawn a real process.
+   */
+  readonly launchApp?: LaunchApp;
 }
 
 /** Parse a `--max-iterations` value as a positive integer (commander hook). */
@@ -1435,6 +1453,106 @@ function registerInterviewCommand(
     );
 }
 
+/** Where the "GUI not found" hint points the user (E9/E1). */
+const INSTALL_HINT =
+  "Instale a GUI pelo `instructions_install.txt` anexado ao release do GitHub " +
+  "(guia: docs/how-to/instalar.md), ou aponte LOOPY_APP para o executável.";
+
+/**
+ * Register the `open [dir]` subcommand (C-0020 T-010, D1/E1/E2) — the
+ * `code .`-style entry: find the installed GUI ({@link locateApp}) and launch it
+ * detached ({@link launchDetached}) with the E2 argv
+ * `[dir] [--task <id>] [--yes] [--verbose] [--run]`.
+ *
+ * `dir` is resolved to an absolute path against the caller's cwd (the GUI runs
+ * with its own cwd); without `dir` the app is only opened/focused. The root
+ * `loopy [dir]` is untouched — a folder literally named `open` is reached as
+ * `loopy ./open`. GUI not found → the searched locations + an install hint on
+ * stderr, exit 1.
+ */
+function registerOpenCommand(
+  program: Command,
+  io: RunIO,
+  hooks: RunHooks,
+  setExit: (code: number) => void,
+): void {
+  program
+    .command("open")
+    .description(
+      "abre a GUI do loopy (estilo `code .`); com [dir], abre nesse projeto",
+    )
+    .argument(
+      "[dir]",
+      "diretorio do projeto-alvo (sem ele, so abre/foca o app)",
+    )
+    .option("-t, --task <id>", "pre-preenche a task do launch (ex.: T-004)")
+    .option("-y, --yes", "pre-preenche a auto-aprovacao dos gates", false)
+    .option("--verbose", "pre-preenche o log de trafego ACP", false)
+    .option("--run", "inicia o Run assim que o projeto carregar", false)
+    .allowExcessArguments(false)
+    .exitOverride()
+    .configureOutput({
+      writeOut: (str) => io.out(str),
+      writeErr: (str) => io.err(str),
+    })
+    .action(
+      async (
+        dir: string | undefined,
+        opts: { task?: string; yes: boolean; verbose: boolean; run: boolean },
+      ) => {
+        let absDir: string | undefined;
+        if (dir !== undefined) {
+          absDir = resolvePath(process.cwd(), dir);
+          if (!isDirectory(absDir)) {
+            io.err(`loopy: diretório não encontrado: ${absDir}\n`);
+            setExit(1);
+            return;
+          }
+        }
+
+        const found = (hooks.locateApp ?? locateApp)();
+        if (!found.ok) {
+          io.err(
+            "loopy: a GUI do loopy não foi encontrada. Procurei em:\n" +
+              found.searched.map((p) => `  - ${p}\n`).join("") +
+              `${INSTALL_HINT}\n`,
+          );
+          setExit(1);
+          return;
+        }
+
+        const argv = buildGuiArgv({
+          ...(absDir !== undefined ? { dir: absDir } : {}),
+          ...(opts.task !== undefined ? { task: opts.task } : {}),
+          yes: opts.yes,
+          verbose: opts.verbose,
+          run: opts.run,
+        });
+        const launched = await (hooks.launchApp ?? launchDetached)(
+          found.path,
+          argv,
+        );
+        if (!launched.ok) {
+          io.err(
+            `loopy: falha ao abrir a GUI (${found.path}): ${launched.error}\n`,
+          );
+          setExit(1);
+          return;
+        }
+        setExit(0);
+      },
+    );
+}
+
+/** `true` when `p` exists and is a directory. */
+function isDirectory(p: string): boolean {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Pick the `--clean` target: explicit id, or the single paused/running entry.
  * Returns the task id on success, or an error message on ambiguity/absence.
@@ -1900,6 +2018,11 @@ export async function run(
 
   // C-0018 T-006 (D23): the `interview` subcommand — drives one Interview phase.
   registerInterviewCommand(program, io, hooks, (code) => {
+    exitCode = code;
+  });
+
+  // C-0020 T-010 (D1/E2): `open [dir]` — launch the GUI detached.
+  registerOpenCommand(program, io, hooks, (code) => {
     exitCode = code;
   });
 
