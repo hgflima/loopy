@@ -20,6 +20,7 @@ import {
 import { formatApprovalPayload } from "./panes/ApprovalPrompt";
 import { shouldNotify } from "./state/notify";
 import { startSidecar } from "./state/launch";
+import { isMacOS } from "./ui/platform";
 
 // ---------------------------------------------------------------------------
 // Mock NDJSON feed for dev:web (exercises the full applyLine pipeline)
@@ -86,8 +87,9 @@ const WINDOW_LABEL = IS_ABOUT ? "about" : IS_POPOVER ? "popover" : "main";
 // The popover window is `transparent` (tauri.conf.json) with a native
 // NSVisualEffectView behind it (panel.rs). Tag the document so the surface CSS
 // can go transparent for THIS window only and let the vibrancy show through —
-// the main window must stay opaque.
-if (IS_POPOVER) {
+// the main window must stay opaque. Only on macOS: elsewhere there is no
+// vibrancy behind the webview, and a transparent surface renders invisible.
+if (IS_POPOVER && isMacOS()) {
   document.documentElement.classList.add("popover-window");
 }
 

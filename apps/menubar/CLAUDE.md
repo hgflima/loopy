@@ -20,7 +20,7 @@ NÃO é: parte do motor (não decide nada do loop — AD-1), nem dona do domíni
 
 ## Usage Patterns
 - Dev completo: `npm run dev -w apps/menubar` (= `build:sidecar && tauri dev`). UI só, sem Rust: `npm run dev:web -w apps/menubar` (usa o `MOCK_FEED`). **`npm run menubar` na raiz não é o caminho de dev**: ele aponta para o `build` daqui (`build:sidecar && tauri build`) e **empacota o `.app`**.
-- Build: `build:sidecar` usa **bun** (`bun build --compile ../../src/index.ts`) + `codesign` ad-hoc, e o `.app` embute o binário via `externalBin`. Isso é o que exige o `import.meta.main` em `src/index.ts` no motor.
+- Build: `build:sidecar` = `scripts/build-sidecar.mjs`: **bun** (`bun build --compile ../../src/index.ts`) para `src-tauri/bin/loopy-<host triple>` (triple via `rustc -vV`; `.exe` no Windows) + `codesign` ad-hoc **só no macOS**; o bundle embute o binário via `externalBin`. Toolchain (node/bun/rust) no `mise.toml` da raiz. Isso é o que exige o `import.meta.main` em `src/index.ts` no motor.
 - Testes: `npm test -w apps/menubar` (vitest/jsdom). **`npm test` na raiz NÃO roda os testes deste app** — o `include` da raiz é `tests/**` relativo à raiz. `npm run typecheck` da raiz **cobre** o app (mas só `src/`, não `tests/`).
 
 ## Anti-patterns
@@ -28,7 +28,7 @@ NÃO é: parte do motor (não decide nada do loop — AD-1), nem dona do domíni
 - Não mudar a shape de `StoreEvent`/frames/schema no motor sem olhar aqui: `src/tui/{store,view,transport}` e os barrels `config`/`backlog` são **API pública** (subpath exports com `dts`) e este app é o consumidor real.
 - Não duplicar no frontend o que o motor já exporta: **reducer, status de task, schema zod do yml, tipos de step, parser do backlog, resolveConcurrency**. Duplicar é como app e motor divergem em silêncio.
 - Não importar `node:fs` (nem nada de Node) nos módulos do motor que o app consome: `config` e `backlog` são **browser-safe por contrato**; o I/O vive isolado em `load.ts`/`todo.ts`.
-- Não presumir cross-platform: `build:sidecar` tem o triple **`aarch64-apple-darwin` hardcoded** e depende de `bun` (não declarado em `engines`/devDependencies). > TODO(intent): Windows/Linux/x86_64 são fora de escopo do v1 ou dívida? (Há um caminho não-macOS no Rust que parece aspiracional.)
+- **Plataformas**: macOS e **Linux** suportados; Windows mapeado mas pendente. O mapa vivo (o que já foi portado, o que falta, com arquivo e correção) é `docs/how-to/plataformas.md` — atualize-o ao mexer em spawn/kill/paths/tray. Detecção de OS no frontend: `src/ui/platform.ts` (`isMacOS`, `modKeyLabel`), chamada no ponto de uso.
 
 ## Dependencies & Edges
 - Filhos: `src-tauri/CLAUDE.md` (Rust: tray, NSPanel, sidecar) e `src/CLAUDE.md` (React: bridge de estado, Kanban, grafo, streams).

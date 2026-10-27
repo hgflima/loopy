@@ -1,0 +1,7 @@
+# Toolchain de desenvolvimento do loopy (motor + GUI).
+# `mise install` na raiz instala tudo; as bibliotecas de sistema do Tauri
+# (webkit2gtk etc.) não vêm do mise — ver docs/how-to/plataformas.md.
+[tools]
+node = "22"
+bun = "latest"
+rust = "stable"

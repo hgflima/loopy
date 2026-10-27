@@ -166,9 +166,22 @@ fn resize_popover(app: tauri::AppHandle, height: f64) {
     panel::resize_popover_panel(&app, height);
     #[cfg(not(target_os = "macos"))]
     if let Some(window) = app.get_webview_window("popover") {
-        use tauri_plugin_positioner::WindowExt;
         let _ = window.set_size(tauri::LogicalSize::new(320.0, height));
-        let _ = window.move_window(tauri_plugin_positioner::Position::TrayBottomLeft);
+        anchor_popover(&window, tauri_plugin_positioner::Position::TrayBottomLeft);
+    }
+}
+
+/// Move the popover with the positioner — only when the window has a monitor.
+///
+/// The positioner `unwrap()`s `current_monitor()`, and on Linux (GTK/Wayland) a
+/// window that was never shown has none: the call panics *inside a callback that
+/// cannot unwind* and aborts the whole app. `resize_popover` runs on the
+/// popover's mount, while it is still hidden, so this guard is load-bearing.
+#[cfg(not(target_os = "macos"))]
+fn anchor_popover(window: &tauri::WebviewWindow, position: tauri_plugin_positioner::Position) {
+    use tauri_plugin_positioner::WindowExt;
+    if matches!(window.current_monitor(), Ok(Some(_))) {
+        let _ = window.move_window(position);
     }
 }
 
@@ -254,11 +267,32 @@ fn main() {
             // Build tray icon — the loopy loop mark as a macOS template image
             // (monochrome + transparent, so macOS auto-tints it to the menubar
             // state). `update_tray_title` still drives the live pulse text.
+            #[cfg(target_os = "macos")]
             let tray_icon = Image::from_bytes(include_bytes!("../icons/tray-template.png"))?;
-            let _tray = TrayIconBuilder::with_id("main")
+            // Elsewhere nothing tints a template image: a black mark vanishes on a
+            // dark Linux panel, so use the colored app icon instead.
+            #[cfg(not(target_os = "macos"))]
+            let tray_icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+
+            #[allow(unused_mut)]
+            let mut tray_builder = TrayIconBuilder::with_id("main")
                 .tooltip("Loopy")
                 .icon(tray_icon)
-                .icon_as_template(true)
+                .icon_as_template(true);
+
+            // Non-macOS: a native tray menu mirroring the popover's actions. On
+            // Linux it is the ONLY way in — libappindicator never delivers click
+            // events, so the left-click popover toggle below never fires there.
+            // On Windows it is the right-click menu; left click keeps the popover.
+            #[cfg(not(target_os = "macos"))]
+            {
+                tray_builder = tray_builder
+                    .menu(&build_tray_menu(app.handle())?)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| handle_tray_menu(app, event.id().as_ref()));
+            }
+
+            let _tray = tray_builder
                 .on_tray_icon_event(|tray_handle, event| {
                     // Feed every event to the positioner so it tracks the tray rect
                     tauri_plugin_positioner::on_tray_event(
@@ -319,6 +353,12 @@ fn main() {
                     }
                 });
             }
+
+            // Linux: the tray can be invisible (GNOME without the AppIndicator
+            // extension), and there is no Dock to click — start with the main
+            // window up so the app is never launched into nowhere.
+            #[cfg(target_os = "linux")]
+            surface_main_window(app.handle())?;
 
             Ok(())
         })
@@ -446,6 +486,43 @@ fn hide_tray_popover(app: &tauri::AppHandle) {
     }
 }
 
+/// Non-macOS tray menu: the popover's actions (Abrir/Parar · Sobre/Sair) as a
+/// native menu. Ids are routed by [`handle_tray_menu`].
+#[cfg(not(target_os = "macos"))]
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    MenuBuilder::new(app)
+        .item(&MenuItemBuilder::with_id("open", "Abrir").build(app)?)
+        .item(&MenuItemBuilder::with_id("stop", "Parar").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("about", "Sobre").build(app)?)
+        .item(&MenuItemBuilder::with_id("quit", "Sair").build(app)?)
+        .build()
+}
+
+/// Route a tray menu click to the same commands the popover invokes.
+#[cfg(not(target_os = "macos"))]
+fn handle_tray_menu(app: &tauri::AppHandle, id: &str) {
+    match id {
+        "open" => {
+            let _ = surface_main_window(app);
+        }
+        "stop" => {
+            let _ = app.state::<SidecarState>().stop();
+        }
+        "about" => {
+            let _ = show_about_window(app.clone());
+        }
+        "quit" => {
+            // Menu events run on the main thread; the quit guard may block on a
+            // confirmation dialog, which must not happen there.
+            let app = app.clone();
+            std::thread::spawn(move || quit_if_confirmed(&app));
+        }
+        _ => {}
+    }
+}
+
 /// Non-macOS fallback: toggle the popover as a plain window (no fullscreen
 /// overlay — that's a macOS-only concern handled by the NSPanel path).
 #[cfg(not(target_os = "macos"))]
@@ -456,9 +533,8 @@ fn toggle_popover_window(app: &tauri::AppHandle) {
     if popover.is_visible().unwrap_or(false) {
         let _ = popover.hide();
     } else {
-        use tauri_plugin_positioner::WindowExt;
-        let _ = popover.move_window(tauri_plugin_positioner::Position::TrayCenter);
         let _ = popover.show();
+        anchor_popover(&popover, tauri_plugin_positioner::Position::TrayCenter);
         let _ = popover.set_focus();
     }
 }

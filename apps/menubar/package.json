@@ -1,15 +1,16 @@
 {
   "name": "@hgflima/loopy-menubar",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "npm run build:sidecar && tauri dev",
     "dev:web": "vite",
-    "build:sidecar": "mkdir -p src-tauri/bin && bun build --compile ../../src/index.ts --outfile src-tauri/bin/loopy-aarch64-apple-darwin && (codesign --remove-signature src-tauri/bin/loopy-aarch64-apple-darwin 2>/dev/null || true) && codesign -f -s - src-tauri/bin/loopy-aarch64-apple-darwin",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
     "build": "npm run build:sidecar && tauri build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "install:linux-desktop": "node scripts/install-linux-desktop.mjs"
   },
   "dependencies": {
     "@hgflima/loopy": "*",

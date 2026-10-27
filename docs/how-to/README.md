@@ -16,6 +16,7 @@ _porquê_), aqui o foco é **como fazer**.
 | [Usar múltiplos agentes](usar-multiplos-agentes.md)                             | Migrar para o Registry `agents:` e selecionar agente, model e effort por Step — presets do Catálogo, sondagem de dialeto (`probe-agent`) e validação eager. |
 | [Ligar a telemetria e anotar vereditos](ligar-telemetria-e-anotar-vereditos.md) | Ativar o gate `metrics:`, entender o que a run grava no `.db`, e anotar veredito humano, bugs e o fechamento de uma change — lendo tudo na aba Insights.    |
 | [Recuperar uma task pausada ou escalada](recuperar-task-escalada.md)            | Investigar o worktree preservado e decidir entre retomar do checkpoint ou descartar com `--clean` — incluindo a armadilha de editar o pipeline no meio.     |
+| [Rodar no Linux e no Windows](plataformas.md)                                   | Rodar o motor e a GUI fora do macOS (Linux suportado) e o mapa do que falta para o Windows.                                                                 |
 
 ## Documentos relacionados
 
