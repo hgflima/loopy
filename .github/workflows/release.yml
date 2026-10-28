@@ -1,0 +1,277 @@
+name: release
+
+# Release automático (C-0020, E5): a cada push na `main`, o semantic-release
+# decide a versão pelos conventional commits e cria tag + GitHub Release como
+# DRAFT; a matriz builda a GUI nos 3 SOs e anexa os instaladores ao draft; o
+# `instructions_install.txt` é gerado a partir dos assets reais; por fim o npm é
+# publicado (OIDC/Trusted Publishing) e o draft vira público. Falha em qualquer
+# job deixa o draft para inspeção e NÃO publica no npm (critério 5).
+#
+# Portável (E11): o repo vem sempre de `github.repository`; nome do pacote npm e a
+# habilitação do publish vêm das Variables `NPM_PACKAGE_NAME` / `NPM_PUBLISH_ENABLED`.
+# Substitui o antigo `publish.yml` (E10) — o Trusted Publisher do npm precisa
+# apontar para ESTE arquivo.
+#
+# Recuperação (E10): `workflow_dispatch` sem `tag` roda o fluxo normal; com `tag`
+# (ex.: v0.7.0) pula o semantic-release e retoma build → instruções → publish
+# sobre o release já existente dessa tag.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Retomar um release existente (ex.: v0.7.0). Vazio = fluxo normal."
+        required: false
+        default: ""
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      published: ${{ steps.result.outputs.published }}
+      version: ${{ steps.result.outputs.version }}
+      tag: ${{ steps.result.outputs.tag }}
+      release_id: ${{ steps.result.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: node
+
+      # semantic-release@25 exige Node ^22.14 (ou >=24.10); o `node = "22"` do
+      # mise.toml resolve para o 22.x mais recente — a guarda torna isso explícito.
+      - name: Guarda da versão do Node (>= 22.14)
+        run: |
+          node --version && npm --version
+          node -e '
+            const [maj, min] = process.versions.node.split(".").map(Number);
+            if (maj < 22 || (maj === 22 && min < 14)) {
+              console.error("::error::semantic-release exige Node >= 22.14; achou " + process.versions.node);
+              process.exit(1);
+            }'
+
+      - run: npm ci
+
+      - name: Tags no HEAD antes do release
+        id: before
+        run: |
+          {
+            echo "tags<<EOF"
+            git tag --points-at HEAD --list 'v*'
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Cria o commit `chore(release)`, a tag vX.Y.Z e o GitHub Release como
+      # draft (config em .releaserc.json, T-005). Sem commits releasáveis = no-op.
+      - name: semantic-release
+        if: inputs.tag == ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+      # Descobre se houve release e o id do draft. `GET /releases/tags/{tag}` NÃO
+      # enxerga drafts: lista `/releases` e filtra por `tag_name`.
+      - name: Resultado do release
+        id: result
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          TAGS_BEFORE: ${{ steps.before.outputs.tags }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          else
+            tag=""
+            while IFS= read -r t; do
+              [ -z "$t" ] && continue
+              if ! grep -qxF -- "$t" <<< "$TAGS_BEFORE"; then tag="$t"; fi
+            done < <(git tag --points-at HEAD --list 'v*')
+          fi
+
+          if [ -z "$tag" ]; then
+            echo "Nenhum release nesta execução — build/instruções/publish serão pulados."
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag fora do formato vX.Y.Z: $tag"
+            exit 1
+          fi
+
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"${tag}\") | .id" | head -n 1)"
+          if [ -z "$release_id" ]; then
+            echo "::error::nenhum GitHub Release (draft ou não) para a tag $tag"
+            exit 1
+          fi
+
+          {
+            echo "published=true"
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            echo "release_id=$release_id"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $tag (id $release_id)"
+
+  build:
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # E6: .deb em ubuntu-22.04 (glibc mais antiga); Linux só .deb (D5).
+          - os: ubuntu-22.04
+            triple: x86_64-unknown-linux-gnu
+          - os: macos-14
+            triple: aarch64-apple-darwin
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      # A versão nova está no commit de release, apontado pela tag — não no github.sha.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      # Bibliotecas de sistema do Tauri v2 no Linux — mesma lista de
+      # docs/how-to/plataformas.md §2.
+      - name: Instalar libs de sistema do Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+
+      - uses: jdx/mise-action@v5
+
+      - run: npm ci
+
+      - name: Compilar o sidecar
+        env:
+          TAURI_ENV_TARGET_TRIPLE: ${{ matrix.triple }}
+        run: npm run build:sidecar -w apps/menubar
+
+      # Bundles por SO vêm de src-tauri/tauri.<os>.conf.json (T-004). O menubar
+      # não tem script `tauri`, então o CLI é chamado via `npx tauri`.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/menubar
+          tauriScript: npx tauri
+          releaseId: ${{ needs.release.outputs.release_id }}
+          tagName: ${{ needs.release.outputs.tag }}
+          includeUpdaterJson: false
+
+  instructions:
+    needs: [release, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: node
+
+      # Só `name`: o render-instructions monta a URL pública de download pela tag
+      # (a `url` da API é de API, e a de um draft aponta para `untagged-…`).
+      - name: Listar assets do draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ needs.release.outputs.release_id }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" --paginate \
+            --jq '.[] | {name}' | jq -s . > assets.json
+          cat assets.json
+
+      - name: Gerar instructions_install.txt
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+          NPM_PACKAGE_NAME: ${{ vars.NPM_PACKAGE_NAME }}
+        run: |
+          pkg="${NPM_PACKAGE_NAME:-$(node -p 'require("./package.json").name')}"
+          node scripts/release/render-instructions.mjs \
+            --version "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --npm-package "$pkg" \
+            --assets assets.json > instructions_install.txt
+          cat instructions_install.txt
+
+      - name: Anexar ao draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$TAG" instructions_install.txt --clobber
+
+  publish:
+    needs: [release, instructions]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # OIDC / provenance (Trusted Publishing)
+    steps:
+      - uses: actions/checkout@v7
+        if: vars.NPM_PUBLISH_ENABLED == 'true'
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+
+      # Node 24 (não o 22 do mise.toml): Trusted Publishing exige npm >= 11.5.1 e o
+      # Node 24 já bundla acima disso. NÃO fazer `npm i -g npm@latest`: o upgrade
+      # in-place corrompe a árvore global do npm, remove `sigstore` e quebra a
+      # provenance (Cannot find module 'sigstore'). Usa-se o npm bundlado.
+      - uses: actions/setup-node@v6
+        if: vars.NPM_PUBLISH_ENABLED == 'true'
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - if: vars.NPM_PUBLISH_ENABLED == 'true'
+        run: node --version && npm --version
+
+      - if: vars.NPM_PUBLISH_ENABLED == 'true'
+        run: npm ci
+
+      # Num fork, o pacote pode ter outro nome (E11) — só o `name` muda.
+      - name: Aplicar NPM_PACKAGE_NAME
+        if: vars.NPM_PUBLISH_ENABLED == 'true' && vars.NPM_PACKAGE_NAME != ''
+        env:
+          NPM_PACKAGE_NAME: ${{ vars.NPM_PACKAGE_NAME }}
+        run: npm pkg set "name=${NPM_PACKAGE_NAME}"
+
+      # Sem NODE_AUTH_TOKEN: o OIDC autentica o publish. prepublishOnly roda o build.
+      - name: npm publish
+        if: vars.NPM_PUBLISH_ENABLED == 'true'
+        run: npm publish --provenance
+
+      - name: npm desabilitado
+        if: vars.NPM_PUBLISH_ENABLED != 'true'
+        run: echo "::warning::NPM_PUBLISH_ENABLED != 'true' — publish no npm pulado; o release segue sem npm."
+
+      - name: Tornar o release público
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false
