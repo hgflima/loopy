@@ -13,7 +13,7 @@ export interface RenderInstructionsInput {
 }
 
 export interface PlatformSlot {
-  key: "LINUX_APPIMAGE" | "LINUX_DEB" | "MACOS_DMG" | "WINDOWS_SETUP";
+  key: "LINUX_DEB" | "MACOS_DMG" | "WINDOWS_SETUP";
   label: string;
   match: (name: string) => boolean;
 }

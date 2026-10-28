@@ -15,14 +15,15 @@ Regras para você, agente:
   `spctl --master-disable` no macOS, ou desativar o SmartScreen/Defender no
   Windows). O único contorno permitido é o POR APP descrito abaixo.
 - Use exatamente as URLs listadas aqui; não procure outros binários.
-- Suporte por plataforma: Linux é a plataforma testada. macOS e Windows são
+- Suporte por plataforma: Linux é a plataforma testada, mas só distros
+  Debian/Ubuntu e derivadas (com `dpkg`/`apt`) são cobertas — o app de
+  Linux sai apenas como `.deb`. Em outras distros, pare e avise o usuário
+  que não há instalador pronto para elas. macOS e Windows são
   EXPERIMENTAIS: os instaladores são gerados, mas não passam por teste
   funcional (no Windows, iniciar um Run ainda não funciona). Avise o usuário
   disso antes de instalar nessas plataformas.
 
 Artefatos deste release ({{VERSION}}):
-- Linux (AppImage):            {{LINUX_APPIMAGE_NAME}}
-                               {{LINUX_APPIMAGE_URL}}
 - Linux (.deb, Debian/Ubuntu): {{LINUX_DEB_NAME}}
                                {{LINUX_DEB_URL}}
 - macOS (.dmg) [experimental]: {{MACOS_DMG_NAME}}
@@ -41,9 +42,13 @@ Windows (PowerShell):
     [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
   Esperado: `X64` (ou `Arm64`).
 
-Arquiteturas publicadas: Linux x86_64, macOS Apple Silicon (arm64),
-Windows x64. Se a máquina for outra combinação, pare e avise o usuário que
-não há instalador pronto para ela.
+Arquiteturas publicadas: Linux x86_64 (Debian/Ubuntu e derivadas), macOS
+Apple Silicon (arm64), Windows x64. Se a máquina for outra combinação, pare e
+avise o usuário que não há instalador pronto para ela.
+No Linux, confirme também que a distro usa `dpkg`/`apt`:
+    command -v dpkg && command -v apt
+  Esperado: dois caminhos (ex.: `/usr/bin/dpkg` e `/usr/bin/apt`). Se algum
+  faltar, a distro não é coberta por este release: pare e avise o usuário.
 
 
 Passo 2 — Pré-requisito: Node.js >= 22.13
@@ -62,49 +67,16 @@ Passo 3 — Instalar o app de desktop
 -----------------------------------
 Siga SOMENTE a seção do sistema detectado no Passo 1.
 
-3.L — Linux
-  Escolha UM formato: o `.deb` (Debian/Ubuntu e derivados, instala no sistema,
-  exige sudo) ou o AppImage (qualquer distro, só no usuário).
-
-  Opção A — .deb:
+3.L — Linux (Debian/Ubuntu e derivadas)
+  O app de Linux é distribuído só como `.deb`; ele instala no sistema (exige
+  sudo) e já cria a entrada "Loopy" no menu de aplicativos.
       curl -fL -o /tmp/{{LINUX_DEB_NAME}} "{{LINUX_DEB_URL}}"
       sudo apt install -y /tmp/{{LINUX_DEB_NAME}}
-    Verificação:
-      dpkg -l | grep -i loopy
-    Esperado: uma linha `ii` do pacote do Loopy com a versão `{{VERSION}}`.
-
-  Opção B — AppImage:
-    B.1 — O AppImage precisa de FUSE 2 (`libfuse.so.2`). Cheque ANTES:
-      ldconfig -p | grep -q 'libfuse.so.2' && echo fuse2-ok || echo fuse2-faltando
-    Esperado: `fuse2-ok`. Se vier `fuse2-faltando`, instale (com confirmação do
-    usuário) e cheque de novo:
-      Ubuntu 24.04+ / Debian 13+:  sudo apt install -y libfuse2t64
-      Ubuntu 22.04 / Debian 12:    sudo apt install -y libfuse2
-      Fedora:                      sudo dnf install -y fuse-libs
-      Arch:                        sudo pacman -S --needed fuse2
-    B.2 — Baixar para ~/Applications e tornar executável:
-      mkdir -p ~/Applications
-      curl -fL -o ~/Applications/{{LINUX_APPIMAGE_NAME}} "{{LINUX_APPIMAGE_URL}}"
-      chmod +x ~/Applications/{{LINUX_APPIMAGE_NAME}}
-    Verificação:
-      test -x ~/Applications/{{LINUX_APPIMAGE_NAME}} && echo appimage-ok
-    Esperado: `appimage-ok`.
-    B.3 — Integrar ao menu de aplicativos (entrada .desktop do usuário):
-      mkdir -p ~/.local/share/applications
-      cat > ~/.local/share/applications/loopy.desktop <<EOF
-      [Desktop Entry]
-      Type=Application
-      Name=Loopy
-      Exec=$HOME/Applications/{{LINUX_APPIMAGE_NAME}} %U
-      Terminal=false
-      Categories=Development;
-      StartupWMClass=loopy-menubar
-      EOF
-      update-desktop-database ~/.local/share/applications 2>/dev/null || true
-    (Remova a indentação das linhas do heredoc ao executar.)
-    Verificação:
-      grep -q '{{LINUX_APPIMAGE_NAME}}' ~/.local/share/applications/loopy.desktop && echo desktop-ok
-    Esperado: `desktop-ok`.
+  Verificação:
+      dpkg -s loopy | grep -E '^(Status|Version):'
+      command -v loopy-menubar
+  Esperado: `Status: install ok installed`, `Version: {{VERSION}}` e o caminho
+  do executável do app (ex.: `/usr/bin/loopy-menubar`).
 
 3.M — macOS [EXPERIMENTAL]
       curl -fL -o /tmp/{{MACOS_DMG_NAME}} "{{MACOS_DMG_URL}}"
@@ -154,9 +126,8 @@ Passo 5 — Verificar a integração CLI ↔ app
 Opcional (abre a janela do app, não inicia nenhum agente):
     loopy open .
   Esperado: a janela do Loopy abre com a pasta atual como projeto. Se der erro
-  dizendo que o app não foi encontrado, confira o Passo 3 (no AppImage, o
-  arquivo precisa estar em ~/Applications) ou defina `LOOPY_APP` com o caminho
-  do executável do app.
+  dizendo que o app não foi encontrado, confira o Passo 3 ou defina
+  `LOOPY_APP` com o caminho do executável do app.
 
 
 Resumo final para o usuário

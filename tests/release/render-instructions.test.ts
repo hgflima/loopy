@@ -16,11 +16,8 @@ const ORIGINAL_REPO = ["hgflima", "loopy"].join("/");
 
 const base = (repo: string) =>
   `https://github.com/${repo}/releases/download/v0.7.0`;
+// Linux ships only the `.deb` (D5: AppImage deferred).
 const assetsFor = (repo: string): ReleaseAsset[] => [
-  {
-    name: "Loopy_0.7.0_amd64.AppImage",
-    url: `${base(repo)}/Loopy_0.7.0_amd64.AppImage`,
-  },
   { name: "Loopy_0.7.0_amd64.deb", url: `${base(repo)}/Loopy_0.7.0_amd64.deb` },
   {
     name: "Loopy_0.7.0_aarch64.dmg",
@@ -49,7 +46,7 @@ describe("renderInstructions", () => {
     expect(out).toContain("0.7.0");
     expect(out).toContain("https://github.com/acme/loopy");
     expect(out).toContain("npm i -g @acme/loopy@0.7.0");
-    for (const a of assetsFor("acme/loopy").slice(0, 4)) {
+    for (const a of assetsFor("acme/loopy").slice(0, 3)) {
       expect(out).toContain(a.url);
       expect(out).toContain(a.name);
     }
@@ -62,7 +59,10 @@ describe("renderInstructions", () => {
     expect(out).toContain(
       "xattr -dr com.apple.quarantine /Applications/Loopy.app",
     );
-    expect(out).toContain("libfuse");
+    expect(out).toContain("sudo apt install -y /tmp/Loopy_0.7.0_amd64.deb");
+    expect(out).toContain("dpkg -s loopy");
+    expect(out).toContain("command -v loopy-menubar");
+    expect(out).toMatch(/Debian\/Ubuntu e derivadas/);
     expect(out).toContain("SmartScreen");
     expect(out).toContain("loopy --version");
     expect(out).toContain("loopy open --help");
@@ -71,7 +71,7 @@ describe("renderInstructions", () => {
     expect(out).not.toMatch(/^\s*(sudo\s+)?spctl --master-disable/m);
   });
 
-  it.each(["AppImage", "deb", "dmg", "setup.exe"])(
+  it.each(["deb", "dmg", "setup.exe"])(
     "fails when the .%s asset is missing",
     (ext) => {
       const assets = assetsFor("acme/loopy").filter(
@@ -82,6 +82,22 @@ describe("renderInstructions", () => {
       );
     },
   );
+
+  it("ignores a stray .AppImage asset (D5)", () => {
+    const assets = [
+      ...assetsFor("acme/loopy"),
+      {
+        name: "Loopy_0.7.0_amd64.AppImage",
+        url: `${base("acme/loopy")}/Loopy_0.7.0_amd64.AppImage`,
+      },
+    ];
+    const out = renderInstructions(input("acme/loopy", assets));
+    expect(out).not.toContain("AppImage");
+  });
+
+  it("the template has no AppImage path (D5)", () => {
+    expect(template).not.toMatch(/AppImage|libfuse/);
+  });
 
   it("fails on an ambiguous platform (two .dmg)", () => {
     const assets = [

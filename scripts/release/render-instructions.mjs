@@ -25,11 +25,8 @@ import { parseArgs } from "node:util";
  * NSIS → `..._x64-setup.exe`).
  */
 export const PLATFORMS = [
-  {
-    key: "LINUX_APPIMAGE",
-    label: "Linux AppImage",
-    match: (n) => n.endsWith(".AppImage"),
-  },
+  // Linux ships only the `.deb` (D5: AppImage deferred). A stray `.AppImage`
+  // matches no slot and is ignored like any other non-platform asset.
   { key: "LINUX_DEB", label: "Linux .deb", match: (n) => n.endsWith(".deb") },
   { key: "MACOS_DMG", label: "macOS .dmg", match: (n) => n.endsWith(".dmg") },
   {
