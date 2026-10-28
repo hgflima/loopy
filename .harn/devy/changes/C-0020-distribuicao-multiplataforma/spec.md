@@ -7,7 +7,7 @@
 > `docs/how-to/plataformas.md`. Esse trabalho é a **linha de base** desta change
 > e entra nela (T-001), não é re-desenhado aqui.
 >
-> Decisões **fechadas pelo usuário** nesta spec (não re-litigar): D1–D4 abaixo.
+> Decisões **fechadas pelo usuário** nesta spec (não re-litigar): D1–D5 abaixo.
 
 ---
 
@@ -26,7 +26,7 @@ Esta change torna a distribuição **automática e multiplataforma**:
    gera tag + changelog + GitHub Release, builda os instaladores das três
    plataformas e publica o pacote npm — **sem passo humano**.
 2. **Instaladores da GUI** anexados a cada GitHub Release:
-   Linux x86_64 (**AppImage** + `.deb`), macOS arm64 (`.dmg`) e Windows x64
+   Linux x86_64 (`.deb` — AppImage adiado, D5), macOS arm64 (`.dmg`) e Windows x64
    (NSIS `.exe`).
 3. **`instructions_install.txt`** em cada release: um prompt autocontido para um
    **modelo agêntico** ler e executar a instalação completa (pré-requisitos,
@@ -69,6 +69,7 @@ roda `loopy open .` e cai na GUI com o projeto aberto.
 | D2  | Semver automático com **semantic-release**, a partir dos conventional commits, disparado por push na `main`. Sem Release PR.                          |
 | D3  | O **npm entra no mesmo release**: uma versão só para pacote npm, GUI e tag (o single-source de versão já existe).                                     |
 | D4  | O **owner do repositório ainda não está decidido** (`hgflima/loopy` × fork na org da Liber) **e pode trocar depois** — a troca é um caso de uso de primeira classe, não um imprevisto. Tudo é escrito **agnóstico ao owner** (E11); ver Open Questions. |
+| D5  | **Linux sai só com `.deb` nesta change; AppImage adiado** (decidido em 2026-10-27, na execução da T-004). O `linuxdeploy` roda `patchelf` em todo ELF de `usr/bin`, o que corrompe o sidecar gerado por `bun build --compile` (segfault) e aborta o bundle. Registrado como dívida em `.harn/devy/debts/`. |
 
 ## Decisões de desenho (desta spec — revisáveis no refine)
 
@@ -79,7 +80,7 @@ roda `loopy open .` e cai na GUI com o projeto aberto.
 | E3  | **Instância única** (`tauri-plugin-single-instance`): com o app já aberto, um segundo `loopy open` **não sobe outra GUI** — o argv é repassado à instância viva, que foca a janela e troca para o projeto. Trocar de projeto respeita o dirty guard existente (Salvar/Descartar/Cancelar). Com um Run ativo em outro projeto, **não mata o Run**: abre o projeto e avisa.                                                                                                   |
 | E4  | **Uma versão, uma fonte:** o `package.json` da raiz. semantic-release grava a versão nele **e** em `apps/menubar/package.json` (o teste `version-single-source` passa a ficar verde) e commita de volta (`chore(release): x.y.z [skip ci]`). O `tauri.conf.json` já lê da raiz.                                                                                                                                                                                                         |
 | E5  | **Ordem do release** (um workflow, jobs encadeados): `release` (semantic-release cria tag + GitHub Release **como draft**) → `build` (matriz de 3 SOs, anexa instaladores ao draft) → `instructions` (gera e anexa o `instructions_install.txt`) → `publish` (npm via OIDC/Trusted Publishing **e** promove o draft a público). Release só fica público com **todos** os artefatos; falha em qualquer job deixa o draft para inspeção e **não publica no npm**. |
-| E6  | **AppImage builda em `ubuntu-22.04`** (glibc mais antiga = roda em mais distros). macOS em `macos-14` (arm64 nativo). Windows em `windows-latest`.                                                                                                                                                                                                                                                                                                                                      |
+| E6  | **O `.deb` builda em `ubuntu-22.04`** (glibc mais antiga = roda em mais distros). macOS em `macos-14` (arm64 nativo). Windows em `windows-latest`.                                                                                                                                                                                                                                                                                                                                      |
 | E7  | **Toolchain do CI via mise** (`jdx/mise-action`, lendo o `mise.toml` da raiz) — node, bun e rust iguais aos de dev. As libs de sistema do Tauri no Linux vêm do `apt` no job.                                                                                                                                                                                                                                                                                                             |
 | E8  | O **nome do produto** instalado é `Loopy` (já é o `productName`). O identificador `com.hgflima.loopy.menubar` **não muda** nesta change (mudar invalida config/estado salvos dos usuários).                                                                                                                                                                                                                                                                                              |
 | E9  | `instructions_install.txt` é **gerado a partir de um template versionado** (`scripts/release/instructions_install.template.txt`) por um script puro que injeta versão, repo e nomes/URLs reais dos assets. Nada de texto escrito à mão por release.                                                                                                                                                                                                                                     |
@@ -118,7 +119,7 @@ npm run install:linux-desktop -w apps/menubar   # Linux: ícone/atalho do app de
 loopy open .                                # abre a GUI nesta pasta
 loopy open ~/proj --task T-003 --yes        # abre e pré-preenche flags de launch
 loopy open ~/proj --run                     # abre e já inicia o Run
-LOOPY_APP=/caminho/Loopy.AppImage loopy open .   # força o executável da GUI
+LOOPY_APP=/usr/bin/loopy-menubar loopy open .   # força o executável da GUI
 
 # Qualidade (inalterado; CI roda tudo)
 npm run typecheck && npm run lint && npm test && npm test -w apps/menubar
@@ -271,7 +272,7 @@ pub fn parse_launch_args(argv: &[String], cwd: &Path) -> Result<LaunchArgs, Stri
 | Unit (Rust)            | resolução do sidecar com `EXE_SUFFIX` (estende os testes existentes de `is_executable_file`)                               | `sidecar.rs`                                                        |
 | Unit (TS, GUI)         | aplicar argv: troca de dir passa pelo dirty guard; `--run` só inicia após o load do yml                                    | `apps/menubar/src/state/launch-args.test.ts`                        |
 | Workflow               | `actionlint` limpo; `semantic-release --dry-run` local calcula a versão esperada                                            | job no `ci.yml`; manual                                             |
-| Smoke (manual, Linux)  | AppImage do release abre, aparece no menu de apps/tray; `loopy open .` abre o projeto; segundo `loopy open` foca a instância | checklist no `plan.md`                                              |
+| Smoke (manual, Linux)  | `.deb` do release instala e abre, aparece no menu de apps/tray; `loopy open .` abre o projeto; segundo `loopy open` foca a instância | checklist no `plan.md`                                              |
 | macOS / Windows        | **Só "o artefato foi gerado e anexado"** — sem validação funcional nesta change (escopo do usuário)                        | status do job de build                                              |
 
 Cobertura: todo código novo **puro** tem teste; I/O fino (`launch.ts`, os hooks do
@@ -306,11 +307,11 @@ Tauri) é coberto pelo smoke manual.
 ## Success Criteria
 
 1. Push na `main` com pelo menos um `feat:`/`fix:` desde a última tag gera, sem intervenção: tag `vX.Y.Z` com a versão certa, entrada no `CHANGELOG.md`, commit `chore(release): X.Y.Z [skip ci]` com raiz **e** `apps/menubar` na mesma versão.
-2. O GitHub Release `vX.Y.Z` fica público contendo **no mínimo**: `Loopy_X.Y.Z_amd64.AppImage`, `Loopy_X.Y.Z_amd64.deb`, `Loopy_X.Y.Z_aarch64.dmg`, `Loopy_X.Y.Z_x64-setup.exe` e `instructions_install.txt` (nomes exatos podem seguir a convenção do `tauri-action`; o template referencia os nomes **reais** do release).
+2. O GitHub Release `vX.Y.Z` fica público contendo **no mínimo**: `Loopy_X.Y.Z_amd64.deb`, `Loopy_X.Y.Z_aarch64.dmg`, `Loopy_X.Y.Z_x64-setup.exe` e `instructions_install.txt` (nomes exatos podem seguir a convenção do `tauri-action`; o template referencia os nomes **reais** do release).
 3. `@hgflima/loopy@X.Y.Z` publicado no npm com provenance, na mesma versão.
 4. Push na `main` só com `docs:`/`chore:` **não** gera release.
 5. Falha no build de qualquer SO → release continua **draft** e o npm **não** é publicado.
-6. Linux (validado nesta change): baixar o AppImage, `chmod +x`, abrir → app aparece com ícone no menu de apps e no tray; `loopy open ~/liber/onboarding-loopy` abre a GUI nesse projeto com o board populado; um segundo `loopy open <outro>` com o app aberto **foca** a instância e troca de projeto (sem segunda janela).
+6. Linux (validado nesta change): baixar o `.deb`, `sudo apt install ./Loopy_X.Y.Z_amd64.deb`, abrir → app aparece com ícone no menu de apps e no tray; `loopy open ~/liber/onboarding-loopy` abre a GUI nesse projeto com o board populado; um segundo `loopy open <outro>` com o app aberto **foca** a instância e troca de projeto (sem segunda janela).
 7. `loopy open .` sem GUI instalada sai com código ≠ 0 e a mensagem lista onde procurou e como instalar.
 8. Entregar `instructions_install.txt` a um agente numa máquina Linux limpa (com Node) resulta em app + CLI instalados e `loopy --version` / `loopy open --help` respondendo a versão do release.
 9. `ci.yml` verde em PR: typecheck, lint, testes TS (raiz + menubar), `cargo test`, `actionlint`.
@@ -321,6 +322,7 @@ Tauri) é coberto pelo smoke manual.
 
 ## Fora de escopo
 
+- AppImage (D5) — volta quando o sidecar puder viver fora de `usr/bin` ou sobreviver ao `patchelf`.
 - Assinatura/notarização (macOS) e Authenticode (Windows).
 - Auto-update dentro do app.
 - Fazer o app **funcionar** no Windows (itens W1–W6, W9–W17 do mapa), além do mínimo para compilar (W7/W8).
@@ -339,4 +341,4 @@ Tauri) é coberto pelo smoke manual.
 
 - **Builds de macOS/Windows sem teste funcional** podem gerar instaladores que abrem mas não rodam um Run (Windows certamente não roda: W1 — `npx` sem shell). O release notes e o `instructions_install.txt` marcam essas plataformas como **experimentais**.
 - **Usuário que tem `open/` como nome de pasta:** `loopy open` vira o subcomando; para rodar o loop nessa pasta, `loopy ./open`. Documentado no `cli.md`.
-- **AppImage depende de FUSE** em algumas distros (Ubuntu 22.04+ precisa `libfuse2`); o `instructions_install.txt` checa e instala.
+- **Sem AppImage (D5)**, o Linux só cobre distros com `dpkg`/`apt` (Debian/Ubuntu e derivadas) nesta change.

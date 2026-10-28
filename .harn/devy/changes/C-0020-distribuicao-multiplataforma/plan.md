@@ -81,14 +81,14 @@ todo PR seguinte (inclusive `actionlint` do `release.yml` que virá).
 **Checkpoint:** `npm run typecheck && npm run lint && npm test && npm test -w apps/menubar`
 e `cargo test` verdes local; `actionlint` limpo; `version-single-source` verde.
 
-### Fase 2 — Release: fundações de alto risco primeiro — T-005, T-006, T-007, T-003, T-004
+### Fase 2 — Release: fundações de alto risco primeiro — T-005, T-006, T-007, T-003, T-004, T-015
 T-005 é o **spike** do semantic-release: prova, com `--dry-run`, que a versão é
 calculada e que o `prepare` sincroniza as duas `package.json` — antes de o
 `release.yml` (T-008) apostar nisso. T-006/T-007 são puros e paralelos.
 T-003/T-004 deixam a GUI compilável e empacotável por SO.
 **Checkpoint:** `npx semantic-release --dry-run --no-ci` imprime a próxima
 versão esperada (`0.6.1` só com os `fix:` atuais); `npm run menubar` no Linux
-gera `.AppImage` e `.deb`; testes de `render-instructions`/`set-repo` verdes.
+gera o `.deb` (só ele — D5); testes de `render-instructions`/`set-repo` verdes.
 
 ### Fase 3 — O workflow de release — T-008
 Junta tudo num `release.yml`. **Não há como provar end-to-end sem push na
@@ -122,7 +122,7 @@ primeiro release real (decisão humana).
 | Argv inicial perdido por corrida webview × `emit` | Médio (silencioso) | Modelo pull (`take_launch_args`) — T-012/T-013 |
 | `tauri-plugin-single-instance` no Linux depende de D-Bus | Médio | Smoke manual da Fase 4; sem D-Bus a segunda instância abre outra janela (degradação, não quebra) |
 | Builds de macOS/Windows compilam mas não rodam um Run | Aceito (spec) | Template marca as plataformas como **experimentais** (T-006) |
-| AppImage exige `libfuse2` | Baixo | Template checa e instala (T-006) |
+| AppImage quebra o sidecar (`patchelf` do linuxdeploy) — **materializado na T-004** | Médio | D5: Linux só `.deb` nesta change; T-015 ajusta as instruções; dívida registrada na T-014 |
 | `ci.yml` precisa das libs de sistema do Tauri para `cargo test` | Baixo | Lista do `apt` já documentada em `plataformas.md` §2; T-002 reusa |
 
 ## Open Questions

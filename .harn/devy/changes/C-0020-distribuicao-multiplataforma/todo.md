@@ -5,7 +5,8 @@
 > D1–D4 e E1–E11, em `spec.md`. **Não re-litigar.**
 >
 > **Arestas que existem só para serializar merge (mesmo arquivo) — não remover:**
-> `T-003→T-001` e `T-004→T-003` (`docs/how-to/plataformas.md`), `T-011→T-001`
+> `T-003→T-001` e `T-004→T-003` (`docs/how-to/plataformas.md`), `T-015→T-004`
+> (o `.deb` real informa nomes de pacote/binário), `T-011→T-001`
 > (`src-tauri/src/main.rs`), `T-014→T-008,T-010,T-013` (docs do código final).
 >
 > **Invariantes desta change:** `loopy [dir]` e o argv do sidecar
@@ -98,16 +99,20 @@
     Hoje `tauri.conf.json` tem `"targets": "all"`. Crie os arquivos de config por
     plataforma que o Tauri v2 mescla por cima (confirme o mecanismo e os nomes na doc
     oficial do Tauri v2 antes — source-driven): `tauri.linux.conf.json` →
-    `["appimage", "deb"]`; `tauri.macos.conf.json` → `["app", "dmg"]`;
+    `["deb"]` (**só `.deb` — D5**: o AppImage foi adiado porque o `patchelf` do
+    linuxdeploy corrompe o sidecar do `bun --compile`); `tauri.macos.conf.json` → `["app", "dmg"]`;
     `tauri.windows.conf.json` → `["nsis"]` (instala por usuário, sem admin). **Não**
     mexa no `version` path-ref do `tauri.conf.json` (o teste `version-single-source`
-    guarda isso). Rode `npm run menubar` no Linux e confirme que saem um `.AppImage` e um
-    `.deb` em `src-tauri/target/release/bundle/` (e **não** um `.rpm`). Anote os nomes
+    guarda isso). Rode `npm run menubar` no Linux e confirme que sai **só** o
+    `.deb` em `src-tauri/target/release/bundle/` (sem `.AppImage` nem `.rpm`). Anote os nomes
     reais dos artefatos gerados (formato `Loopy_<versão>_<arch>.<ext>`) em
     `docs/how-to/plataformas.md` — T-006 e T-008 dependem dessa convenção.
-    Acceptance: build Linux gera exatamente AppImage + deb; os três arquivos por SO
+    Em `plataformas.md`, troque o registro do bloqueio do AppImage (que a primeira tentativa
+    desta task deixou na working tree — aproveite o diagnóstico) por "adiado (D5)" com o
+    motivo técnico em uma ou duas frases.
+    Acceptance: build Linux gera só o `.deb`; os três arquivos por SO
     existem e são JSON válido; `version-single-source` continua verde.
-    Verification: npm run menubar && ls apps/menubar/src-tauri/target/release/bundle/appimage/*.AppImage apps/menubar/src-tauri/target/release/bundle/deb/*.deb && npm test -w apps/menubar -- version-single-source
+    Verification: npm run menubar && ls apps/menubar/src-tauri/target/release/bundle/deb/*.deb && npm test -w apps/menubar -- version-single-source
     Deps: T-003
     Files: apps/menubar/src-tauri/tauri.linux.conf.json, apps/menubar/src-tauri/tauri.macos.conf.json, apps/menubar/src-tauri/tauri.windows.conf.json, docs/how-to/plataformas.md
     Size: S
@@ -186,6 +191,27 @@
     Size: S
     Risk: L
 
+- [ ] T-015: Linux só `.deb` (D5) — instruções de instalação sem AppImage
+    O AppImage foi adiado (D5, ver `spec.md`): o Linux do release tem só
+    `Loopy_<versão>_amd64.deb`. Ajuste `scripts/release/render-instructions.mjs` (e o
+    `.d.mts`) para que a plataforma Linux exija **o `.deb`** e não o AppImage — um
+    release sem `.deb` continua sendo erro, e um `.AppImage` presente é ignorado (não
+    quebra). Em `scripts/release/instructions_install.template.txt`, remova o caminho do
+    AppImage (libfuse2, `~/Applications`, `chmod +x`, `.desktop` manual): o Linux instala
+    com `sudo apt install ./<deb>` (que cria a entrada no menu de apps) e verifica com
+    `dpkg -s` / `command -v loopy-menubar` (confirme o nome do pacote e do binário
+    instalados inspecionando o `.deb` gerado em
+    `apps/menubar/src-tauri/target/release/bundle/deb/` com `dpkg-deb -I`/`-c`, se
+    existir — senão, deixe a verificação tolerante e registre em deviations). Diga que
+    só distros Debian/Ubuntu e derivadas são cobertas. Atualize os testes.
+    Acceptance: renderizar sem `.deb` é erro; com `.deb` + `.dmg` + `-setup.exe` (sem
+    AppImage) renderiza; o template não menciona AppImage nem libfuse2; testes verdes.
+    Verification: npm test -- tests/release/render-instructions && npm run typecheck && npm run lint && ! grep -n "AppImage\|libfuse" scripts/release/instructions_install.template.txt
+    Deps: T-004
+    Files: scripts/release/render-instructions.mjs, scripts/release/render-instructions.d.mts, scripts/release/instructions_install.template.txt, tests/release/render-instructions.test.ts
+    Size: S
+    Risk: L
+
 ## Fase 3 — O workflow de release
 
 - [ ] T-008: `release.yml` — draft → build em 3 SOs → instruções → npm + publicar; remove o `publish.yml`
@@ -202,7 +228,7 @@
     false`): checkout **da tag** (não do `github.sha` — a versão nova está no commit de
     release), libs `apt` no Linux, `npm ci`, `npm run build:sidecar -w apps/menubar`
     com `TAURI_ENV_TARGET_TRIPLE` do runner, e `tauri-apps/tauri-action` com
-    `projectPath: apps/menubar` e `releaseId` do draft (anexa os bundles de T-004).
+    `projectPath: apps/menubar` e `releaseId` do draft (anexa os bundles de T-004 — no Linux só o `.deb`, D5).
     (3) `instructions` (needs `build`): lista os assets do draft (`gh api`), roda
     `render-instructions.mjs` (T-006) com versão, repo, pacote npm e assets, e anexa
     `instructions_install.txt` ao draft.
@@ -218,7 +244,7 @@
     garante que publicar e tornar público só acontecem com os 3 builds e as instruções
     ok; `publish.yml` removido; npm desabilitado = aviso, não falha.
     Verification: actionlint .github/workflows/release.yml .github/workflows/ci.yml && ! grep -rn "hgflima/loopy" .github/ scripts/release/ && test ! -e .github/workflows/publish.yml
-    Deps: T-002, T-004, T-005, T-006, T-007
+    Deps: T-002, T-004, T-005, T-006, T-007, T-015
     Files: .github/workflows/release.yml, .github/workflows/publish.yml
     Size: L
     Risk: H
@@ -362,11 +388,16 @@
     "Usage Patterns"; `src/open/` em "Módulos de apoio". `apps/menubar/CLAUDE.md`: argv
     de launch, instância única, `take_launch_args`/`launch-args`. Mantenha os `CLAUDE.md`
     concisos (regra "Maintaining this file").
-    Acceptance: guarda de portabilidade do CI passa com `instalar.md` presente; ADR-0014
+    Registre a dívida do AppImage (D5) em `.harn/devy/debts/` no formato dos registros
+    existentes (próximo id livre; veja `.harn/devy/debts/README.md` e indexe lá): sintoma
+    (`patchelf` do linuxdeploy em `usr/bin` → segfault do sidecar `bun --compile`),
+    referência khoj-ai/pipali#14, saídas possíveis (sidecar fora de `usr/bin` via
+    `bundle.linux.appimage.files` + candidato em `resolve_sidecar_path`; wrapper não-ELF).
+    Acceptance: guarda de portabilidade do CI passa com `instalar.md` presente; dívida do AppImage registrada e indexada; ADR-0014
     indexada; links do README de how-to resolvem; nenhum doc descreve comportamento que o
     código não tem.
     Verification: ! grep -rn "hgflima/loopy" docs/how-to/instalar.md docs/how-to/trocar-repositorio.md .github/ scripts/release/ && npm run lint
     Deps: T-008, T-010, T-013
-    Files: docs/how-to/instalar.md, docs/how-to/trocar-repositorio.md, docs/how-to/plataformas.md, docs/how-to/README.md, docs/adrs/0014-distribuicao-e-release-automatico.md, docs/adrs/README.md, CLAUDE.md, apps/menubar/CLAUDE.md
+    Files: .harn/devy/debts/README.md, docs/how-to/instalar.md, docs/how-to/trocar-repositorio.md, docs/how-to/plataformas.md, docs/how-to/README.md, docs/adrs/0014-distribuicao-e-release-automatico.md, docs/adrs/README.md, CLAUDE.md, apps/menubar/CLAUDE.md
     Size: M
     Risk: L
