@@ -187,6 +187,10 @@ export function useConfigDraft(): ConfigDraftAPI {
 
   // Track the current dir for save()
   const dirRef = useRef<string | undefined>(undefined);
+  // Each load() takes a ticket; only the latest may write state. Two loads can
+  // overlap (the persisted dir and a launch argv dir on boot) and their
+  // awaits interleave, mixing one project's pipeline with another's backlog.
+  const loadSeqRef = useRef(0);
   // Keep a ref to the raw draft object (pre-validation defaults) for patching
   const rawDraftRef = useRef<unknown>(null);
 
@@ -206,6 +210,7 @@ export function useConfigDraft(): ConfigDraftAPI {
   const load = useCallback(
     async (dir?: string) => {
       dirRef.current = dir;
+      const seq = ++loadSeqRef.current;
       let yamlSource: string | null = null;
 
       if (IS_TAURI && dir) {
@@ -219,6 +224,7 @@ export function useConfigDraft(): ConfigDraftAPI {
         } catch {
           yamlSource = null; // I/O error — treat as empty dir
         }
+        if (seq !== loadSeqRef.current) return; // superseded by a newer load
       } else {
         // dev:web fallback — use embedded sample
         yamlSource = SAMPLE_YAML;
@@ -256,6 +262,7 @@ export function useConfigDraft(): ConfigDraftAPI {
       // The backlog path is declared by the config, so it is only knowable now.
       const parsedDraft = validated.errors.length === 0 ? validated.draft : null;
       const todoSource = await readBacklogSource(dir, parsedDraft?.inputs.todo);
+      if (seq !== loadSeqRef.current) return; // superseded by a newer load
       setTodoMd(todoSource);
       reParseTasks(parsedDraft, todoSource);
     },

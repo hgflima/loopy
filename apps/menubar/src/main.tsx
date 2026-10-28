@@ -219,6 +219,9 @@ function Root() {
     });
   }, []);
 
+  // A launch argv (`loopy open`) after a Run finished: back to the idle editor.
+  const handleDismissRun = useCallback(() => setState(initialBridgeState), []);
+
   // ----------------------------------------------------------
   // Approval decision callback (T-016 — the only mutation surface)
   // ----------------------------------------------------------
@@ -305,6 +308,7 @@ function Root() {
       state={state}
       onStartRun={handleStartRun}
       onApprovalDecision={handleApprovalDecision}
+      onDismissRun={handleDismissRun}
     />
   );
 }

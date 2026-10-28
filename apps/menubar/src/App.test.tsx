@@ -858,8 +858,14 @@ describe("App — launch argv (C-0020 T-013)", () => {
   it("with a Run active: warns, does not switch or start, applies the dir when it ends", async () => {
     const { source, push } = fakeSource(null);
     const onStartRun = vi.fn();
+    const onDismissRun = vi.fn();
     const { getByTestId, queryByTestId, rerender } = render(
-      <App state={makeBridgeState({ runStatus: "running" })} onStartRun={onStartRun} launchArgsSource={source} />,
+      <App
+        state={makeBridgeState({ runStatus: "running" })}
+        onStartRun={onStartRun}
+        onDismissRun={onDismissRun}
+        launchArgsSource={source}
+      />,
     );
     await flush();
     await act(async () => {
@@ -870,13 +876,53 @@ describe("App — launch argv (C-0020 T-013)", () => {
     expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
 
     mockLoad.mockResolvedValue(undefined);
+    expect(onDismissRun).not.toHaveBeenCalled();
     rerender(
-      <App state={makeBridgeState({ runStatus: "finished" })} onStartRun={onStartRun} launchArgsSource={source} />,
+      <App
+        state={makeBridgeState({ runStatus: "finished" })}
+        onStartRun={onStartRun}
+        onDismissRun={onDismissRun}
+        launchArgsSource={source}
+      />,
     );
     await flush();
+    // Leaves the finished board so the switch is visible (the idle editor).
+    expect(onDismissRun).toHaveBeenCalledTimes(1);
     expect(mockLoad).toHaveBeenCalledWith("/proj/b");
     expect(queryByTestId("launch-warning")).toBeNull();
     // The deferred argv never carries --run: no second Run is invented.
     expect(onStartRun).not.toHaveBeenCalled();
+  });
+  it("after a finished Run, a new argv returns to idle before applying", async () => {
+    const { source, push } = fakeSource(null);
+    const onDismissRun = vi.fn();
+    render(
+      <App
+        state={makeBridgeState({ runStatus: "finished" })}
+        onStartRun={vi.fn()}
+        onDismissRun={onDismissRun}
+        launchArgsSource={source}
+      />,
+    );
+    await flush();
+    await act(async () => {
+      push(launchArgs({ dir: "/proj/b" }));
+    });
+    expect(onDismissRun).toHaveBeenCalledTimes(1);
+    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+  });
+
+  it("--run ignores flags left by an earlier launch (no stale --yes)", async () => {
+    const { source, push } = fakeSource(launchArgs({ dir: "/proj/a", task: "T-001", yes: true }));
+    const onStartRun = vi.fn();
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await act(async () => {
+      push(launchArgs({ dir: "/proj/b", run: true }));
+    });
+    await flush();
+    expect(onStartRun).toHaveBeenCalledWith("/proj/b", { yes: false, taskId: "", verbose: false });
   });
 });

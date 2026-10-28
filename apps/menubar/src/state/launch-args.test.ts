@@ -74,8 +74,24 @@ describe("planLaunchArgs — idle", () => {
     ]);
   });
 
+  it("--run makes the argv authoritative: absent flags clear, not keep", () => {
+    expect(
+      planLaunchArgs(args({ dir: "/proj/b", run: true }), IDLE)[0],
+    ).toEqual({
+      kind: "setFlags",
+      flags: { yes: false, verbose: false, taskId: "" },
+    });
+    expect(
+      planLaunchArgs(args({ run: true, yes: true, task: " T-002 " }), IDLE)[0],
+    ).toEqual({
+      kind: "setFlags",
+      flags: { yes: true, verbose: false, taskId: "T-002" },
+    });
+  });
+
   it("--run with a different dir switches, then starts after load", () => {
     expect(planLaunchArgs(args({ dir: "/proj/b", run: true }), IDLE)).toEqual([
+      { kind: "setFlags", flags: { yes: false, verbose: false, taskId: "" } },
       { kind: "switchDir", dir: "/proj/b" },
       { kind: "startAfterLoad", dir: "/proj/b" },
     ]);
@@ -83,9 +99,11 @@ describe("planLaunchArgs — idle", () => {
 
   it("--run with the same dir starts the current project", () => {
     expect(planLaunchArgs(args({ dir: "/proj/a", run: true }), IDLE)).toEqual([
+      { kind: "setFlags", flags: { yes: false, verbose: false, taskId: "" } },
       { kind: "startAfterLoad", dir: "/proj/a" },
     ]);
     expect(planLaunchArgs(args({ run: true }), IDLE)).toEqual([
+      { kind: "setFlags", flags: { yes: false, verbose: false, taskId: "" } },
       { kind: "startAfterLoad", dir: "/proj/a" },
     ]);
   });

@@ -26,10 +26,15 @@ export interface LaunchArgsSource {
   subscribe(onArgs: (args: LaunchArgs) => void): Promise<() => void>;
 }
 
-/** Only the flags the argv carries — prefill turns them on, never clears. */
+/**
+ * Flags to apply to the launch popover; an absent key leaves the field as is.
+ * Without `--run` this carries only the flags present (prefill turns them on,
+ * never clears). With `--run` it carries all three: the argv about to start a
+ * Run is authoritative, so a `--yes` left by an earlier launch can't leak in.
+ */
 export interface LaunchFlagsPatch {
-  readonly yes?: true;
-  readonly verbose?: true;
+  readonly yes?: boolean;
+  readonly verbose?: boolean;
   readonly taskId?: string;
 }
 
@@ -65,8 +70,10 @@ export function normalizeDir(dir: string): string {
   return stripped === "" ? trimmed : stripped;
 }
 
-function flagsPatch(args: LaunchArgs): LaunchFlagsPatch {
+function flagsPatch(args: LaunchArgs, starts: boolean): LaunchFlagsPatch {
   const task = args.task?.trim();
+  if (starts)
+    return { yes: args.yes, verbose: args.verbose, taskId: task ?? "" };
   return {
     ...(args.yes ? { yes: true as const } : {}),
     ...(args.verbose ? { verbose: true as const } : {}),
@@ -86,7 +93,9 @@ export function planLaunchArgs(
   const target =
     args.dir != null && args.dir.trim() !== "" ? normalizeDir(args.dir) : null;
   const switching = target !== null && target !== current;
-  const flags = flagsPatch(args);
+  const runDir = target ?? current;
+  const starts = args.run && runDir !== "" && !ctx.isRunning;
+  const flags = flagsPatch(args, starts);
   const hasFlags = Object.keys(flags).length > 0;
 
   if (ctx.isRunning) {
@@ -104,8 +113,7 @@ export function planLaunchArgs(
   const actions: LaunchAction[] = [];
   if (hasFlags) actions.push({ kind: "setFlags", flags });
   if (switching) actions.push({ kind: "switchDir", dir: target });
-  const runDir = target ?? current;
-  if (args.run && runDir !== "")
+  if (starts)
     actions.push({ kind: "startAfterLoad", dir: runDir });
   return actions;
 }

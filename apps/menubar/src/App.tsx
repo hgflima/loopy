@@ -60,6 +60,8 @@ interface AppProps {
   onApprovalDecision?: (requestId: string, approved: boolean) => void;
   /** Where launch argv comes from; defaults to Tauri (none in dev:web). */
   launchArgsSource?: LaunchArgsSource | null;
+  /** Leave a finished Run's board and return to idle (a launch argv asks for it). */
+  onDismissRun?: () => void;
 }
 
 /** Run-level status → the header pill tone + label. */
@@ -84,6 +86,7 @@ function App({
   onStartRun,
   onApprovalDecision,
   launchArgsSource = IS_TAURI ? TAURI_LAUNCH_ARGS : null,
+  onDismissRun,
 }: AppProps) {
   const { store, ui } = state;
   const isIdle = ui.runStatus === "idle";
@@ -256,12 +259,16 @@ function App({
   const applyLaunchArgs = useCallback(
     (args: LaunchArgs) => {
       let switched = false;
-      for (const action of planLaunchArgs(args, { currentDir: dir, isRunning })) {
+      const actions = planLaunchArgs(args, { currentDir: dir, isRunning });
+      // The idle editor (dir input, Iniciar) only exists in idle: a finished
+      // Run's board would swallow the switch/start silently.
+      if (actions.length > 0 && ui.runStatus === "finished") onDismissRun?.();
+      for (const action of actions) {
         switch (action.kind) {
           case "setFlags":
-            if (action.flags.yes) setFlagYes(true);
-            if (action.flags.verbose) setFlagVerbose(true);
-            if (action.flags.taskId) setFlagTaskId(action.flags.taskId);
+            if (action.flags.yes !== undefined) setFlagYes(action.flags.yes);
+            if (action.flags.verbose !== undefined) setFlagVerbose(action.flags.verbose);
+            if (action.flags.taskId !== undefined) setFlagTaskId(action.flags.taskId);
             break;
           case "switchDir":
             switched = true;
@@ -284,7 +291,7 @@ function App({
         }
       }
     },
-    [dir, isRunning, requestDir],
+    [dir, isRunning, ui.runStatus, onDismissRun, requestDir],
   );
   // Latest closure for the mount-time `take` and the `launch-args` listener.
   const applyLaunchArgsRef = useRef(applyLaunchArgs);

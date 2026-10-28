@@ -321,7 +321,7 @@
     Size: S
     Risk: L
 
-- [ ] T-012: Instância única + entrega do argv ao webview (E3)
+- [x] T-012: Instância única + entrega do argv ao webview (E3)
     Adicione `tauri-plugin-single-instance` (v2 — aprovado na spec) ao `Cargo.toml`.
     Registre-o **primeiro** no `Builder` (exigência do plugin). Argv inicial: no
     `setup`, `parse_launch_args(std::env::args(), cwd atual)` → guardado num `State`
