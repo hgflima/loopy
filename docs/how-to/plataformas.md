@@ -51,7 +51,7 @@ Outras distros: veja os pré-requisitos do Tauri v2 para Linux
 npm run dev -w apps/menubar     # build:sidecar + tauri dev
 # só a UI, sem Rust (dados mock):
 npm run dev:web -w apps/menubar
-# empacotar (.deb/.AppImage/.rpm conforme bundle.targets):
+# empacotar (só .deb — bundle.targets em src-tauri/tauri.linux.conf.json):
 npm run menubar
 # (uma vez) ícone na lista de apps/dock do GNOME + atalho no launcher:
 npm run install:linux-desktop -w apps/menubar
@@ -62,6 +62,33 @@ npm run install:linux-desktop -w apps/menubar
 > Code) e de um projeto-alvo com **branch parent existente**, **árvore limpa**
 > e um backlog com tasks pendentes cujo id case com `task_id_pattern` — sem
 > isso a GUI abre com o board vazio e o Run termina sem fazer nada.
+
+### Bundles por plataforma (`bundle.targets`)
+
+O `tauri.conf.json` mantém `"targets": "all"` como base; cada SO tem um
+`tauri.<os>.conf.json` em `apps/menubar/src-tauri/` que o Tauri v2 mescla por
+cima (JSON Merge Patch — o array do SO substitui o valor da base). O `version`
+continua só no `tauri.conf.json` (path-ref para o `package.json` da raiz).
+
+| SO      | Arquivo                   | `targets`        | Artefatos (em `src-tauri/target/release/bundle/`)                    |
+| ------- | ------------------------- | ---------------- | -------------------------------------------------------------------- |
+| Linux   | `tauri.linux.conf.json`   | `["deb"]`        | `deb/Loopy_<versão>_amd64.deb`                                       |
+| macOS   | `tauri.macos.conf.json`   | `["app", "dmg"]` | `macos/Loopy.app`, `dmg/Loopy_<versão>_<arch>.dmg` (`aarch64`/`x64`) |
+| Windows | `tauri.windows.conf.json` | `["nsis"]`       | `nsis/Loopy_<versão>_x64-setup.exe` (instala por usuário, sem admin) |
+
+Convenção dos nomes: `Loopy_<versão>_<arch>.<ext>` — `<arch>` é o do
+empacotador (`amd64` no deb, `aarch64`/`x64` no dmg, `x64` no NSIS, que ainda
+leva o sufixo `-setup`). No Linux, `npm run menubar` gera **só**
+`deb/Loopy_<versão>_amd64.deb` (sem `.AppImage` nem `.rpm`) — pacote dpkg
+`loopy`, que instala `usr/bin/loopy-menubar` (a GUI) e `usr/bin/loopy` (o sidecar). Os nomes de
+macOS/Windows seguem a convenção do Tauri e só se confirmam no job de release
+desses SOs.
+
+> **AppImage: adiado (D5).** O `linuxdeploy` reescreve com `patchelf` todo ELF
+> em `usr/bin`, inclusive o sidecar `loopy` do `bun build --compile`, que passa a
+> dar segfault e aborta o bundle. Por isso o Linux sai só com `.deb` (cobre
+> Debian/Ubuntu e derivadas) até o sidecar poder viver fora de `usr/bin` ou
+> sobreviver ao `patchelf`.
 
 ### Diferenças de comportamento no Linux
 
@@ -128,7 +155,7 @@ para o motor), depois o resto. W7–W8 (a GUI compila) já estão resolvidos aci
 | W10 | todo `Command::new` em `sidecar.rs`, `interview_process.rs`, `project_fs.rs` (`probe_agent`), `telemetry.rs` (`run_annotation`) | Cada spawn de um app GUI (`windows_subsystem = "windows"`) abre uma **janela de console** piscando.                                                                                  | `CommandExt::creation_flags(CREATE_NO_WINDOW /* 0x08000000 */)` sob `#[cfg(windows)]`, num helper compartilhado.                                                                  |
 | W11 | `sidecar.rs` `login_shell_path`                                                                                                 | `$SHELL` não existe → tenta `/bin/zsh`, falha, cai no PATH herdado (inofensivo, mas spawn inútil a cada start).                                                                      | Gatear com `#[cfg(unix)]`; no Windows o PATH herdado do Explorer já é o do usuário.                                                                                               |
 | W12 | `main.rs` `resize_popover`/`toggle_popover_window` + `tauri.conf.json` popover                                                  | No Windows o clique no tray funciona e mostra o popover, mas (a) a barra fica embaixo: `TrayBottomLeft`/`TrayCenter` posicionam por cima/fora; (b) `transparent: true` sem vibrancy. | Posicionar acima do tray quando a barra está embaixo (`TrayBottomCenter` vs. cálculo manual); L5 já deixa a superfície opaca. Alternativa: usar só o menu nativo (como no Linux). |
-| W13 | `src-tauri/icons` / bundle                                                                                                      | `icon.ico` existe; bundle `targets: "all"` gera MSI/NSIS — exige WiX/NSIS e WebView2 (Win10 antigo não tem).                                                                         | Fixar `targets` por plataforma e configurar `webviewInstallMode`.                                                                                                                 |
+| W13 | `src-tauri/icons` / bundle                                                                                                      | `targets` já fixado por plataforma (só NSIS, por usuário — ver "Bundles por plataforma"); falta o WebView2 (Win10 antigo não tem).                                                  | Configurar `webviewInstallMode`.                                                                                                                                                  |
 | W14 | `src/specs/Interview.tsx` `changeIdFromDir` (`split("/")`)                                                                      | `changeDir` vindo do motor no Windows pode ter `\`.                                                                                                                                  | `split(/[/\\]/)`.                                                                                                                                                                 |
 
 #### Toolchain / processo
