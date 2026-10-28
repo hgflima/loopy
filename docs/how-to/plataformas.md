@@ -1,8 +1,9 @@
 # Rodar o loopy (e a GUI) no Linux e no Windows
 
-O `loopy` nasceu no macOS. O **motor** (a CLI) sempre rodou no Linux (o CI de
-publish é `ubuntu-latest`), mas a **GUI** (`apps/menubar/`, Tauri v2) só era
-buildável no macOS. Este guia é, ao mesmo tempo:
+O `loopy` nasceu no macOS. O **motor** (a CLI) sempre rodou no Linux, mas a
+**GUI** (`apps/menubar/`, Tauri v2) só era buildável no macOS. Desde a C-0020 o
+release builda instaladores para os três SOs (ver
+[Instalar a partir de um release](instalar.md)). Este guia é, ao mesmo tempo:
 
 1. o **passo a passo** para rodar tudo no Linux (suportado);
 2. o **mapa de portabilidade**: cada ponto do código que depende de plataforma,
@@ -21,6 +22,9 @@ buildável no macOS. Este guia é, ao mesmo tempo:
 | Sidecar compilado (`build:sidecar`) | ✅    | ✅                                 | ⚠️ script pronto, sem teste |
 | GUI Tauri (`tauri dev`/`build`)     | ✅    | ✅ (exige libs de sistema, abaixo) | ⚠️ compila (W7–W8), W9–W14 |
 | Popover do tray                     | ✅    | ➖ substituído por menu nativo     | ⚠️ (W12)                    |
+| Instalador no release               | ⚠️ `.dmg` arm64, experimental | ✅ `.deb` amd64 (AppImage adiado — D5) | ⚠️ NSIS x64, experimental |
+| CI (`ci.yml`, a cada push/PR)       | ➖ não roda | ✅ typecheck, lint, testes TS, `cargo test`, `actionlint` | ➖ não roda |
+| Build no release (`release.yml`)    | ✅ `macos-14` (só gera o artefato) | ✅ `ubuntu-22.04` | ✅ `windows-latest` (só gera o artefato) |
 
 ## Linux — como rodar
 
@@ -108,8 +112,8 @@ desses SOs.
 - **Ícone na lista de apps (GNOME/Wayland)** vem de um `.desktop` cujo
   `StartupWMClass` casa com o app_id da janela — no dev, `loopy-menubar` (nome
   do binário). `install:linux-desktop` grava
-  `~/.local/share/applications/loopy-menubar.desktop`; o `.deb`/`.AppImage`
-  trazem o próprio.
+  `~/.local/share/applications/loopy-menubar.desktop`; o `.deb` traz o
+  próprio.
 - **PATH**: `login_shell_path()` (`$SHELL -ilc 'echo $PATH'`) também roda no
   Linux; necessário quando o app é aberto por um `.desktop` (sem o PATH do
   shell, `npx`/mise não seriam achados).
@@ -163,7 +167,7 @@ para o motor), depois o resto. W7–W8 (a GUI compila) já estão resolvidos aci
 | #   | Onde                        | Problema                                                                                          | Correção proposta                                                                       |
 | --- | --------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | W15 | `package.json` `check:rust` | `bash scripts/loopy-check-rust.sh`.                                                               | Portar para `.mjs` ou exigir Git Bash.                                                  |
-| W16 | CI                          | Só existe `publish.yml` (ubuntu). Nenhum job prova macOS/Windows nem o build da GUI.              | Matriz `ubuntu/macos/windows` rodando `typecheck`, `test`, `cargo test` do `src-tauri`. |
+| W16 | CI                          | O `ci.yml` roda só em `ubuntu-latest`; o `release.yml` builda a GUI em macOS/Windows, mas nenhum job **testa** lá. | Matriz `ubuntu/macos/windows` no `ci.yml` rodando `typecheck`, `test`, `cargo test` do `src-tauri`. |
 | W17 | `bun build --compile`       | Funciona no Windows, mas o `bun:sqlite` do binário e o `import.meta.main` devem ser validados lá. | Rodar `loopy --version` e um Run com `metrics:` no Windows.                             |
 
 ## Verificação
