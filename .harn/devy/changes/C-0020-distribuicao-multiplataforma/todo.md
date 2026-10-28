@@ -95,7 +95,7 @@
     Size: S
     Risk: L
 
-- [ ] T-004: `bundle.targets` por plataforma via `tauri.<os>.conf.json`
+- [x] T-004: `bundle.targets` por plataforma via `tauri.<os>.conf.json`
     Hoje `tauri.conf.json` tem `"targets": "all"`. Crie os arquivos de config por
     plataforma que o Tauri v2 mescla por cima (confirme o mecanismo e os nomes na doc
     oficial do Tauri v2 antes — source-driven): `tauri.linux.conf.json` →
@@ -191,7 +191,7 @@
     Size: S
     Risk: L
 
-- [ ] T-015: Linux só `.deb` (D5) — instruções de instalação sem AppImage
+- [x] T-015: Linux só `.deb` (D5) — instruções de instalação sem AppImage
     O AppImage foi adiado (D5, ver `spec.md`): o Linux do release tem só
     `Loopy_<versão>_amd64.deb`. Ajuste `scripts/release/render-instructions.mjs` (e o
     `.d.mts`) para que a plataforma Linux exija **o `.deb`** e não o AppImage — um
@@ -214,7 +214,7 @@
 
 ## Fase 3 — O workflow de release
 
-- [ ] T-008: `release.yml` — draft → build em 3 SOs → instruções → npm + publicar; remove o `publish.yml`
+- [x] T-008: `release.yml` — draft → build em 3 SOs → instruções → npm + publicar; remove o `publish.yml`
     Novo `.github/workflows/release.yml` (E5), `on: push: branches: [main]` +
     `workflow_dispatch` (recuperação, E10). `concurrency` por workflow sem cancelar em
     andamento. Repo **sempre** de `${{ github.repository }}` (E11). Jobs encadeados,
@@ -302,7 +302,7 @@
     Size: M
     Risk: M
 
-- [ ] T-011: `parse_launch_args` — parsing puro do argv da GUI no Rust (E2)
+- [x] T-011: `parse_launch_args` — parsing puro do argv da GUI no Rust (E2)
     Novo `apps/menubar/src-tauri/src/launch_args.rs` com `LaunchArgs { dir, task, yes,
     verbose, run }` (serde `Serialize`, `Clone`, `Default`, `PartialEq`) e
     `parse_launch_args(argv: &[String], cwd: &Path) -> Result<LaunchArgs, String>` (a
@@ -344,7 +344,7 @@
     Size: M
     Risk: M
 
-- [ ] T-013: GUI aplica o argv recebido — troca de projeto pelo dirty guard, pré-preenche flags, `--run` controlado
+- [x] T-013: GUI aplica o argv recebido — troca de projeto pelo dirty guard, pré-preenche flags, `--run` controlado
     Novo `apps/menubar/src/state/launch-args.ts`: tipo `LaunchArgs` (espelho serde do
     Rust: `dir`, `task`, `yes`, `verbose`, `run`) e um planejador **puro**
     `planLaunchArgs(args, { currentDir, isRunning }) → ações` (ex.: `switchDir`,
@@ -369,7 +369,7 @@
 
 ## Fase 5 — Documentação e fechamento
 
-- [ ] T-014: Docs de instalação e troca de repo, ADR-0014 e intent nodes
+- [x] T-014: Docs de instalação e troca de repo, ADR-0014 e intent nodes
     `docs/how-to/instalar.md` (humano, por SO): baixar do GitHub Release mais recente
     (`https://github.com/<owner>/<repo>/releases` — **sem** `hgflima/loopy` literal; use
     um placeholder explicado), instalar app e CLI, `loopy open .`, contornos do aviso de
