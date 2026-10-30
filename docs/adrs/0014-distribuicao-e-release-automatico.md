@@ -72,9 +72,9 @@ Alternativas consideradas e rejeitadas:
 - **E1** — `loopy open` acha a GUI por uma **função pura** (`resolveApp`, em
   `src/open/resolve-app.ts`) sobre `(platform, env, selfDir, home, exists,
 list)`, em ordem: `LOOPY_APP` → GUI irmã do próprio executável → locais
-  padrão por SO. O binário instalado chama-se `loopy-menubar` (nome do crate) e
-  é tentado antes de `Loopy` (no macOS, case-insensitive, `Loopy` casaria com o
-  sidecar `loopy`). Nada achado → exit ≠ 0 listando onde procurou.
+  padrão por SO. O binário instalado chama-se `loopy-menubar` (nome do crate).
+  Nada achado → exit ≠ 0 listando onde procurou. _Refinado pela C-0021 (adendo
+  abaixo): nunca resolve a própria CLI._
 - **E2** — **Contrato de argv da GUI:** `[dir] [--task <id>] [--yes]
 [--verbose] [--run]`. O `loopy open` passa o `dir` já absoluto e lança a GUI
   destacada, **sem shell**. Abrir pré-preenche as flags; o Run **só inicia com
@@ -82,7 +82,7 @@ list)`, em ordem: `LOOPY_APP` → GUI irmã do próprio executável → locais
 - **E3** — **Instância única** (`tauri-plugin-single-instance`): um segundo
   `loopy open` repassa o argv à instância viva, que foca a janela e troca de
   projeto pelo dirty guard existente; com um Run ativo, não o mata — avisa e
-  adia a troca.
+  adia a troca. _Refinado pela C-0021 (adendo abaixo)._
 - **E4** — **Uma versão, uma fonte:** o `package.json` da raiz. O
   semantic-release grava a versão nele e em `apps/menubar/package.json`
   (`scripts/release/sync-version.mjs`) e commita de volta
@@ -120,9 +120,10 @@ list)`, em ordem: `LOOPY_APP` → GUI irmã do próprio executável → locais
   `tauri.windows.conf.json` → `["nsis"]`), que o Tauri v2 mescla sobre o
   `tauri.conf.json` — sem lógica de matriz no workflow e sem tocar no `version`
   path-ref.
-- **Argv inicial é _pull_, não _push_.** O Rust guarda o argv inicial num
-  `State`; o webview o busca uma vez ao montar (`take_launch_args`). Só a
-  **segunda** instância chega por evento (`launch-args`).
+- **Argv de launch é _pull_, não _push_.** Um `emit` antes de o webview
+  escutar se perde. Desde a C-0021, **todo** pedido (o argv inicial e o de cada
+  segunda instância) entra numa fila no Rust, que o webview drena
+  (`drain_launch_args`); o evento `launch-args-pending` só avisa para drenar.
 - **Draft encontrado por id, não por tag.** `GET /releases/tags/{tag}` não
   enxerga drafts; o job `release` lista `/releases`, filtra por `tag_name` e
   exporta o `id`, que o `tauri-action` consome (`releaseId`).
@@ -156,3 +157,33 @@ list)`, em ordem: `LOOPY_APP` → GUI irmã do próprio executável → locais
   exige `loopy ./open` para rodar o loop nela.
 - **Fora desta decisão:** assinatura/notarização, auto-update, Linux arm64,
   macOS x86_64, CLI standalone sem Node.
+
+## Adendo — 2026-10-30, C-0021 (review do PR #8)
+
+O review do PR #8 achou casos em que E1 e E3 não se sustentavam. As correções
+(spec em `.harn/devy/changes/C-0021-correcoes-review-pr8/`):
+
+- **E1 — `loopy open` nunca resolve a própria CLI.** No macOS (APFS) e no
+  Windows (NTFS) o sistema de arquivos ignora caixa, e o candidato `Loopy`
+  casava com a CLI `loopy`: sob `npm i -g`, a busca ao lado do executável
+  olhava a pasta `bin` do Node e lançava um Run headless (com `--yes`, que
+  aprovava o próprio Merge). Agora: macOS e Windows só procuram
+  `loopy-menubar`; nenhum candidato com nome de CLI nem o próprio
+  executável/script (`isSelf`, por realpath) é lançado, nem via `LOOPY_APP`;
+  e a busca ao lado do executável só roda no **binário empacotado**
+  (`__LOOPY_BUNDLED__`, injetado por `bun build --compile --define`).
+- **E3 — o Run existe desde o clique.** O `BridgeState` ganhou
+  `runStatus: "starting"` (do Iniciar ao `run_started`), e é Run ativo para o
+  argv de launch; um exit em `starting` é start-fail e volta para `idle`. Como
+  rede de segurança, `SidecarState::start` **recusa** com um sidecar vivo em
+  vez de matá-lo.
+- **E3 — `--run` passa pelo aviso de rascunho sujo** também no mesmo projeto:
+  todo `--run` recarrega o projeto antes de iniciar (Salvar / Descartar /
+  Cancelar), em vez de fazer auto-save por cima do `loopy.yml` em disco.
+- **E3 — pedidos durante um Run se combinam** (como se aplicados em
+  sequência; o banner diz qual dir foi substituído) e, quando o Run termina,
+  **esperam o usuário** ("Abrir agora?"): o resultado do Run não some sozinho.
+- **E3 — boot sem perda.** Fila de argv no Rust drenada pelo webview; nada é
+  aplicado antes de decidir o dir inicial, e o dir salvo só carrega se nenhum
+  pedido traz dir. O callback da segunda instância faz a parte de janela na
+  main thread (`run_on_main_thread`).

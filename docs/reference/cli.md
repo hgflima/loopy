@@ -149,14 +149,18 @@ qualquer que tenha sido a ordem digitada.
 
 1. A variável de ambiente `LOOPY_APP` — o caminho explícito do executável (no macOS,
    pode ser o `.app`). Se apontar para algo inexistente, a busca segue para o próximo.
-2. A GUI **ao lado do próprio executável** do `loopy` (o caso do `loopy` embutido no
-   app instalado).
+2. A GUI **ao lado do próprio executável** do `loopy` — só quando quem roda é o `loopy`
+   embutido no app instalado. Com a CLI do npm (sob Node), essa busca não acontece.
 3. Os locais padrão de instalação:
    - **macOS:** `/Applications/Loopy.app` e `~/Applications/Loopy.app`;
    - **Linux:** `loopy-menubar` no `PATH` (o `.deb`), depois `~/Applications/Loopy*.AppImage`
      e `~/.local/bin/Loopy*.AppImage`;
    - **Windows:** `%LOCALAPPDATA%\Programs\Loopy\`, `%LOCALAPPDATA%\Loopy\` e
      `%ProgramFiles%\Loopy\`.
+
+O executável procurado é `loopy-menubar` (no Linux, também `Loopy`). Um candidato que
+seja a própria CLI — o nome `loopy`/`loopy.exe` (sem distinção de maiúsculas no macOS e
+no Windows) ou o executável em uso — **nunca** é lançado, mesmo via `LOOPY_APP`.
 
 Nada achado → sai com código ≠ 0, lista no stderr cada lugar onde procurou e aponta
 a instalação: o `instructions_install.txt` anexado a cada release do GitHub (guia em

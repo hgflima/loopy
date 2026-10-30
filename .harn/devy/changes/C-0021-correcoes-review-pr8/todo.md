@@ -241,7 +241,7 @@
 
 ## Fase 3 — Documentação
 
-- [ ] T-008: ADR-0014, intent nodes e `cli.md` refletem as correções
+- [x] T-008: ADR-0014, intent nodes e `cli.md` refletem as correções
     `docs/adrs/0014-distribuicao-e-release-automatico.md`: adendo datado (2026-10-30,
     C-0021) com F1/F2 (como `loopy open` acha a GUI: nomes por plataforma, nunca a CLI,
     irmãos só no binário empacotado) e F3–F10 (Run ativo desde `starting`, `start`
