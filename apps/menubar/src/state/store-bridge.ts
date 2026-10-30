@@ -215,7 +215,8 @@ export function applySidecarStderr(
  * Handle `sidecar://exit` — determine failure type or ignore clean exits.
  *
  * - `runStatus === "finished"` → clean exit, no failure (same reference).
- * - `runStatus === "idle" | "starting"` → **start-fail** (exit before `run_started`).
+ * - `runStatus === "idle" | "starting"` → **start-fail** (exit before
+ *   `run_started`); `starting` falls back to `idle`, so the editor returns.
  * - `runStatus === "running"` → **death-mid-run** (exit after `run_started`).
  *
  * Never throws (AD-5).
@@ -233,6 +234,8 @@ export function applySidecarExit(
     ...state,
     ui: {
       ...state.ui,
+      // A Run that never started is not active: back to the idle editor.
+      ...(state.ui.runStatus === "starting" ? { runStatus: "idle" as const } : {}),
       sidecarFailure: { type, exitCode },
     },
   };
