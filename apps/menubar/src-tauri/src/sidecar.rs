@@ -234,9 +234,14 @@ impl SidecarState {
 
     /// Spawn the sidecar binary and set up stdout/stderr/exit event forwarding.
     ///
-    /// If a sidecar is already running it is killed first (one Run at a time).
+    /// One Run at a time — by **refusing**, never by killing: with a sidecar
+    /// alive this returns an error and leaves it untouched (C-0021 / B2: a
+    /// `loopy open --run` used to kill a Run still starting up). Replacing a Run
+    /// is an explicit `stop` first. The slot is held locked from the check to
+    /// the store, so two concurrent starts can't both pass.
     pub fn start(&self, app: &AppHandle, dir: &str, flags: Vec<String>) -> Result<(), String> {
-        self.stop()?;
+        let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
+        ensure_no_live_sidecar(inner.is_some())?;
 
         let mut args = vec![
             "--no-tui".to_string(),
@@ -281,10 +286,8 @@ impl SidecarState {
             .take()
             .ok_or_else(|| "Failed to capture stdin".to_string())?;
 
-        {
-            let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
-            *inner = Some(SidecarInner { stdin, pid });
-        }
+        *inner = Some(SidecarInner { stdin, pid });
+        drop(inner);
 
         // stdout → sidecar://line
         let app_stdout = app.clone();
@@ -380,10 +383,25 @@ fn wait_and_emit(mut child: Child, pid: u32, app: &AppHandle) {
     // Clean up state if this PID is still the active sidecar
     if let Some(state) = app.try_state::<SidecarState>() {
         if let Ok(mut inner) = state.inner.lock() {
-            if inner.as_ref().is_some_and(|h| h.pid == pid) {
-                *inner = None;
-            }
+            release_if_current(&mut inner, pid, |h| h.pid);
         }
+    }
+}
+
+/// Refuse a start while a sidecar is alive (see [`SidecarState::start`]).
+fn ensure_no_live_sidecar(alive: bool) -> Result<(), String> {
+    if alive {
+        Err("Run em andamento: encerre-o antes de iniciar outro".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// Free the slot on exit — only if it still holds *this* pid, so a late exit
+/// of an old process never frees a newer Run's slot.
+fn release_if_current<T>(slot: &mut Option<T>, pid: u32, pid_of: impl Fn(&T) -> u32) {
+    if slot.as_ref().is_some_and(|h| pid_of(h) == pid) {
+        *slot = None;
     }
 }
 
@@ -394,6 +412,26 @@ fn wait_and_emit(mut child: Child, pid: u32, app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- One Run at a time, never by killing (C-0021 / B2) -------------------
+
+    #[test]
+    fn start_is_refused_while_a_sidecar_is_alive() {
+        assert!(ensure_no_live_sidecar(false).is_ok());
+        let err = ensure_no_live_sidecar(true).unwrap_err();
+        assert!(err.contains("Run em andamento"), "{err}");
+    }
+
+    #[test]
+    fn exit_frees_the_slot_only_for_the_current_pid() {
+        let mut slot = Some(42u32);
+        release_if_current(&mut slot, 7, |p| *p);
+        assert_eq!(slot, Some(42), "a stale exit must not free a newer Run");
+        release_if_current(&mut slot, 42, |p| *p);
+        assert_eq!(slot, None);
+        // …and once freed, a new start is allowed again.
+        assert!(ensure_no_live_sidecar(slot.is_some()).is_ok());
+    }
 
     // -- LineFramer tests ---------------------------------------------------
 

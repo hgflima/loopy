@@ -70,7 +70,7 @@
     Size: M
     Risk: H
 
-- [ ] T-002: `SidecarState::start` recusa quando há um sidecar vivo (B2, defesa no Rust)
+- [x] T-002: `SidecarState::start` recusa quando há um sidecar vivo (B2, defesa no Rust)
     `apps/menubar/src-tauri/src/sidecar.rs`: hoje `start` faz `self.stop()?` antes do
     spawn — "um Run por vez" implementado **matando** o vivo. Isso é o que permite a um
     `loopy open --run` matar um Run que está subindo (spec B2/F4). Trocar por: se o slot
