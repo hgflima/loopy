@@ -11,4 +11,4 @@ export type {
 } from "./resolve-app";
 export { resolveApp } from "./resolve-app";
 export type { LaunchApp, LaunchResult, LocateApp, OpenRequest } from "./launch";
-export { buildGuiArgv, launchDetached, locateApp } from "./launch";
+export { buildGuiArgv, isBundled, launchDetached, locateApp } from "./launch";

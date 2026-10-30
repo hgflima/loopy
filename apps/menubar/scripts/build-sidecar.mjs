@@ -40,6 +40,10 @@ execFileSync(
     "build",
     "--compile",
     join(appDir, "..", "..", "src", "index.ts"),
+    // `loopy open` só procura a GUI ao lado do executável quando é este binário
+    // (src/open/launch.ts, `isBundled`) — sob Node, essa pasta é a do npm.
+    "--define",
+    "__LOOPY_BUNDLED__=true",
     "--outfile",
     outfile,
   ],

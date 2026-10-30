@@ -29,29 +29,33 @@ describe("resolveApp — macOS", () => {
   it("LOOPY_APP wins over sibling and defaults", () => {
     const r = resolveApp(
       input("darwin", {
-        env: { LOOPY_APP: "/opt/custom/Loopy" },
+        env: { LOOPY_APP: "/opt/custom/loopy-menubar" },
         selfDir,
         home: "/Users/ana",
         files: [
-          "/opt/custom/Loopy",
+          "/opt/custom/loopy-menubar",
           `${selfDir}/loopy-menubar`,
           "/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
         ],
       }),
     );
-    expect(r).toEqual({ ok: true, path: "/opt/custom/Loopy", source: "env" });
+    expect(r).toEqual({
+      ok: true,
+      path: "/opt/custom/loopy-menubar",
+      source: "env",
+    });
   });
 
   it("LOOPY_APP pointing at a .app resolves to the binary inside", () => {
     const r = resolveApp(
       input("darwin", {
         env: { LOOPY_APP: "/opt/Loopy.app" },
-        files: ["/opt/Loopy.app/Contents/MacOS/Loopy"],
+        files: ["/opt/Loopy.app/Contents/MacOS/loopy-menubar"],
       }),
     );
     expect(r).toEqual({
       ok: true,
-      path: "/opt/Loopy.app/Contents/MacOS/Loopy",
+      path: "/opt/Loopy.app/Contents/MacOS/loopy-menubar",
       source: "env",
     });
   });
@@ -95,12 +99,14 @@ describe("resolveApp — macOS", () => {
       input("darwin", {
         env: { LOOPY_APP: "/nope/Loopy" },
         home: "/Users/ana",
-        files: ["/Users/ana/Applications/Loopy.app/Contents/MacOS/Loopy"],
+        files: [
+          "/Users/ana/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
+        ],
       }),
     );
     expect(user).toEqual({
       ok: true,
-      path: "/Users/ana/Applications/Loopy.app/Contents/MacOS/Loopy",
+      path: "/Users/ana/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
       source: "default",
     });
   });
@@ -118,11 +124,8 @@ describe("resolveApp — macOS", () => {
       searched: [
         "/nope/Loopy",
         `${selfDir}/loopy-menubar`,
-        `${selfDir}/Loopy`,
         "/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
-        "/Applications/Loopy.app/Contents/MacOS/Loopy",
         "/Users/ana/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
-        "/Users/ana/Applications/Loopy.app/Contents/MacOS/Loopy",
       ],
     });
   });
@@ -267,17 +270,17 @@ describe("resolveApp — Windows", () => {
 
   it("LOOPY_APP → sibling → defaults with win32 paths", () => {
     const files = [
-      "D:\\apps\\Loopy\\Loopy.exe",
-      "C:\\Program Files\\Loopy\\Loopy.exe",
+      "D:\\apps\\Loopy\\loopy-menubar.exe",
+      "C:\\Program Files\\Loopy\\loopy-menubar.exe",
     ];
     expect(
       resolveApp(
         input("win32", {
-          env: { ...env, LOOPY_APP: "E:\\Loopy.exe" },
-          files: ["E:\\Loopy.exe", ...files],
+          env: { ...env, LOOPY_APP: "E:\\loopy-menubar.exe" },
+          files: ["E:\\loopy-menubar.exe", ...files],
         }),
       ),
-    ).toEqual({ ok: true, path: "E:\\Loopy.exe", source: "env" });
+    ).toEqual({ ok: true, path: "E:\\loopy-menubar.exe", source: "env" });
     expect(
       resolveApp(
         input("win32", {
@@ -288,14 +291,14 @@ describe("resolveApp — Windows", () => {
       ),
     ).toEqual({
       ok: true,
-      path: "D:\\apps\\Loopy\\Loopy.exe",
+      path: "D:\\apps\\Loopy\\loopy-menubar.exe",
       source: "sibling",
     });
     expect(
       resolveApp(input("win32", { env, selfDir: "D:\\other", files })),
     ).toEqual({
       ok: true,
-      path: "C:\\Program Files\\Loopy\\Loopy.exe",
+      path: "C:\\Program Files\\Loopy\\loopy-menubar.exe",
       source: "default",
     });
   });
@@ -305,14 +308,14 @@ describe("resolveApp — Windows", () => {
       input("win32", {
         env,
         files: [
-          "C:\\Users\\ana\\AppData\\Local\\Programs\\Loopy\\Loopy.exe",
-          "C:\\Program Files\\Loopy\\Loopy.exe",
+          "C:\\Users\\ana\\AppData\\Local\\Programs\\Loopy\\loopy-menubar.exe",
+          "C:\\Program Files\\Loopy\\loopy-menubar.exe",
         ],
       }),
     );
     expect(r).toEqual({
       ok: true,
-      path: "C:\\Users\\ana\\AppData\\Local\\Programs\\Loopy\\Loopy.exe",
+      path: "C:\\Users\\ana\\AppData\\Local\\Programs\\Loopy\\loopy-menubar.exe",
       source: "default",
     });
   });
@@ -323,14 +326,113 @@ describe("resolveApp — Windows", () => {
       ok: false,
       searched: [
         "D:\\bin\\loopy-menubar.exe",
-        "D:\\bin\\Loopy.exe",
         "C:\\Users\\ana\\AppData\\Local\\Programs\\Loopy\\loopy-menubar.exe",
-        "C:\\Users\\ana\\AppData\\Local\\Programs\\Loopy\\Loopy.exe",
         "C:\\Users\\ana\\AppData\\Local\\Loopy\\loopy-menubar.exe",
-        "C:\\Users\\ana\\AppData\\Local\\Loopy\\Loopy.exe",
         "C:\\Program Files\\Loopy\\loopy-menubar.exe",
-        "C:\\Program Files\\Loopy\\Loopy.exe",
       ],
+    });
+  });
+});
+
+/**
+ * C-0021/B1: on a case-insensitive filesystem (APFS, NTFS) a `Loopy` candidate
+ * matched the CLI `loopy` — from the npm `bin` dir, `loopy open . --yes`
+ * launched a headless Run that approved its own gates.
+ */
+describe("resolveApp — never the CLI (B1)", () => {
+  /** `exists` that ignores case, like APFS/NTFS. */
+  function ci(files: string[]): (p: string) => boolean {
+    const lower = new Set(files.map((f) => f.toLowerCase()));
+    return (p) => lower.has(p.toLowerCase());
+  }
+
+  it("macOS: the npm `loopy` beside node never beats /Applications/Loopy.app", () => {
+    const nodeBin = "/Users/ana/.nvm/versions/node/v22.13.0/bin";
+    const r = resolveApp({
+      ...input("darwin", { selfDir: nodeBin, home: "/Users/ana" }),
+      exists: ci([
+        `${nodeBin}/loopy`,
+        `${nodeBin}/node`,
+        "/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
+      ]),
+    });
+    expect(r).toEqual({
+      ok: true,
+      path: "/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
+      source: "default",
+    });
+  });
+
+  it("macOS: the bundled sidecar `Contents/MacOS/loopy` is never the GUI", () => {
+    const macos = "/Applications/Loopy.app/Contents/MacOS";
+    const r = resolveApp({
+      ...input("darwin", { selfDir: macos, home: "/Users/ana" }),
+      exists: ci([`${macos}/loopy`]),
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it("Windows: `loopy.exe` beside the GUI is never picked", () => {
+    const dir = "C:\\Users\\ana\\AppData\\Local\\Loopy";
+    const r = resolveApp({
+      ...input("win32", { selfDir: dir, env: {} }),
+      exists: ci([`${dir}\\loopy.exe`]),
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it("an explicit LOOPY_APP naming the CLI falls through (any case)", () => {
+    const cases = [
+      [
+        "darwin",
+        "/usr/local/bin/LOOPY",
+        "/Applications/Loopy.app/Contents/MacOS/loopy-menubar",
+      ],
+      ["linux", "/usr/bin/loopy", "/usr/bin/loopy-menubar"],
+      [
+        "win32",
+        "C:\\npm\\Loopy.EXE",
+        "C:\\Program Files\\Loopy\\loopy-menubar.exe",
+      ],
+    ] as const;
+    for (const [platform, cli, gui] of cases) {
+      const r = resolveApp(
+        input(platform, {
+          env: {
+            LOOPY_APP: cli,
+            PATH: "/usr/bin",
+            ProgramFiles: "C:\\Program Files",
+          },
+          home: "/Users/ana",
+          files: [cli, gui],
+        }),
+      );
+      expect(r).toEqual({ ok: true, path: gui, source: "default" });
+    }
+  });
+
+  it("Linux keeps `Loopy` as a GUI name (case-sensitive), never `loopy`", () => {
+    const r = resolveApp(
+      input("linux", {
+        env: { PATH: "/usr/bin" },
+        files: ["/usr/bin/loopy", "/usr/bin/Loopy"],
+      }),
+    );
+    expect(r).toEqual({ ok: true, path: "/usr/bin/Loopy", source: "default" });
+  });
+
+  it("a candidate `isSelf` recognises is skipped", () => {
+    const r = resolveApp({
+      ...input("linux", {
+        env: { PATH: "/a:/b" },
+        files: ["/a/loopy-menubar", "/b/loopy-menubar"],
+      }),
+      isSelf: (p) => p === "/a/loopy-menubar",
+    });
+    expect(r).toEqual({
+      ok: true,
+      path: "/b/loopy-menubar",
+      source: "default",
     });
   });
 });

@@ -8,11 +8,14 @@
  *
  * Binary names: Tauri v2 does not rename the main binary unless
  * `mainBinaryName` is set, so the installed executable is the crate name
- * `loopy-menubar` (`apps/menubar/src-tauri/Cargo.toml`). `Loopy` (the
- * `productName`) is kept as a second name so a future `mainBinaryName` rename
- * keeps working. `loopy-menubar` is tried first on purpose: on macOS's
- * case-insensitive filesystem `Contents/MacOS/Loopy` would also match the
- * bundled sidecar `Contents/MacOS/loopy` — the CLI itself, not the GUI.
+ * `loopy-menubar` (`apps/menubar/src-tauri/Cargo.toml`). The bundled sidecar —
+ * the CLI itself — is `loopy` (`loopy.exe`) in the same directory. On macOS and
+ * Windows the filesystem ignores case, so a `Loopy` candidate would match the
+ * CLI (C-0021/B1: from the npm `bin` dir, `loopy open . --yes` launched a
+ * headless, self-approving Run instead of the GUI). There, only
+ * `loopy-menubar` is searched; `Loopy` survives as a second name on Linux only.
+ * On top of that, a candidate named like the CLI, or that `isSelf` recognises
+ * as the running CLI, is never returned — whatever its source.
  */
 import path from "node:path";
 
@@ -22,7 +25,11 @@ export type AppSource = "env" | "sibling" | "default";
 export interface ResolveAppInput {
   readonly platform: NodeJS.Platform;
   readonly env: Readonly<Record<string, string | undefined>>;
-  /** Directory of the running `loopy` executable (the bundled sidecar case). */
+  /**
+   * Directory of the running `loopy` executable — set **only** when it is the
+   * bundled sidecar (`bun --compile`); empty under Node, where it would be the
+   * Node `bin` dir that also holds the npm `loopy` link (C-0021/F2).
+   */
   readonly selfDir: string;
   readonly home: string;
   readonly exists: (path: string) => boolean;
@@ -32,6 +39,11 @@ export interface ResolveAppInput {
    * reported in `searched` but never matched.
    */
   readonly list?: (dir: string) => readonly string[];
+  /**
+   * `true` when `path` is the running CLI (its executable or script). Such a
+   * candidate is skipped: launching it would start a headless Run (F1).
+   */
+  readonly isSelf?: (path: string) => boolean;
 }
 
 export type ResolveAppResult =
@@ -45,9 +57,13 @@ interface Candidate {
   readonly pattern?: true;
 }
 
-/** Executable names of the GUI, most likely first (see module doc). */
-const UNIX_NAMES = ["loopy-menubar", "Loopy"] as const;
-const WIN_NAMES = ["loopy-menubar.exe", "Loopy.exe"] as const;
+/**
+ * Executable names of the GUI, most likely first (see module doc). Only Linux
+ * is case-sensitive, so only there `Loopy` can't be mistaken for the CLI.
+ */
+const LINUX_NAMES = ["loopy-menubar", "Loopy"] as const;
+const MAC_NAMES = ["loopy-menubar"] as const;
+const WIN_NAMES = ["loopy-menubar.exe"] as const;
 const APPIMAGE = /^Loopy.*\.AppImage$/i;
 
 function pathFor(platform: NodeJS.Platform): path.PlatformPath {
@@ -55,13 +71,23 @@ function pathFor(platform: NodeJS.Platform): path.PlatformPath {
 }
 
 function namesFor(platform: NodeJS.Platform): readonly string[] {
-  return platform === "win32" ? WIN_NAMES : UNIX_NAMES;
+  if (platform === "win32") return WIN_NAMES;
+  return platform === "darwin" ? MAC_NAMES : LINUX_NAMES;
 }
 
-/** `X.app` → its `Contents/MacOS/<name>` binaries; anything else → itself. */
+/** The file name is the CLI's (`loopy`/`loopy.exe`), as this OS compares names. */
+function isCliName(platform: NodeJS.Platform, p: string): boolean {
+  const base = pathFor(platform).basename(p);
+  // APFS and NTFS ignore case by default.
+  const name =
+    platform === "darwin" || platform === "win32" ? base.toLowerCase() : base;
+  return name === "loopy" || name === "loopy.exe";
+}
+
+/** `X.app` → its `Contents/MacOS/<name>` binary; anything else → itself. */
 function macBinaries(p: string): string[] {
   if (!p.replace(/\/+$/, "").endsWith(".app")) return [p];
-  return UNIX_NAMES.map((n) => path.posix.join(p, "Contents", "MacOS", n));
+  return MAC_NAMES.map((n) => path.posix.join(p, "Contents", "MacOS", n));
 }
 
 /** (1) An explicit `LOOPY_APP` always wins — when it exists. */
@@ -139,7 +165,7 @@ function defaultCandidates(input: ResolveAppInput): Candidate[] {
   const pathDirs = (env.PATH ?? "").split(":").filter((d) => d.length > 0);
   return [
     ...pathDirs.flatMap((d) =>
-      UNIX_NAMES.map((n) => mk(path.posix.join(d, n))),
+      LINUX_NAMES.map((n) => mk(path.posix.join(d, n))),
     ),
     ...globCandidates(input, path.posix.join(home, "Applications")),
     ...globCandidates(input, path.posix.join(home, ".local", "bin")),
@@ -150,7 +176,8 @@ function defaultCandidates(input: ResolveAppInput): Candidate[] {
  * Find the Loopy GUI executable (E1). Order matters: an explicit LOOPY_APP
  * always wins; the sibling check makes `loopy open` work from inside an
  * installed bundle with no PATH setup; defaults cover a normal install.
- * A missing candidate (including a stale LOOPY_APP) falls through to the next.
+ * A missing candidate (including a stale LOOPY_APP) falls through to the next,
+ * and so does one that is the CLI itself (F1) — even an explicit LOOPY_APP.
  */
 export function resolveApp(input: ResolveAppInput): ResolveAppResult {
   const candidates = [
@@ -158,7 +185,13 @@ export function resolveApp(input: ResolveAppInput): ResolveAppResult {
     ...siblingCandidates(input),
     ...defaultCandidates(input),
   ];
-  const hit = candidates.find((c) => !c.pattern && input.exists(c.path));
+  const hit = candidates.find(
+    (c) =>
+      !c.pattern &&
+      !isCliName(input.platform, c.path) &&
+      input.exists(c.path) &&
+      !input.isSelf?.(c.path),
+  );
   return hit
     ? { ok: true, path: hit.path, source: hit.source }
     : { ok: false, searched: candidates.map((c) => c.path) };

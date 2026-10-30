@@ -28,7 +28,7 @@
 
 ## Fase 1 — Bloqueadores do review
 
-- [ ] T-001: `loopy open` nunca resolve a própria CLI como GUI (B1)
+- [x] T-001: `loopy open` nunca resolve a própria CLI como GUI (B1)
     Hoje, no macOS com `npm i -g`, `src/open/launch.ts` passa
     `selfDir = dirname(process.execPath)` = a pasta `bin` do Node, onde também mora o
     link `loopy` da CLI; `siblingCandidates` (`src/open/resolve-app.ts`) testa `Loopy`,

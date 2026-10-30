@@ -12,7 +12,7 @@
  * comes back as `{ ok: false, error }`, never as a throw.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { resolveApp, type ResolveAppResult } from "./resolve-app";
@@ -88,16 +88,52 @@ function listDir(dir: string): string[] {
 }
 
 /**
+ * Injected by `apps/menubar/scripts/build-sidecar.mjs` (`bun build --compile
+ * --define`); undefined under Node, tsx and tsup.
+ */
+declare const __LOOPY_BUNDLED__: boolean | undefined;
+
+/**
+ * This process is the bundled sidecar, not the npm CLI under Node (F2). Only
+ * then is `dirname(process.execPath)` the GUI's install dir; under Node it is
+ * Node's `bin` dir, which also holds the npm `loopy` link (C-0021/B1).
+ */
+export const isBundled =
+  typeof __LOOPY_BUNDLED__ !== "undefined" && __LOOPY_BUNDLED__ === true;
+
+/** Canonical path, or the input itself when it can't be resolved. */
+function canonical(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/**
+ * `true` when `p` is the running CLI — its executable or its entry script
+ * (`process.argv[1]`, the target of the npm `bin` link). Compared after
+ * `realpath`, so links and case variants of the same file match.
+ */
+function isSelf(p: string): boolean {
+  const target = canonical(p);
+  return [process.execPath, process.argv[1]]
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .some((s) => canonical(s) === target);
+}
+
+/**
  * Resolve the GUI against the real host: the running platform and env, the
- * directory of the running executable (the bundled-sidecar case), `$HOME`, and
+ * directory of the running executable (only when bundled — F2), `$HOME`, and
  * the real filesystem.
  */
 export const locateApp: LocateApp = () =>
   resolveApp({
     platform: process.platform,
     env: process.env,
-    selfDir: dirname(process.execPath),
+    selfDir: isBundled ? dirname(process.execPath) : "",
     home: homedir(),
     exists: existsSync,
     list: listDir,
+    isSelf,
   });
