@@ -918,6 +918,118 @@ describe("App — launch argv (C-0020 T-013)", () => {
     expect(getByTestId("launch-warning").textContent).toContain("--run");
   });
 
+  // C-0021/B3: --run on the open project used to auto-save a dirty draft over
+  // the loopy.yml on disk (maybe edited elsewhere) without asking.
+  describe("--run on the same project goes through the dirty guard", () => {
+    function renderDirtyRun(runStatus: BridgeState["ui"]["runStatus"] = "idle") {
+      mockDraftState = { ...mockDraftState, dirty: true, save: vi.fn().mockResolvedValue(true) };
+      const { source, push } = fakeSource(null);
+      const onStartRun = vi.fn();
+      const onDismissRun = vi.fn();
+      const utils = render(
+        <App
+          state={makeBridgeState({ runStatus })}
+          onStartRun={onStartRun}
+          onDismissRun={onDismissRun}
+          launchArgsSource={source}
+        />,
+      );
+      return { ...utils, push, onStartRun, onDismissRun };
+    }
+
+    it("asks first, in the words of a Run (not a project switch)", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ dir: "/sample", run: true }));
+      });
+      await flush();
+      expect(getByTestId("dirty-confirm").textContent).toContain("Run");
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("Cancel neither saves nor starts", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      fireEvent.click(getByTestId("dirty-cancel"));
+      await flush();
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("Discard re-reads the yml from disk and starts, without saving", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      mockLoad.mockImplementation(async () => {
+        mockDraftState = { ...mockDraftState, dirty: false };
+      });
+      await act(async () => {
+        fireEvent.click(getByTestId("dirty-discard"));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/sample");
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("Save writes the draft, then starts", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      const save = mockDraftState.save;
+      mockLoad.mockImplementation(async () => {
+        mockDraftState = { ...mockDraftState, dirty: false };
+      });
+      await act(async () => {
+        fireEvent.click(getByTestId("dirty-save"));
+      });
+      await flush();
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("the same holds after a finished Run", async () => {
+      const { push, getByTestId, onStartRun, onDismissRun } = renderDirtyRun("finished");
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      expect(onDismissRun).toHaveBeenCalledTimes(1);
+      expect(getByTestId("dirty-confirm")).toBeTruthy();
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("a clean draft is re-read from disk before starting", async () => {
+      const { source, push } = fakeSource(null);
+      const onStartRun = vi.fn();
+      mockLoad.mockResolvedValue(undefined);
+      render(
+        <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+      );
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/sample");
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("after a finished Run, a new argv returns to idle before applying", async () => {
     const { source, push } = fakeSource(null);
     const onDismissRun = vi.fn();

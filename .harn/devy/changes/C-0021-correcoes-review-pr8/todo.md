@@ -118,7 +118,7 @@
     Size: L
     Risk: H
 
-- [ ] T-004: `--run` sempre recarrega o projeto pelo dirty guard (B3)
+- [x] T-004: `--run` sempre recarrega o projeto pelo dirty guard (B3)
     Hoje, sem troca de dir, `planLaunchArgs` não emite `switchDir`, o `startAfterLoad`
     nasce `loaded: true` e o `handleLaunch` faz auto-save do rascunho sujo por cima do
     `loopy.yml` em disco (spec B3/F5). Também acontece com Run `finished` e o mesmo dir.

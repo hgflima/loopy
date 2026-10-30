@@ -111,15 +111,18 @@ describe("planLaunchArgs — idle", () => {
     ]);
   });
 
-  it("--run with the same dir starts the current project", () => {
-    expect(planLaunchArgs(args({ dir: "/proj/a", run: true }), IDLE)).toEqual([
+  // C-0021/B3: without a reload, a dirty draft was auto-saved over the
+  // loopy.yml on disk with no question asked.
+  it("--run with the same dir reloads it (through the guard), then starts", () => {
+    const plan = [
       { kind: "setFlags", flags: { yes: false, verbose: false, taskId: "" } },
+      { kind: "reloadDir", dir: "/proj/a" },
       { kind: "startAfterLoad", dir: "/proj/a" },
-    ]);
-    expect(planLaunchArgs(args({ run: true }), IDLE)).toEqual([
-      { kind: "setFlags", flags: { yes: false, verbose: false, taskId: "" } },
-      { kind: "startAfterLoad", dir: "/proj/a" },
-    ]);
+    ];
+    expect(planLaunchArgs(args({ dir: "/proj/a/", run: true }), IDLE)).toEqual(
+      plan,
+    );
+    expect(planLaunchArgs(args({ run: true }), IDLE)).toEqual(plan);
   });
 
   it("--run with no dir anywhere plans no start", () => {

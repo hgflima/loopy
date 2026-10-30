@@ -123,7 +123,8 @@ function App({
   }, [popoverOpen]);
 
   // --- Dirty guard confirm state (T-014/R10) ------------------------------
-  const [dirtyConfirm, setDirtyConfirm] = useState<string | null>(null);
+  // `forRun`: the load precedes a `--run` — the dialog says so (C-0021 / B3).
+  const [dirtyConfirm, setDirtyConfirm] = useState<{ dir: string; forRun: boolean } | null>(null);
 
   // --- Launch argv (C-0020 / T-013) --------------------------------------
   // `--run` waiting for its dir's loopy.yml to load (`loaded`), then canStart.
@@ -182,9 +183,9 @@ function App({
 
   // Switch dir through the dirty guard (shared by the user and the launch argv).
   const requestDir = useCallback(
-    (newDir: string) => {
+    (newDir: string, forRun = false) => {
       if (configDraft.dirty) {
-        setDirtyConfirm(newDir);
+        setDirtyConfirm({ dir: newDir, forRun });
         return;
       }
       loadDir(newDir);
@@ -220,12 +221,12 @@ function App({
   const handleDirtyConfirmSave = useCallback(async () => {
     if (!dirtyConfirm) return;
     await configDraft.save();
-    applyPendingDir(dirtyConfirm);
+    applyPendingDir(dirtyConfirm.dir);
   }, [dirtyConfirm, configDraft.save, applyPendingDir]);
 
   const handleDirtyConfirmDiscard = useCallback(() => {
     if (!dirtyConfirm) return;
-    applyPendingDir(dirtyConfirm);
+    applyPendingDir(dirtyConfirm.dir);
   }, [dirtyConfirm, applyPendingDir]);
 
   async function pickDir() {
@@ -261,8 +262,8 @@ function App({
   // Apply a launch argv (planner in state/launch-args.ts — pure, AD-6).
   const applyLaunchArgs = useCallback(
     (args: LaunchArgs) => {
-      let switched = false;
       const actions = planLaunchArgs(args, { currentDir: dir, isRunning });
+      const forRun = actions.some((a) => a.kind === "startAfterLoad");
       // The idle editor (dir input, Iniciar) only exists in idle: a finished
       // Run's board would swallow the switch/start silently.
       if (actions.length > 0 && ui.runStatus === "finished") onDismissRun?.();
@@ -274,13 +275,13 @@ function App({
             if (action.flags.taskId !== undefined) setFlagTaskId(action.flags.taskId);
             break;
           case "switchDir":
-            switched = true;
+          case "reloadDir":
             setPendingStart(null);
-            requestDir(action.dir);
+            requestDir(action.dir, forRun);
             break;
           case "startAfterLoad":
-            // Without a switch, the current dir is already loaded.
-            setPendingStart({ dir: action.dir, loaded: !switched });
+            // Always behind a (re)load: only `loadDir` marks it loaded.
+            setPendingStart({ dir: action.dir, loaded: false });
             break;
           case "warnRunActive":
             setDeferredLaunch(action.deferred);
@@ -566,7 +567,11 @@ function App({
       {dirtyConfirm && (
         <div className="dirty-confirm-overlay" data-testid="dirty-confirm">
           <div className="dirty-confirm" role="alertdialog" aria-label="Alterações não salvas">
-            <p className="dirty-confirm__message">Há alterações não salvas no <code>loopy.yml</code>.</p>
+            <p className="dirty-confirm__message">
+              Há alterações não salvas no <code>loopy.yml</code>.
+              {dirtyConfirm.forRun &&
+                " Pediram para iniciar um Run: salve o rascunho ou descarte-o para rodar o arquivo em disco."}
+            </p>
             <div className="dirty-confirm__actions">
               <Button variant="primary" data-testid="dirty-save" onClick={() => void handleDirtyConfirmSave()}>
                 Salvar

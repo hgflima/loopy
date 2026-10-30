@@ -44,6 +44,12 @@ export type LaunchAction =
   | { readonly kind: "setFlags"; readonly flags: LaunchFlagsPatch }
   /** Open another project — through the dirty guard, never around it. */
   | { readonly kind: "switchDir"; readonly dir: string }
+  /**
+   * `--run` on the project already open: re-read it from disk first, through
+   * the same dirty guard — a dirty draft is never auto-saved over a loopy.yml
+   * that may have been edited elsewhere (C-0021 / B3).
+   */
+  | { readonly kind: "reloadDir"; readonly dir: string }
   /** `--run`: start once `dir`'s loopy.yml has loaded, and only if it can start. */
   | { readonly kind: "startAfterLoad"; readonly dir: string }
   /**
@@ -93,7 +99,8 @@ function flagsPatch(args: LaunchArgs, starts: boolean): LaunchFlagsPatch {
 
 /**
  * Plan what to do with a received argv. Order matters: flags first, then the
- * dir switch, then the deferred start (which waits for the switch's load).
+ * dir switch (or, for a `--run` on the same dir, its reload), then the
+ * deferred start, which waits for that load.
  */
 export function planLaunchArgs(
   args: LaunchArgs,
@@ -123,7 +130,7 @@ export function planLaunchArgs(
   const actions: LaunchAction[] = [];
   if (hasFlags) actions.push({ kind: "setFlags", flags });
   if (switching) actions.push({ kind: "switchDir", dir: target });
-  if (starts)
-    actions.push({ kind: "startAfterLoad", dir: runDir });
+  else if (starts) actions.push({ kind: "reloadDir", dir: runDir });
+  if (starts) actions.push({ kind: "startAfterLoad", dir: runDir });
   return actions;
 }
