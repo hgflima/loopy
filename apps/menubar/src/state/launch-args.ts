@@ -8,6 +8,7 @@
  * it — a pure planner (AD-6); `App.tsx` executes the actions, routing any dir
  * switch through the existing dirty guard.
  */
+import type { RunStatus } from "./store-bridge";
 
 /** Serde mirror of the Rust `LaunchArgs` (`Option<String>` arrives as `null`). */
 export interface LaunchArgs {
@@ -59,8 +60,17 @@ export type LaunchAction =
 export interface LaunchContext {
   /** The dir the GUI currently shows (the dir input's value). */
   readonly currentDir: string;
-  /** A Run is in progress (`runStatus === "running"`). */
+  /** A Run is in progress — {@link isRunActive}, `starting` included. */
   readonly isRunning: boolean;
+}
+
+/**
+ * A Run is active from the click on Iniciar, not from `run_started`: the frame
+ * comes seconds later, and a `--run` in that window used to start a second Run
+ * — killing the one starting up (C-0021 / B2).
+ */
+export function isRunActive(status: RunStatus): boolean {
+  return status === "starting" || status === "running";
 }
 
 /** Compare dirs modulo surrounding blanks and trailing separators. */

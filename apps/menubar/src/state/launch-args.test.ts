@@ -5,7 +5,12 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { normalizeDir, planLaunchArgs, type LaunchArgs } from "./launch-args";
+import {
+  isRunActive,
+  normalizeDir,
+  planLaunchArgs,
+  type LaunchArgs,
+} from "./launch-args";
 
 function args(over: Partial<LaunchArgs> = {}): LaunchArgs {
   return {
@@ -29,6 +34,15 @@ describe("normalizeDir", () => {
 
   it("keeps the filesystem root", () => {
     expect(normalizeDir("/")).toBe("/");
+  });
+});
+
+describe("isRunActive (C-0021 / B2)", () => {
+  it("a Run is active from the click on Iniciar, not from run_started", () => {
+    expect(isRunActive("idle")).toBe(false);
+    expect(isRunActive("starting")).toBe(true);
+    expect(isRunActive("running")).toBe(true);
+    expect(isRunActive("finished")).toBe(false);
   });
 });
 

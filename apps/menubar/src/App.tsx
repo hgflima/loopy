@@ -20,6 +20,7 @@ import {
   orphanRefs as computeOrphanRefs,
 } from "./config/pipeline-edit";
 import {
+  isRunActive,
   normalizeDir,
   planLaunchArgs,
   type LaunchArgs,
@@ -67,6 +68,7 @@ interface AppProps {
 /** Run-level status → the header pill tone + label. */
 const RUN_PILL: Record<BridgeState["ui"]["runStatus"], { tone: Tone; label: string }> = {
   idle: { tone: "neutral", label: "Idle" },
+  starting: { tone: "running", label: "Iniciando" },
   running: { tone: "running", label: "Running" },
   finished: { tone: "done", label: "Finished" },
 };
@@ -90,7 +92,8 @@ function App({
 }: AppProps) {
   const { store, ui } = state;
   const isIdle = ui.runStatus === "idle";
-  const isRunning = ui.runStatus === "running";
+  // `starting` counts: the Run exists from the click on Iniciar (C-0021 / B2).
+  const isRunning = isRunActive(ui.runStatus);
   const currentApproval = headApproval(ui);
   const runPill = RUN_PILL[ui.runStatus];
   const { done, running, total } = countByStatus(store.tasks);

@@ -56,8 +56,15 @@ export interface SidecarFailure {
 /** Maximum stderr lines kept in {@link UIState.stderrTail}. */
 export const STDERR_TAIL_CAP = 50;
 
+/**
+ * Run lifecycle as the UI sees it. `starting` spans the click on Iniciar up to
+ * the `run_started` frame — seconds, while the motor spawns its agents — and
+ * already counts as an active Run (C-0021 / B2).
+ */
+export type RunStatus = "idle" | "starting" | "running" | "finished";
+
 export interface UIState {
-  readonly runStatus: "idle" | "running" | "finished";
+  readonly runStatus: RunStatus;
   readonly runResult?: unknown;
   readonly pendingApprovals: readonly ApprovalRequest[];
   /** Rolling tail of sidecar stderr lines (capped at {@link STDERR_TAIL_CAP}). */
@@ -83,6 +90,12 @@ export function initialBridgeState(): BridgeState {
     ui: { runStatus: "idle", pendingApprovals: [], stderrTail: [] },
     transcript: {},
   };
+}
+
+/** A fresh state for a Run being launched: `run_started` has not arrived yet. */
+export function startingBridgeState(): BridgeState {
+  const s = initialBridgeState();
+  return { ...s, ui: { ...s.ui, runStatus: "starting" } };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +215,7 @@ export function applySidecarStderr(
  * Handle `sidecar://exit` — determine failure type or ignore clean exits.
  *
  * - `runStatus === "finished"` → clean exit, no failure (same reference).
- * - `runStatus === "idle"` → **start-fail** (exit before `run_started`).
+ * - `runStatus === "idle" | "starting"` → **start-fail** (exit before `run_started`).
  * - `runStatus === "running"` → **death-mid-run** (exit after `run_started`).
  *
  * Never throws (AD-5).
@@ -214,7 +227,7 @@ export function applySidecarExit(
   if (state.ui.runStatus === "finished") return state;
 
   const type: SidecarFailure["type"] =
-    state.ui.runStatus === "idle" ? "start-fail" : "death-mid-run";
+    state.ui.runStatus === "running" ? "death-mid-run" : "start-fail";
 
   return {
     ...state,

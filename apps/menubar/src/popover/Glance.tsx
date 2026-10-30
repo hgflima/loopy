@@ -22,6 +22,7 @@
 import { useEffect, useRef } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { BridgeState } from "../state/store-bridge";
+import { isRunActive } from "../state/launch-args";
 import {
   StatusDot,
   Pill,
@@ -116,7 +117,8 @@ export function Glance({ state }: GlanceProps) {
   const running = store.tasks.filter((t) => t.status === "running").length;
   const warnings = ui.pendingApprovals.length;
 
-  const isRunning = ui.runStatus === "running";
+  // Parar also stops a Run still starting up.
+  const isRunning = isRunActive(ui.runStatus);
   const isIdle = ui.runStatus === "idle";
 
   // Every activation invokes its command AND closes the popover (native menu

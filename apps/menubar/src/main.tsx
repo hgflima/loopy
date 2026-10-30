@@ -16,6 +16,7 @@ import {
   applySidecarStderr,
   dismissApproval,
   initialBridgeState,
+  startingBridgeState,
 } from "./state/store-bridge";
 import { formatApprovalPayload } from "./panes/ApprovalPrompt";
 import { shouldNotify } from "./state/notify";
@@ -205,7 +206,8 @@ function Root() {
   // ----------------------------------------------------------
 
   const handleStartRun = useCallback((dir: string, flags: LaunchFlags) => {
-    setState(initialBridgeState);
+    // `starting` until run_started: a Run is already active (C-0021 / B2).
+    setState(startingBridgeState);
     if (!IS_TAURI) return;
     startSidecar(invoke, dir, flags).catch((e: unknown) => {
       // The spawn never happened, so no `sidecar://exit` will ever arrive to

@@ -105,7 +105,7 @@ function task(
 }
 
 function makeBridgeState(overrides?: {
-  runStatus?: "idle" | "running" | "finished";
+  runStatus?: BridgeState["ui"]["runStatus"];
   tasks?: TaskState[];
   pendingApprovals?: BridgeState["ui"]["pendingApprovals"];
 }): BridgeState {
@@ -893,6 +893,31 @@ describe("App — launch argv (C-0020 T-013)", () => {
     // The deferred argv never carries --run: no second Run is invented.
     expect(onStartRun).not.toHaveBeenCalled();
   });
+  // C-0021/B2: run_started arrives seconds after Iniciar (eager agent spawn);
+  // a --run in that window used to start again — killing the Run starting up.
+  it("a --run while the Run is starting warns and never starts a second one", async () => {
+    const { source, push } = fakeSource(null);
+    const onStartRun = vi.fn();
+    const { getByTestId, rerender } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await act(async () => {
+      fireEvent.click(getByTestId("btn-iniciar"));
+    });
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    // Root moves the bridge to "starting" as it spawns the sidecar.
+    rerender(
+      <App state={makeBridgeState({ runStatus: "starting" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await act(async () => {
+      push(launchArgs({ run: true }));
+    });
+    await flush();
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    expect(getByTestId("launch-warning").textContent).toContain("--run");
+  });
+
   it("after a finished Run, a new argv returns to idle before applying", async () => {
     const { source, push } = fakeSource(null);
     const onDismissRun = vi.fn();

@@ -12,7 +12,12 @@
  * while documenting that the raw transcript snapshot still misses it.
  */
 import { describe, it, expect } from "vitest";
-import { applyLine, initialBridgeState, applyTimeline } from "./store-bridge";
+import {
+  applyLine,
+  initialBridgeState,
+  applyTimeline,
+  startingBridgeState,
+} from "./store-bridge";
 import { segmentsFor, overlayStepUsage, TIMELINE_CAP } from "./stream-history";
 import { formatUsage } from "../ui/context-window";
 import type { StoreEvent, StoreState, ToolCallState } from "loopy/tui/store";
@@ -108,6 +113,23 @@ describe("store-bridge — warning event propagation (T-007)", () => {
 function ctrl(control: Record<string, unknown>): string {
   return JSON.stringify({ frame: "control", ...control });
 }
+
+describe("store-bridge — runStatus 'starting' (C-0021 / B2)", () => {
+  it("startingBridgeState is a fresh state already marked starting", () => {
+    const s = startingBridgeState();
+    expect(s.ui.runStatus).toBe("starting");
+    expect(s.store.tasks).toEqual([]);
+    expect(s.ui.pendingApprovals).toEqual([]);
+  });
+
+  it("run_started moves starting → running", () => {
+    const s = applyLine(
+      startingBridgeState(),
+      '{"frame":"control","control":"run_started"}',
+    );
+    expect(s.ui.runStatus).toBe("running");
+  });
+});
 
 describe("store-bridge — interview controls are ignored (same reference)", () => {
   // The Interview runs in a separate process; its control frames do not belong

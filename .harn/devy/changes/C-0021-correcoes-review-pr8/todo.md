@@ -89,7 +89,7 @@
     Size: S
     Risk: M
 
-- [ ] T-003: Run ativo desde o clique em Iniciar — `runStatus: "starting"` (B2)
+- [x] T-003: Run ativo desde o clique em Iniciar — `runStatus: "starting"` (B2)
     Hoje `App.tsx` usa `isRunning = ui.runStatus === "running"`, e `running` só chega com o
     frame `run_started`, segundos depois do spawn. Nesse intervalo `planLaunchArgs` acha
     que não há Run e um `--run` chama `handleLaunch` (spec B2/F3).
