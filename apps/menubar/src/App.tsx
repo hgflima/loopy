@@ -20,6 +20,7 @@ import {
   orphanRefs as computeOrphanRefs,
 } from "./config/pipeline-edit";
 import {
+  coalesceLaunchArgs,
   isRunActive,
   normalizeDir,
   planLaunchArgs,
@@ -129,9 +130,16 @@ function App({
   // --- Launch argv (C-0020 / T-013) --------------------------------------
   // `--run` waiting for its dir's loopy.yml to load (`loaded`), then canStart.
   const [pendingStart, setPendingStart] = useState<{ dir: string; loaded: boolean } | null>(null);
-  // Argv received while a Run is active: held (with `run` dropped) until it ends.
-  const [deferredLaunch, setDeferredLaunch] = useState<LaunchArgs | null>(null);
-  const [launchWarning, setLaunchWarning] = useState<string | null>(null);
+  // Argv received while a Run is active: held (with `run` dropped) and combined
+  // with later ones (C-0021 / M2). After the Run it waits for the user — the
+  // finished board stays until they choose (M1).
+  const [deferred, setDeferred] = useState<{
+    args: LaunchArgs;
+    /** The dir a later request replaced, for the banner. */
+    replaced: string | null;
+    runIgnored: boolean;
+  } | null>(null);
+  const [warningHidden, setWarningHidden] = useState(false);
 
   // Load persisted dir on mount (same source as the old LaunchConfig), then
   // apply the initial launch argv on top of it.
@@ -284,13 +292,20 @@ function App({
             setPendingStart({ dir: action.dir, loaded: false });
             break;
           case "warnRunActive":
-            setDeferredLaunch(action.deferred);
-            setLaunchWarning(
-              (action.dir
-                ? `Um Run está em andamento — ${action.dir} será aberto quando ele terminar.`
-                : "Um Run está em andamento — as flags de launch serão aplicadas quando ele terminar.") +
-                (action.runIgnored ? " O --run foi ignorado: um Run por vez." : ""),
-            );
+            setDeferred((prev) => {
+              const prevDir = prev?.args.dir ?? null;
+              const nextDir = action.deferred.dir;
+              const replaced =
+                prevDir && nextDir && normalizeDir(prevDir) !== normalizeDir(nextDir)
+                  ? prevDir
+                  : (prev?.replaced ?? null);
+              return {
+                args: prev ? coalesceLaunchArgs(prev.args, action.deferred) : action.deferred,
+                replaced,
+                runIgnored: (prev?.runIgnored ?? false) || action.runIgnored,
+              };
+            });
+            setWarningHidden(false);
             break;
         }
       }
@@ -328,13 +343,18 @@ function App({
     }
   }, [pendingStart, isRunning, canStart, dir, handleLaunch]);
 
-  // The Run ended: apply what arrived while it was active (never a `--run`).
-  useEffect(() => {
-    if (isRunning || !deferredLaunch) return;
-    setDeferredLaunch(null);
-    setLaunchWarning(null);
-    applyLaunchArgsRef.current(deferredLaunch);
-  }, [isRunning, deferredLaunch]);
+  // After the Run, the held argv is applied only when the user asks (M1).
+  const openDeferred = useCallback(() => {
+    if (!deferred) return;
+    setDeferred(null);
+    applyLaunchArgsRef.current(deferred.args);
+  }, [deferred]);
+
+  // The held dir, when it is another project than the one shown.
+  const deferredDir =
+    deferred?.args.dir && normalizeDir(deferred.args.dir) !== normalizeDir(dir)
+      ? deferred.args.dir
+      : null;
 
   // The active store depends on run status
   const activeStore = isIdle && idleStore ? idleStore : store;
@@ -552,12 +572,35 @@ function App({
 
       <Banner ui={ui} />
 
-      {launchWarning && (
+      {isRunning && deferred && !warningHidden && (
         <section className="banner banner--blocked" role="status" data-testid="launch-warning">
           <header className="banner__headline">
-            <span className="t-title">{launchWarning}</span>
-            <Button variant="ghost" data-testid="launch-warning-dismiss" onClick={() => setLaunchWarning(null)}>
+            <span className="t-title">
+              {deferredDir
+                ? `Um Run está em andamento — ${deferredDir} será aberto quando ele terminar.`
+                : "Um Run está em andamento — as flags de launch serão aplicadas quando ele terminar."}
+              {deferred.replaced && ` Este pedido substitui o anterior (${deferred.replaced}).`}
+              {deferred.runIgnored && " O --run foi ignorado: um Run por vez."}
+            </span>
+            <Button variant="ghost" data-testid="launch-warning-dismiss" onClick={() => setWarningHidden(true)}>
               OK
+            </Button>
+          </header>
+        </section>
+      )}
+      {!isRunning && deferred && (
+        <section className="banner banner--blocked" role="status" data-testid="launch-deferred">
+          <header className="banner__headline">
+            <span className="t-title">
+              {deferredDir
+                ? `O Run terminou. Abrir ${deferredDir} agora?`
+                : "O Run terminou. Aplicar as flags de launch pedidas agora?"}
+            </span>
+            <Button variant="primary" data-testid="launch-deferred-open" onClick={openDeferred}>
+              {deferredDir ? "Abrir" : "Aplicar"}
+            </Button>
+            <Button variant="ghost" data-testid="launch-deferred-discard" onClick={() => setDeferred(null)}>
+              Descartar
             </Button>
           </header>
         </section>

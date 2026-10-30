@@ -151,7 +151,7 @@
 
 ## Fase 2 — Menores
 
-- [ ] T-005: Pedidos adiados se acumulam e não escondem o resultado do Run (M1, M2)
+- [x] T-005: Pedidos adiados se acumulam e não escondem o resultado do Run (M1, M2)
     Hoje o efeito "The Run ended" do `App.tsx` aplica o `deferredLaunch` assim que o Run
     sai de ativo; como o status já é `finished`, `applyLaunchArgs` chama `onDismissRun` e
     o resultado (escalonamento/falha) some. E `setDeferredLaunch` guarda só o último

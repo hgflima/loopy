@@ -6,6 +6,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
+  coalesceLaunchArgs,
   isRunActive,
   normalizeDir,
   planLaunchArgs,
@@ -178,5 +179,32 @@ describe("planLaunchArgs — Run active (E3)", () => {
 
   it("same project, nothing else: no-op (the window is just focused)", () => {
     expect(planLaunchArgs(args({ dir: "/proj/a" }), RUNNING)).toEqual([]);
+  });
+});
+
+// C-0021/M2: a second `loopy open` during a Run used to drop the first silently.
+describe("coalesceLaunchArgs — same as applying a then b", () => {
+  it("the later non-null dir and task win", () => {
+    expect(
+      coalesceLaunchArgs(
+        args({ dir: "/proj/b", task: "T-1" }),
+        args({ dir: "/proj/c" }),
+      ),
+    ).toEqual(args({ dir: "/proj/c", task: "T-1" }));
+    expect(
+      coalesceLaunchArgs(args({ dir: "/proj/b" }), args({ task: "T-2" })),
+    ).toEqual(args({ dir: "/proj/b", task: "T-2" }));
+  });
+
+  it("flags only turn on (prefill never clears)", () => {
+    expect(
+      coalesceLaunchArgs(args({ yes: true }), args({ verbose: true })),
+    ).toEqual(args({ yes: true, verbose: true }));
+  });
+
+  it("run never survives (one Run at a time)", () => {
+    expect(
+      coalesceLaunchArgs(args({ run: true }), args({ run: true })).run,
+    ).toBe(false);
   });
 });

@@ -855,17 +855,11 @@ describe("App — launch argv (C-0020 T-013)", () => {
     expect(unlisten).toHaveBeenCalled();
   });
 
-  it("with a Run active: warns, does not switch or start, applies the dir when it ends", async () => {
+  it("with a Run active: warns, does not switch or start", async () => {
     const { source, push } = fakeSource(null);
     const onStartRun = vi.fn();
-    const onDismissRun = vi.fn();
-    const { getByTestId, queryByTestId, rerender } = render(
-      <App
-        state={makeBridgeState({ runStatus: "running" })}
-        onStartRun={onStartRun}
-        onDismissRun={onDismissRun}
-        launchArgsSource={source}
-      />,
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "running" })} onStartRun={onStartRun} launchArgsSource={source} />,
     );
     await flush();
     await act(async () => {
@@ -874,25 +868,102 @@ describe("App — launch argv (C-0020 T-013)", () => {
     expect(getByTestId("launch-warning").textContent).toContain("/proj/b");
     expect(getByTestId("launch-warning").textContent).toContain("--run");
     expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
-
-    mockLoad.mockResolvedValue(undefined);
-    expect(onDismissRun).not.toHaveBeenCalled();
-    rerender(
-      <App
-        state={makeBridgeState({ runStatus: "finished" })}
-        onStartRun={onStartRun}
-        onDismissRun={onDismissRun}
-        launchArgsSource={source}
-      />,
-    );
-    await flush();
-    // Leaves the finished board so the switch is visible (the idle editor).
-    expect(onDismissRun).toHaveBeenCalledTimes(1);
-    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
-    expect(queryByTestId("launch-warning")).toBeNull();
-    // The deferred argv never carries --run: no second Run is invented.
     expect(onStartRun).not.toHaveBeenCalled();
   });
+
+  // C-0021/M1: applying the deferred argv as soon as the Run ended dismissed
+  // the finished board — the user never saw the result (escalation, failure).
+  describe("argv held during a Run", () => {
+    function renderRunning() {
+      const { source, push } = fakeSource(null);
+      const onStartRun = vi.fn();
+      const onDismissRun = vi.fn();
+      const props = { onStartRun, onDismissRun, launchArgsSource: source };
+      const utils = render(<App state={makeBridgeState({ runStatus: "running" })} {...props} />);
+      const finish = () =>
+        utils.rerender(<App state={makeBridgeState({ runStatus: "finished" })} {...props} />);
+      // What Root does on onDismissRun: back to idle.
+      const toIdle = () =>
+        utils.rerender(<App state={makeBridgeState({ runStatus: "idle" })} {...props} />);
+      return { ...utils, push, finish, toIdle, onStartRun, onDismissRun };
+    }
+
+    it("keeps the result on screen when the Run ends, and asks", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b" }));
+      });
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      expect(r.onDismissRun).not.toHaveBeenCalled();
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      expect(r.getByTestId("launch-deferred").textContent).toContain("/proj/b");
+    });
+
+    it("Abrir leaves the result and applies the request (never a --run)", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b", run: true }));
+      });
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      await act(async () => {
+        fireEvent.click(r.getByTestId("launch-deferred-open"));
+      });
+      await flush();
+      expect(r.onDismissRun).toHaveBeenCalledTimes(1);
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+      expect(r.onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("Descartar drops the request and keeps the result", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b" }));
+      });
+      r.finish();
+      await flush();
+      fireEvent.click(r.getByTestId("launch-deferred-discard"));
+      await flush();
+      expect(r.onDismissRun).not.toHaveBeenCalled();
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+    });
+
+    // C-0021/M2: the second request used to replace the first silently.
+    it("two requests combine; the banner says which dir was replaced", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b", yes: true }));
+      });
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/c" }));
+      });
+      const warning = r.getByTestId("launch-warning").textContent ?? "";
+      expect(warning).toContain("/proj/c");
+      expect(warning).toContain("/proj/b");
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      await act(async () => {
+        fireEvent.click(r.getByTestId("launch-deferred-open"));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/c");
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      r.toIdle();
+      fireEvent.click(r.getByTestId("btn-launch-flags"));
+      expect((r.getByTestId("flag-yes") as HTMLInputElement).checked).toBe(true);
+    });
+  });
+
   // C-0021/B2: run_started arrives seconds after Iniciar (eager agent spawn);
   // a --run in that window used to start again — killing the Run starting up.
   it("a --run while the Run is starting warns and never starts a second one", async () => {

@@ -98,6 +98,21 @@ function flagsPatch(args: LaunchArgs, starts: boolean): LaunchFlagsPatch {
 }
 
 /**
+ * Merge argv held during a Run (C-0021 / M2): the same result as applying `a`
+ * then `b` in sequence — the later non-null dir and task win, flags only turn
+ * on (prefill never clears), and `run` never survives (one Run at a time).
+ */
+export function coalesceLaunchArgs(a: LaunchArgs, b: LaunchArgs): LaunchArgs {
+  return {
+    dir: b.dir ?? a.dir,
+    task: b.task ?? a.task,
+    yes: a.yes || b.yes,
+    verbose: a.verbose || b.verbose,
+    run: false,
+  };
+}
+
+/**
  * Plan what to do with a received argv. Order matters: flags first, then the
  * dir switch (or, for a `--run` on the same dir, its reload), then the
  * deferred start, which waits for that load.
