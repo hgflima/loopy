@@ -206,7 +206,7 @@
     Size: S
     Risk: M
 
-- [ ] T-007: Boot determinístico do argv no webview (M3 lado React)
+- [x] T-007: Boot determinístico do argv no webview (M3 lado React)
     Hoje o `App.tsx` registra o listener num `useEffect` e, em paralelo, carrega o dir
     salvo (`load_launch_config`) e só depois faz `take`. Um evento que chega antes do
     `load_launch_config` resolver é aplicado e depois sobreposto pelo `setDir(cfg.dir)` do

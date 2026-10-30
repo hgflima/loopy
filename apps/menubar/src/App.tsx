@@ -21,6 +21,7 @@ import {
 } from "./config/pipeline-edit";
 import {
   coalesceLaunchArgs,
+  combineLaunchArgs,
   isRunActive,
   normalizeDir,
   planLaunchArgs,
@@ -47,13 +48,23 @@ export interface LaunchFlags {
 }
 
 /**
- * Launch argv from the Rust side (C-0020 / E2+E3): the initial argv is *pulled*
- * once (`take_launch_args`), later instances are *pushed* (`launch-args`).
+ * Launch argv from the Rust side (C-0020 / E2+E3, C-0021 / M3): every request
+ * is queued there and *drained* here; `launch-args-pending` only nudges.
  */
 const TAURI_LAUNCH_ARGS: LaunchArgsSource = {
-  take: () => invoke<LaunchArgs | null>("take_launch_args"),
-  subscribe: (onArgs) => listen<LaunchArgs>("launch-args", (e) => onArgs(e.payload)),
+  drain: () => invoke<LaunchArgs[]>("drain_launch_args"),
+  subscribe: (onPending) => listen("launch-args-pending", () => onPending()),
 };
+
+/** The last session's dir + flags (`launch-config.json`). */
+export interface PersistedLaunch {
+  dir: string;
+  yes?: boolean;
+  task_id?: string;
+  verbose?: boolean;
+}
+
+const TAURI_PERSISTED_LAUNCH = () => invoke<PersistedLaunch>("load_launch_config");
 
 interface AppProps {
   state: BridgeState;
@@ -62,6 +73,8 @@ interface AppProps {
   onApprovalDecision?: (requestId: string, approved: boolean) => void;
   /** Where launch argv comes from; defaults to Tauri (none in dev:web). */
   launchArgsSource?: LaunchArgsSource | null;
+  /** The last session's dir + flags; defaults to Tauri (dev:web: the sample). */
+  persistedLaunch?: (() => Promise<PersistedLaunch>) | null;
   /** Leave a finished Run's board and return to idle (a launch argv asks for it). */
   onDismissRun?: () => void;
 }
@@ -89,6 +102,7 @@ function App({
   onStartRun,
   onApprovalDecision,
   launchArgsSource = IS_TAURI ? TAURI_LAUNCH_ARGS : null,
+  persistedLaunch = IS_TAURI ? TAURI_PERSISTED_LAUNCH : null,
   onDismissRun,
 }: AppProps) {
   const { store, ui } = state;
@@ -140,38 +154,6 @@ function App({
     runIgnored: boolean;
   } | null>(null);
   const [warningHidden, setWarningHidden] = useState(false);
-
-  // Load persisted dir on mount (same source as the old LaunchConfig), then
-  // apply the initial launch argv on top of it.
-  useEffect(() => {
-    let persisted: Promise<void>;
-    if (!IS_TAURI) {
-      // dev:web — useConfigDraft auto-loads the sample
-      setDir("/sample");
-      persisted = Promise.resolve();
-    } else {
-      persisted = invoke<{ dir: string; yes?: boolean; task_id?: string; verbose?: boolean }>("load_launch_config")
-        .then((cfg) => {
-          if (cfg.yes) setFlagYes(cfg.yes);
-          if (cfg.task_id) setFlagTaskId(cfg.task_id);
-          if (cfg.verbose) setFlagVerbose(cfg.verbose);
-          if (cfg.dir) {
-            setDir(cfg.dir);
-            return configDraft.load(cfg.dir);
-          }
-        })
-        .catch(() => { /* defaults are fine */ });
-    }
-    if (!launchArgsSource) return;
-    // Not cancelled on cleanup: `take` hands the argv out once, so under
-    // StrictMode's double mount the first effect is the one that gets it.
-    void persisted
-      .then(() => launchArgsSource.take())
-      .then((args) => {
-        if (args) applyLaunchArgsRef.current(args);
-      })
-      .catch(() => { /* launched bare / not in Tauri */ });
-  }, []);
 
   // Point the GUI at a dir and load its draft; a pending `--run` for that dir
   // learns the load finished.
@@ -268,9 +250,11 @@ function App({
   }, [canStart, dir, configDraft.dirty, configDraft.save, flagYes, flagTaskId, flagVerbose, onStartRun]);
 
   // Apply a launch argv (planner in state/launch-args.ts — pure, AD-6).
+  // `currentDir` overrides the `dir` state at boot, when a dir was just set
+  // and this closure hasn't seen it yet.
   const applyLaunchArgs = useCallback(
-    (args: LaunchArgs) => {
-      const actions = planLaunchArgs(args, { currentDir: dir, isRunning });
+    (args: LaunchArgs, currentDir: string = dir) => {
+      const actions = planLaunchArgs(args, { currentDir, isRunning });
       const forRun = actions.some((a) => a.kind === "startAfterLoad");
       // The idle editor (dir input, Iniciar) only exists in idle: a finished
       // Run's board would swallow the switch/start silently.
@@ -316,13 +300,29 @@ function App({
   const applyLaunchArgsRef = useRef(applyLaunchArgs);
   applyLaunchArgsRef.current = applyLaunchArgs;
 
-  // Later instances (E3) forward their argv as the `launch-args` event.
+  // Boot (C-0021 / M3, F9). Nothing is applied before the initial dir is
+  // decided, so the persisted dir never overrides a `loopy open`: (1) the
+  // listener only nudges once booted; (2) persisted flags; (3) drain; (4) the
+  // persisted dir loads only if no request names a dir; (5) apply what was
+  // drained, combined; (6) booted — drain again for anything that arrived.
+  const bootedRef = useRef(false);
+  const bootStartedRef = useRef(false);
+
+  const drainAndApply = useCallback(async () => {
+    if (!launchArgsSource) return;
+    const pending = await launchArgsSource.drain().catch(() => [] as LaunchArgs[]);
+    const combined = combineLaunchArgs(pending);
+    if (combined) applyLaunchArgsRef.current(combined);
+  }, [launchArgsSource]);
+
   useEffect(() => {
     if (!launchArgsSource) return;
     let disposed = false;
     let unlisten: (() => void) | null = null;
     launchArgsSource
-      .subscribe((args) => applyLaunchArgsRef.current(args))
+      .subscribe(() => {
+        if (bootedRef.current) void drainAndApply();
+      })
       .then((fn) => {
         if (disposed) fn();
         else unlisten = fn;
@@ -332,7 +332,39 @@ function App({
       disposed = true;
       unlisten?.();
     };
-  }, [launchArgsSource]);
+  }, [launchArgsSource, drainAndApply]);
+
+  useEffect(() => {
+    // StrictMode re-mounts keep refs: the boot runs once, and the drained
+    // requests are not handed to a second boot that would lose them.
+    if (bootStartedRef.current) return;
+    bootStartedRef.current = true;
+    void (async () => {
+      const cfg = persistedLaunch ? await persistedLaunch().catch(() => null) : null;
+      if (cfg?.yes) setFlagYes(cfg.yes);
+      if (cfg?.task_id) setFlagTaskId(cfg.task_id);
+      if (cfg?.verbose) setFlagVerbose(cfg.verbose);
+
+      const launch = launchArgsSource
+        ? combineLaunchArgs(await launchArgsSource.drain().catch(() => [] as LaunchArgs[]))
+        : null;
+
+      let currentDir = "";
+      if (!persistedLaunch) {
+        // dev:web — useConfigDraft auto-loads the sample
+        currentDir = "/sample";
+        setDir(currentDir);
+      } else if (cfg?.dir && !launch?.dir) {
+        currentDir = cfg.dir;
+        setDir(currentDir);
+        await Promise.resolve(configDraft.load(currentDir)).catch(() => {});
+      }
+      if (launch) applyLaunchArgsRef.current(launch, currentDir);
+
+      bootedRef.current = true;
+      await drainAndApply();
+    })();
+  }, []);
 
   // `--run` fires only after its dir's loopy.yml loaded, and only if it can start.
   useEffect(() => {

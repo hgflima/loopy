@@ -243,17 +243,6 @@ fn drain_launch_args(state: tauri::State<'_, LaunchArgsState>) -> Vec<LaunchArgs
     state.0.lock().map(|mut q| q.drain()).unwrap_or_default()
 }
 
-/// Transitional alias for the webview's old `take_launch_args` call (first
-/// pending request). TODO(C-0021 T-007): remove once the webview drains.
-#[tauri::command]
-fn take_launch_args(state: tauri::State<'_, LaunchArgsState>) -> Option<LaunchArgs> {
-    state
-        .0
-        .lock()
-        .ok()
-        .and_then(|mut q| q.drain().into_iter().next())
-}
-
 /// Parse a launch argv into what the webview should apply. A bare launch (no
 /// dir, no flags) is `None`, as is a parse error — which is logged, never fatal
 /// (AD-5): the app still comes up, it just doesn't switch project.
@@ -500,7 +489,6 @@ fn main() {
             log_error,
             quit_app,
             // Launch argv (C-0020 / E2): the webview pulls the initial argv once.
-            take_launch_args,
             drain_launch_args,
         ])
         .build(tauri::generate_context!())

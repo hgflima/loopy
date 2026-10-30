@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import {
   coalesceLaunchArgs,
+  combineLaunchArgs,
   isRunActive,
   normalizeDir,
   planLaunchArgs,
@@ -205,6 +206,25 @@ describe("coalesceLaunchArgs — same as applying a then b", () => {
   it("run never survives (one Run at a time)", () => {
     expect(
       coalesceLaunchArgs(args({ run: true }), args({ run: true })).run,
+    ).toBe(false);
+  });
+});
+
+// C-0021/M3: requests drained together (boot, or several nudges at once).
+describe("combineLaunchArgs", () => {
+  it("nothing drained → null", () => {
+    expect(combineLaunchArgs([])).toBeNull();
+  });
+
+  it("coalesces in order and keeps the last request's --run", () => {
+    expect(
+      combineLaunchArgs([
+        args({ dir: "/proj/b", yes: true }),
+        args({ dir: "/proj/c", run: true }),
+      ]),
+    ).toEqual(args({ dir: "/proj/c", yes: true, run: true }));
+    expect(
+      combineLaunchArgs([args({ run: true }), args({ dir: "/proj/c" })])?.run,
     ).toBe(false);
   });
 });

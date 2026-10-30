@@ -2,11 +2,12 @@
  * Launch argv applied by the GUI (C-0020 / E2 + E3).
  *
  * The Rust side parses `Loopy [dir] [--task <id>] [--yes] [--verbose] [--run]`
- * (`src-tauri/src/launch_args.rs`) and hands the result to the webview twice
- * over: *pulled* once on mount (`take_launch_args`) and *pushed* for every
- * second instance (`launch-args` event). This module decides what to do with
- * it — a pure planner (AD-6); `App.tsx` executes the actions, routing any dir
- * switch through the existing dirty guard.
+ * (`src-tauri/src/launch_args.rs`) and queues every request — the initial argv
+ * and each second instance's. The webview *drains* the queue
+ * (`drain_launch_args`) at boot and whenever `launch-args-pending` nudges it:
+ * a request never depends on a listener existing (C-0021 / M3). This module
+ * decides what to do with it — a pure planner (AD-6); `App.tsx` executes the
+ * actions, routing any dir switch through the existing dirty guard.
  */
 import type { RunStatus } from "./store-bridge";
 
@@ -21,10 +22,10 @@ export interface LaunchArgs {
 
 /** Where launch args come from — Tauri in the app, a fake in tests. */
 export interface LaunchArgsSource {
-  /** The initial argv, once (`null` = launched bare, nothing to apply). */
-  take(): Promise<LaunchArgs | null>;
-  /** Argv forwarded by later instances; resolves to the unsubscribe fn. */
-  subscribe(onArgs: (args: LaunchArgs) => void): Promise<() => void>;
+  /** Every request not yet applied, in arrival order (empty = nothing to do). */
+  drain(): Promise<LaunchArgs[]>;
+  /** Called when new requests were queued; resolves to the unsubscribe fn. */
+  subscribe(onPending: () => void): Promise<() => void>;
 }
 
 /**
@@ -110,6 +111,19 @@ export function coalesceLaunchArgs(a: LaunchArgs, b: LaunchArgs): LaunchArgs {
     verbose: a.verbose || b.verbose,
     run: false,
   };
+}
+
+/**
+ * Requests drained together, as one (C-0021 / M3): coalesced in arrival order,
+ * keeping the **last** request's `--run` — at boot no Run is active, and the
+ * planner still drops it if one is.
+ */
+export function combineLaunchArgs(
+  list: readonly LaunchArgs[],
+): LaunchArgs | null {
+  const last = list[list.length - 1];
+  if (!last) return null;
+  return { ...list.reduce(coalesceLaunchArgs), run: last.run };
 }
 
 /**

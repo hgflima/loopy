@@ -686,13 +686,17 @@ describe("App — launch argv (C-0020 T-013)", () => {
     return { dir: null, task: null, yes: false, verbose: false, run: false, ...over };
   }
 
-  /** A fake source: `initial` is pulled once; `push` emits a later instance. */
+  /**
+   * A fake of the Rust launch queue: `initial` is queued before mount; `push`
+   * queues a later instance and fires the `launch-args-pending` nudge.
+   */
   function fakeSource(initial: LaunchArgs | null) {
-    let listener: ((a: LaunchArgs) => void) | null = null;
+    const queue: LaunchArgs[] = initial ? [initial] : [];
+    let listener: (() => void) | null = null;
     const unlisten = vi.fn();
     const source: LaunchArgsSource = {
-      take: vi.fn().mockResolvedValue(initial),
-      subscribe: vi.fn(async (cb: (a: LaunchArgs) => void) => {
+      drain: vi.fn(async () => queue.splice(0, queue.length)),
+      subscribe: vi.fn(async (cb: () => void) => {
         listener = cb;
         return unlisten;
       }),
@@ -700,7 +704,12 @@ describe("App — launch argv (C-0020 T-013)", () => {
     return {
       source,
       unlisten,
-      push: (a: LaunchArgs) => listener?.(a),
+      /** Queue without the nudge — e.g. arriving before the listener exists. */
+      enqueue: (a: LaunchArgs) => queue.push(a),
+      push: (a: LaunchArgs) => {
+        queue.push(a);
+        listener?.();
+      },
     };
   }
 
@@ -738,7 +747,7 @@ describe("App — launch argv (C-0020 T-013)", () => {
       <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
     );
     await flush();
-    expect(source.take).toHaveBeenCalledTimes(1);
+    expect(source.drain).toHaveBeenCalled();
     expect(mockLoad).toHaveBeenCalledWith("/proj/b");
     expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/b");
     fireEvent.click(getByTestId("btn-launch-flags"));
@@ -961,6 +970,144 @@ describe("App — launch argv (C-0020 T-013)", () => {
       r.toIdle();
       fireEvent.click(r.getByTestId("btn-launch-flags"));
       expect((r.getByTestId("flag-yes") as HTMLInputElement).checked).toBe(true);
+    });
+  });
+
+  // C-0021/M3: a request arriving while the app boots used to be lost (emit
+  // before listen) or overridden by the persisted dir loading after it.
+  describe("boot: launch argv vs the persisted dir", () => {
+    /** A persisted launch config that resolves only when released. */
+    function deferPersisted(cfg: { dir: string; yes?: boolean }) {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const persistedLaunch = vi.fn(async () => {
+        await gate;
+        return cfg;
+      });
+      return {
+        persistedLaunch,
+        release: async () => {
+          await act(async () => {
+            release();
+            await gate;
+          });
+          await flush();
+        },
+      };
+    }
+
+    beforeEach(() => {
+      mockLoad.mockResolvedValue(undefined);
+    });
+
+    it("a queued launch dir wins over the persisted dir (never loaded)", async () => {
+      const { source } = fakeSource(launchArgs({ dir: "/proj/b" }));
+      const persisted = deferPersisted({ dir: "/saved" });
+      const { getByLabelText } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+      expect(mockLoad).not.toHaveBeenCalledWith("/saved");
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/b");
+    });
+
+    it("a request arriving mid-boot is applied after it, not overridden", async () => {
+      const { source, push } = fakeSource(null);
+      const persisted = deferPersisted({ dir: "/saved" });
+      const { getByLabelText } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await flush();
+      await act(async () => {
+        push(launchArgs({ dir: "/proj/b" }));
+      });
+      // Nothing applied before the boot decided the initial dir.
+      expect(mockLoad).not.toHaveBeenCalled();
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+      expect(mockLoad).not.toHaveBeenCalledWith("/saved");
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/b");
+    });
+
+    it("a request queued before the listener existed is still applied", async () => {
+      const { source, enqueue } = fakeSource(null);
+      const persisted = deferPersisted({ dir: "/saved" });
+      render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      enqueue(launchArgs({ dir: "/proj/b" })); // no nudge: the emit was lost
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+    });
+
+    it("two requests before boot: the last dir wins, flags combine", async () => {
+      const { source, enqueue } = fakeSource(launchArgs({ dir: "/proj/b", yes: true }));
+      enqueue(launchArgs({ dir: "/proj/c" }));
+      const persisted = deferPersisted({ dir: "/saved" });
+      const { getByLabelText, getByTestId } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/c");
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      fireEvent.click(getByTestId("btn-launch-flags"));
+      expect((getByTestId("flag-yes") as HTMLInputElement).checked).toBe(true);
+    });
+
+    it("without a launch dir, the persisted dir loads as before", async () => {
+      const { source } = fakeSource(null);
+      const persisted = deferPersisted({ dir: "/saved", yes: true });
+      const { getByLabelText } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/saved");
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/saved");
+    });
+
+    it("--run without a dir starts the persisted project after it loads", async () => {
+      const { source } = fakeSource(launchArgs({ run: true }));
+      const persisted = deferPersisted({ dir: "/saved" });
+      const onStartRun = vi.fn();
+      render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={onStartRun}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+      expect(onStartRun.mock.calls[0][0]).toBe("/saved");
     });
   });
 
