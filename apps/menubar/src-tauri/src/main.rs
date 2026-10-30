@@ -13,7 +13,7 @@ mod telemetry;
 use changes::{discard_change, read_changes};
 use config::{load_launch_config, save_launch_config};
 use interview_process::InterviewState;
-use launch_args::{parse_launch_args, LaunchArgs};
+use launch_args::{parse_launch_args, LaunchArgs, LaunchQueue};
 use project_fs::{probe_agent, read_backlog, read_capabilities_cache, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
 use telemetry::{
@@ -226,18 +226,32 @@ fn log_error(source: String, message: String, stack: String, component_stack: St
 // Launch argv (C-0020 / E2-E3)
 // ---------------------------------------------------------------------------
 
-/// The initial launch argv, parsed in `setup` and handed to the webview once.
+/// Launch requests waiting for the webview: the initial argv and every second
+/// instance's (C-0021 / M3).
 ///
-/// *Pull*, not *push*: an `emit` from `setup` fires before the webview has a
-/// listener and is silently lost, so the webview asks via [`take_launch_args`]
-/// when it mounts. Only a second instance (E3) arrives as the `launch-args` event.
-struct LaunchArgsState(Mutex<Option<LaunchArgs>>);
+/// *Pull*, not *push*: an `emit` fires before the webview has a listener (the
+/// initial argv, from `setup`) or before it registers one (a second instance
+/// during boot) and is silently lost. So every request is queued here and the
+/// webview drains it via [`drain_launch_args`]; the `launch-args-pending` event
+/// is only a nudge to drain — losing it loses nothing.
+struct LaunchArgsState(Mutex<LaunchQueue>);
 
-/// Hand the initial launch argv to the webview, once (later calls get `None`).
-/// `None` also means "launched bare" — today's behaviour, nothing to apply.
+/// Hand every pending launch request to the webview, in arrival order, once.
+/// Empty also means "launched bare" — today's behaviour, nothing to apply.
+#[tauri::command]
+fn drain_launch_args(state: tauri::State<'_, LaunchArgsState>) -> Vec<LaunchArgs> {
+    state.0.lock().map(|mut q| q.drain()).unwrap_or_default()
+}
+
+/// Transitional alias for the webview's old `take_launch_args` call (first
+/// pending request). TODO(C-0021 T-007): remove once the webview drains.
 #[tauri::command]
 fn take_launch_args(state: tauri::State<'_, LaunchArgsState>) -> Option<LaunchArgs> {
-    state.0.lock().ok().and_then(|mut slot| slot.take())
+    state
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut q| q.drain().into_iter().next())
 }
 
 /// Parse a launch argv into what the webview should apply. A bare launch (no
@@ -255,15 +269,28 @@ fn launch_args_to_apply(argv: &[String], cwd: &Path) -> Option<LaunchArgs> {
 }
 
 /// Second instance (E3): the plugin hands us its argv and the *caller's* cwd.
-/// Forward what it asked for to the `main` webview and bring the window up —
-/// on a parse error or a bare launch, only the focus happens.
+/// The request is queued first — before anything that could fail or be
+/// deferred — then the webview is nudged to drain and the window comes up. On a
+/// parse error or a bare launch, only the focus happens.
+///
+/// The plugin calls this off the main thread; the window/panel work (AppKit's
+/// `orderOut` on macOS) is dispatched to it, as `resize_popover_panel` does
+/// (C-0021 / M4).
 fn on_second_instance(app: &tauri::AppHandle, argv: Vec<String>, cwd: String) {
     if let Some(args) = launch_args_to_apply(&argv, Path::new(&cwd)) {
-        if let Err(e) = app.emit_to("main", "launch-args", args) {
-            eprintln!("[launch-args] falha ao emitir: {e}");
+        if let Some(state) = app.try_state::<LaunchArgsState>() {
+            if let Ok(mut q) = state.0.lock() {
+                q.push(args);
+            }
+        }
+        if let Err(e) = app.emit_to("main", "launch-args-pending", ()) {
+            eprintln!("[launch-args] falha ao avisar o webview: {e}");
         }
     }
-    let _ = surface_main_window(app);
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = surface_main_window(&handle);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -304,13 +331,19 @@ fn main() {
     builder
         .manage(SidecarState::new())
         .manage(InterviewState::new())
+        // Managed before `setup`, so a second instance never finds it missing.
+        .manage(LaunchArgsState(Mutex::new(LaunchQueue::default())))
         .setup(|app| {
-            // Initial launch argv (E2), kept for the webview to pull on mount.
+            // Initial launch argv (E2), queued for the webview to drain on mount.
             let argv: Vec<String> = std::env::args().collect();
             let cwd = std::env::current_dir().unwrap_or_default();
             let initial = launch_args_to_apply(&argv, &cwd);
             let surface_on_launch = initial.is_some();
-            app.manage(LaunchArgsState(Mutex::new(initial)));
+            if let Some(args) = initial {
+                if let Ok(mut q) = app.state::<LaunchArgsState>().0.lock() {
+                    q.push(args);
+                }
+            }
 
             // Start as accessory on macOS (no Dock icon, menu bar only)
             #[cfg(target_os = "macos")]
@@ -468,6 +501,7 @@ fn main() {
             quit_app,
             // Launch argv (C-0020 / E2): the webview pulls the initial argv once.
             take_launch_args,
+            drain_launch_args,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")

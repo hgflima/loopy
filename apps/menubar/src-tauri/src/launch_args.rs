@@ -49,6 +49,24 @@ pub fn parse_launch_args(argv: &[String], cwd: &Path) -> Result<LaunchArgs, Stri
     Ok(out)
 }
 
+/// Every launch request not yet applied by the webview — the initial argv and
+/// each second instance's (C-0021 / M3). The webview *drains* it; a request
+/// never depends on a listener existing when it arrives, so none is lost to an
+/// `emit` fired before the webview listened.
+#[derive(Debug, Default)]
+pub struct LaunchQueue(Vec<LaunchArgs>);
+
+impl LaunchQueue {
+    pub fn push(&mut self, args: LaunchArgs) {
+        self.0.push(args);
+    }
+
+    /// Everything queued, in arrival order; the queue is left empty.
+    pub fn drain(&mut self) -> Vec<LaunchArgs> {
+        std::mem::take(&mut self.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,6 +81,37 @@ mod tests {
 
     fn cwd() -> PathBuf {
         std::env::temp_dir().join("caller-cwd")
+    }
+
+    // -- LaunchQueue (C-0021 / M3) -------------------------------------------
+
+    fn dir(d: &str) -> LaunchArgs {
+        LaunchArgs {
+            dir: Some(d.to_string()),
+            ..LaunchArgs::default()
+        }
+    }
+
+    #[test]
+    fn queue_drains_every_request_in_arrival_order_then_empties() {
+        let mut q = LaunchQueue::default();
+        q.push(dir("/initial"));
+        q.push(dir("/second"));
+        q.push(dir("/third"));
+        assert_eq!(
+            q.drain(),
+            vec![dir("/initial"), dir("/second"), dir("/third")]
+        );
+        assert_eq!(q.drain(), Vec::<LaunchArgs>::new());
+    }
+
+    #[test]
+    fn a_request_pushed_after_a_drain_is_not_lost() {
+        let mut q = LaunchQueue::default();
+        q.push(dir("/a"));
+        assert_eq!(q.drain(), vec![dir("/a")]);
+        q.push(dir("/b"));
+        assert_eq!(q.drain(), vec![dir("/b")]);
     }
 
     #[test]

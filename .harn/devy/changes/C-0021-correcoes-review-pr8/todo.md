@@ -179,7 +179,7 @@
     Size: M
     Risk: M
 
-- [ ] T-006: Fila de argv no Rust e callback da segunda instância na main thread (M3 lado Rust, M4)
+- [x] T-006: Fila de argv no Rust e callback da segunda instância na main thread (M3 lado Rust, M4)
     Hoje o argv inicial vive num `LaunchArgsState(Mutex<Option<LaunchArgs>>)` lido uma vez
     por `take_launch_args`, e a segunda instância faz `emit_to("main", "launch-args", args)`,
     que se perde se o webview ainda não registrou o `listen` (spec M3/F8). Além disso,
