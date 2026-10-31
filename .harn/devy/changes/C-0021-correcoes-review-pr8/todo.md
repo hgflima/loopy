@@ -282,7 +282,7 @@
     Size: S
     Risk: H
 
-- [ ] T-010: Fila de argv semeada antes do `Builder` (corrida do boot)
+- [x] T-010: Fila de argv semeada antes do `Builder` (corrida do boot)
     Com o app fechado, `loopy open B; loopy open C` (< 0,5 s) abria em B: o
     `on_second_instance` empurrava C antes de o `setup` empurrar o argv inicial B, e o
     último dir vencia. Parsear o argv inicial em `main()` e semear a fila no `.manage`.

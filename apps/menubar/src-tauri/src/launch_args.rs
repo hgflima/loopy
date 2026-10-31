@@ -57,6 +57,12 @@ pub fn parse_launch_args(argv: &[String], cwd: &Path) -> Result<LaunchArgs, Stri
 pub struct LaunchQueue(Vec<LaunchArgs>);
 
 impl LaunchQueue {
+    /// A queue that starts with the initial argv (if any). Seed it at creation:
+    /// a second instance may be forwarded before `setup` runs.
+    pub fn seeded(initial: Option<LaunchArgs>) -> Self {
+        Self(initial.into_iter().collect())
+    }
+
     pub fn push(&mut self, args: LaunchArgs) {
         self.0.push(args);
     }
@@ -103,6 +109,17 @@ mod tests {
             vec![dir("/initial"), dir("/second"), dir("/third")]
         );
         assert_eq!(q.drain(), Vec::<LaunchArgs>::new());
+    }
+
+    #[test]
+    fn the_initial_argv_always_comes_first() {
+        // A second instance can fire before `setup` runs (C-0021 verification:
+        // `loopy open B; loopy open C` opened B) — so the initial argv seeds
+        // the queue when it is created, not later.
+        let mut q = LaunchQueue::seeded(Some(dir("/b")));
+        q.push(dir("/c"));
+        assert_eq!(q.drain(), vec![dir("/b"), dir("/c")]);
+        assert_eq!(LaunchQueue::seeded(None).drain(), Vec::<LaunchArgs>::new());
     }
 
     #[test]

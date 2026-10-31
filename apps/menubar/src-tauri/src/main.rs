@@ -299,6 +299,14 @@ fn quit_app(app: tauri::AppHandle) {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    // Initial launch argv (E2), queued for the webview to drain on mount.
+    let initial = {
+        let argv: Vec<String> = std::env::args().collect();
+        let cwd = std::env::current_dir().unwrap_or_default();
+        launch_args_to_apply(&argv, &cwd)
+    };
+    let surface_on_launch = initial.is_some();
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         // Single instance (E3) must be the FIRST plugin registered: a second
@@ -320,19 +328,11 @@ fn main() {
     builder
         .manage(SidecarState::new())
         .manage(InterviewState::new())
-        // Managed before `setup`, so a second instance never finds it missing.
-        .manage(LaunchArgsState(Mutex::new(LaunchQueue::default())))
-        .setup(|app| {
-            // Initial launch argv (E2), queued for the webview to drain on mount.
-            let argv: Vec<String> = std::env::args().collect();
-            let cwd = std::env::current_dir().unwrap_or_default();
-            let initial = launch_args_to_apply(&argv, &cwd);
-            let surface_on_launch = initial.is_some();
-            if let Some(args) = initial {
-                if let Ok(mut q) = app.state::<LaunchArgsState>().0.lock() {
-                    q.push(args);
-                }
-            }
+        // Seeded with the initial argv before `setup`: a second instance can be
+        // forwarded before it runs, and must queue *after* the initial argv.
+        .manage(LaunchArgsState(Mutex::new(LaunchQueue::seeded(initial))))
+        .setup(move |app| {
+            // The initial launch argv is already queued (see `.manage` above).
 
             // Start as accessory on macOS (no Dock icon, menu bar only)
             #[cfg(target_os = "macos")]
