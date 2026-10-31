@@ -20,6 +20,12 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockRejectedValue(new Error("not in tauri")),
 }));
 
+// Mock @tauri-apps/api/event — App defaults its launch-args source to Tauri
+// only when isTauri(); tests inject a fake source instead.
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn().mockRejectedValue(new Error("not in tauri")),
+}));
+
 // Mock useConfigDraft — returns a controllable draft state
 const mockLoad = vi.fn();
 const mockSeedFromTemplate = vi.fn();
@@ -84,6 +90,7 @@ vi.mock("./kanban/CardDetail", () => ({
 }));
 
 import App from "./App";
+import type { LaunchArgs, LaunchArgsSource } from "./state/launch-args";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -98,7 +105,7 @@ function task(
 }
 
 function makeBridgeState(overrides?: {
-  runStatus?: "idle" | "running" | "finished";
+  runStatus?: BridgeState["ui"]["runStatus"];
   tasks?: TaskState[];
   pendingApprovals?: BridgeState["ui"]["pendingApprovals"];
 }): BridgeState {
@@ -667,5 +674,664 @@ describe("App — 'Abrir o board' patches inputs (T-015/D11)", () => {
     act(() => onOpenBoard(".harn/devy/changes/C-0018-x/"));
 
     expect(patch).toHaveBeenCalledWith("inputs.todo", ".harn/devy/changes/C-0018-x/todo.md");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C-0020 T-013 — the GUI applies the launch argv (E2/E3)
+// ---------------------------------------------------------------------------
+
+describe("App — launch argv (C-0020 T-013)", () => {
+  function launchArgs(over: Partial<LaunchArgs> = {}): LaunchArgs {
+    return { dir: null, task: null, yes: false, verbose: false, run: false, ...over };
+  }
+
+  /**
+   * A fake of the Rust launch queue: `initial` is queued before mount; `push`
+   * queues a later instance and fires the `launch-args-pending` nudge.
+   */
+  function fakeSource(initial: LaunchArgs | null) {
+    const queue: LaunchArgs[] = initial ? [initial] : [];
+    let listener: (() => void) | null = null;
+    const unlisten = vi.fn();
+    const source: LaunchArgsSource = {
+      drain: vi.fn(async () => queue.splice(0, queue.length)),
+      subscribe: vi.fn(async (cb: () => void) => {
+        listener = cb;
+        return unlisten;
+      }),
+    };
+    return {
+      source,
+      unlisten,
+      /** Queue without the nudge — e.g. arriving before the listener exists. */
+      enqueue: (a: LaunchArgs) => queue.push(a),
+      push: (a: LaunchArgs) => {
+        queue.push(a);
+        listener?.();
+      },
+    };
+  }
+
+  /** Make `load` hang until released, to observe the order load → start. */
+  function deferLoad() {
+    let release!: () => void;
+    const loaded = new Promise<void>((r) => {
+      release = r;
+    });
+    mockLoad.mockImplementation(() => loaded);
+    return async () => {
+      await act(async () => {
+        release();
+        await loaded;
+      });
+    };
+  }
+
+  /** Let the mount-time persisted → take chain settle. */
+  async function flush() {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  beforeEach(() => {
+    mockLoad.mockReset();
+    setMockDraftLoaded();
+  });
+
+  it("switches dir and prefills the flags from the initial argv", async () => {
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", task: "T-003", yes: true }));
+    const onStartRun = vi.fn();
+    const { getByLabelText, getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    expect(source.drain).toHaveBeenCalled();
+    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+    expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/b");
+    fireEvent.click(getByTestId("btn-launch-flags"));
+    expect((getByTestId("flag-yes") as HTMLInputElement).checked).toBe(true);
+    expect((getByTestId("flag-task-id") as HTMLInputElement).value).toBe("T-003");
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("--run starts only after the new dir's loopy.yml has loaded", async () => {
+    const release = deferLoad();
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", run: true, yes: true }));
+    const onStartRun = vi.fn();
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+    expect(onStartRun).not.toHaveBeenCalled();
+    await release();
+    await flush();
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    expect(onStartRun).toHaveBeenCalledWith("/proj/b", { yes: true, taskId: "", verbose: false });
+  });
+
+  it("--run does not start when the loaded config cannot start (errors)", async () => {
+    const release = deferLoad();
+    mockDraftState = { ...mockDraftState, errors: [{ path: "acp", message: "bad" }] };
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", run: true }));
+    const onStartRun = vi.fn();
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await release();
+    await flush();
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("without --run it never starts", async () => {
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", yes: true }));
+    const onStartRun = vi.fn();
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await flush();
+    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("a dirty config opens the dirty guard instead of switching", async () => {
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", run: true }));
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    expect(getByTestId("dirty-confirm")).toBeTruthy();
+    expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("Discard in the dirty guard switches, then the pending --run starts", async () => {
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", run: true }));
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    // Loading the new dir replaces the draft: it is clean afterwards.
+    mockLoad.mockImplementation(async () => {
+      mockDraftState = { ...mockDraftState, dirty: false };
+    });
+    await act(async () => {
+      fireEvent.click(getByTestId("dirty-discard"));
+    });
+    await flush();
+    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    expect(onStartRun.mock.calls[0][0]).toBe("/proj/b");
+  });
+
+  it("Cancel in the dirty guard discards the pending --run", async () => {
+    mockDraftState = { ...mockDraftState, dirty: true };
+    const { source } = fakeSource(launchArgs({ dir: "/proj/b", run: true }));
+    const onStartRun = vi.fn();
+    const { getByTestId, getByLabelText } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    fireEvent.click(getByTestId("dirty-cancel"));
+    await flush();
+    expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+    expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/sample");
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  it("applies argv forwarded by a later instance (launch-args event)", async () => {
+    const { source, push, unlisten } = fakeSource(null);
+    const onStartRun = vi.fn();
+    const { unmount } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    expect(mockLoad).not.toHaveBeenCalled();
+    await act(async () => {
+      push(launchArgs({ dir: "/proj/c" }));
+    });
+    expect(mockLoad).toHaveBeenCalledWith("/proj/c");
+    expect(onStartRun).not.toHaveBeenCalled();
+    unmount();
+    expect(unlisten).toHaveBeenCalled();
+  });
+
+  it("with a Run active: warns, does not switch or start", async () => {
+    const { source, push } = fakeSource(null);
+    const onStartRun = vi.fn();
+    const { getByTestId } = render(
+      <App state={makeBridgeState({ runStatus: "running" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await act(async () => {
+      push(launchArgs({ dir: "/proj/b", run: true }));
+    });
+    expect(getByTestId("launch-warning").textContent).toContain("/proj/b");
+    expect(getByTestId("launch-warning").textContent).toContain("--run");
+    expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+    expect(onStartRun).not.toHaveBeenCalled();
+  });
+
+  // C-0021/M1: applying the deferred argv as soon as the Run ended dismissed
+  // the finished board — the user never saw the result (escalation, failure).
+  describe("argv held during a Run", () => {
+    function renderRunning() {
+      const { source, push } = fakeSource(null);
+      const onStartRun = vi.fn();
+      const onDismissRun = vi.fn();
+      const props = { onStartRun, onDismissRun, launchArgsSource: source };
+      const utils = render(<App state={makeBridgeState({ runStatus: "running" })} {...props} />);
+      const finish = () =>
+        utils.rerender(<App state={makeBridgeState({ runStatus: "finished" })} {...props} />);
+      // What Root does on onDismissRun: back to idle.
+      const toIdle = () =>
+        utils.rerender(<App state={makeBridgeState({ runStatus: "idle" })} {...props} />);
+      return { ...utils, push, finish, toIdle, onStartRun, onDismissRun };
+    }
+
+    it("keeps the result on screen when the Run ends, and asks", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b" }));
+      });
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      expect(r.onDismissRun).not.toHaveBeenCalled();
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      expect(r.getByTestId("launch-deferred").textContent).toContain("/proj/b");
+    });
+
+    it("Abrir leaves the result and applies the request (never a --run)", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b", run: true }));
+      });
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      await act(async () => {
+        fireEvent.click(r.getByTestId("launch-deferred-open"));
+      });
+      await flush();
+      expect(r.onDismissRun).toHaveBeenCalledTimes(1);
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+      expect(r.onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("Descartar drops the request and keeps the result", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b" }));
+      });
+      r.finish();
+      await flush();
+      fireEvent.click(r.getByTestId("launch-deferred-discard"));
+      await flush();
+      expect(r.onDismissRun).not.toHaveBeenCalled();
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+    });
+
+    // C-0021 verification: a bare --run held an empty request ("apply the
+    // flags" with none to apply).
+    it("a bare --run during a Run only warns; nothing is offered later", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ run: true }));
+      });
+      const warning = r.getByTestId("launch-warning").textContent ?? "";
+      expect(warning).toContain("--run");
+      expect(warning).not.toContain("flags");
+      r.finish();
+      await flush();
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+    });
+
+    // C-0021 verification: the held request was never cleared — it came back
+    // in later Runs.
+    it("a request applied after the Run drops the stale held one", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b" }));
+      });
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/c" }));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/c");
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+    });
+
+    // C-0021/M2: the second request used to replace the first silently.
+    it("two requests combine; the banner says which dir was replaced", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b", yes: true }));
+      });
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/c" }));
+      });
+      const warning = r.getByTestId("launch-warning").textContent ?? "";
+      expect(warning).toContain("/proj/c");
+      expect(warning).toContain("/proj/b");
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      await act(async () => {
+        fireEvent.click(r.getByTestId("launch-deferred-open"));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/c");
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      r.toIdle();
+      fireEvent.click(r.getByTestId("btn-launch-flags"));
+      expect((r.getByTestId("flag-yes") as HTMLInputElement).checked).toBe(true);
+    });
+  });
+
+  // C-0021/M3: a request arriving while the app boots used to be lost (emit
+  // before listen) or overridden by the persisted dir loading after it.
+  describe("boot: launch argv vs the persisted dir", () => {
+    /** A persisted launch config that resolves only when released. */
+    function deferPersisted(cfg: { dir: string; yes?: boolean }) {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const persistedLaunch = vi.fn(async () => {
+        await gate;
+        return cfg;
+      });
+      return {
+        persistedLaunch,
+        release: async () => {
+          await act(async () => {
+            release();
+            await gate;
+          });
+          await flush();
+        },
+      };
+    }
+
+    beforeEach(() => {
+      mockLoad.mockResolvedValue(undefined);
+    });
+
+    it("a queued launch dir wins over the persisted dir (never loaded)", async () => {
+      const { source } = fakeSource(launchArgs({ dir: "/proj/b" }));
+      const persisted = deferPersisted({ dir: "/saved" });
+      const { getByLabelText } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+      expect(mockLoad).not.toHaveBeenCalledWith("/saved");
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/b");
+    });
+
+    it("a request arriving mid-boot is applied after it, not overridden", async () => {
+      const { source, push } = fakeSource(null);
+      const persisted = deferPersisted({ dir: "/saved" });
+      const { getByLabelText } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await flush();
+      await act(async () => {
+        push(launchArgs({ dir: "/proj/b" }));
+      });
+      // Nothing applied before the boot decided the initial dir.
+      expect(mockLoad).not.toHaveBeenCalled();
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+      expect(mockLoad).not.toHaveBeenCalledWith("/saved");
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/b");
+    });
+
+    it("a request queued before the listener existed is still applied", async () => {
+      const { source, enqueue } = fakeSource(null);
+      const persisted = deferPersisted({ dir: "/saved" });
+      render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      enqueue(launchArgs({ dir: "/proj/b" })); // no nudge: the emit was lost
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+    });
+
+    it("two requests before boot: the last dir wins, flags combine", async () => {
+      const { source, enqueue } = fakeSource(launchArgs({ dir: "/proj/b", yes: true }));
+      enqueue(launchArgs({ dir: "/proj/c" }));
+      const persisted = deferPersisted({ dir: "/saved" });
+      const { getByLabelText, getByTestId } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/proj/c");
+      expect(mockLoad).not.toHaveBeenCalledWith("/proj/b");
+      fireEvent.click(getByTestId("btn-launch-flags"));
+      expect((getByTestId("flag-yes") as HTMLInputElement).checked).toBe(true);
+    });
+
+    it("without a launch dir, the persisted dir loads as before", async () => {
+      const { source } = fakeSource(null);
+      const persisted = deferPersisted({ dir: "/saved", yes: true });
+      const { getByLabelText } = render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={vi.fn()}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect(mockLoad).toHaveBeenCalledWith("/saved");
+      expect((getByLabelText("Diretório-alvo") as HTMLInputElement).value).toBe("/saved");
+    });
+
+    it("--run without a dir starts the persisted project after it loads", async () => {
+      const { source } = fakeSource(launchArgs({ run: true }));
+      const persisted = deferPersisted({ dir: "/saved" });
+      const onStartRun = vi.fn();
+      render(
+        <App
+          state={makeBridgeState({ runStatus: "idle" })}
+          onStartRun={onStartRun}
+          launchArgsSource={source}
+          persistedLaunch={persisted.persistedLaunch}
+        />,
+      );
+      await persisted.release();
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+      expect(onStartRun.mock.calls[0][0]).toBe("/saved");
+    });
+  });
+
+  // C-0021/B2: run_started arrives seconds after Iniciar (eager agent spawn);
+  // a --run in that window used to start again — killing the Run starting up.
+  it("a --run while the Run is starting warns and never starts a second one", async () => {
+    const { source, push } = fakeSource(null);
+    const onStartRun = vi.fn();
+    const { getByTestId, rerender } = render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await act(async () => {
+      fireEvent.click(getByTestId("btn-iniciar"));
+    });
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    // Root moves the bridge to "starting" as it spawns the sidecar.
+    rerender(
+      <App state={makeBridgeState({ runStatus: "starting" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await act(async () => {
+      push(launchArgs({ run: true }));
+    });
+    await flush();
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    expect(getByTestId("launch-warning").textContent).toContain("--run");
+  });
+
+  // C-0021/B3: --run on the open project used to auto-save a dirty draft over
+  // the loopy.yml on disk (maybe edited elsewhere) without asking.
+  describe("--run on the same project goes through the dirty guard", () => {
+    function renderDirtyRun(runStatus: BridgeState["ui"]["runStatus"] = "idle") {
+      mockDraftState = { ...mockDraftState, dirty: true, save: vi.fn().mockResolvedValue(true) };
+      const { source, push } = fakeSource(null);
+      const onStartRun = vi.fn();
+      const onDismissRun = vi.fn();
+      const utils = render(
+        <App
+          state={makeBridgeState({ runStatus })}
+          onStartRun={onStartRun}
+          onDismissRun={onDismissRun}
+          launchArgsSource={source}
+        />,
+      );
+      return { ...utils, push, onStartRun, onDismissRun };
+    }
+
+    it("asks first, in the words of a Run (not a project switch)", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ dir: "/sample", run: true }));
+      });
+      await flush();
+      expect(getByTestId("dirty-confirm").textContent).toContain("Run");
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("Cancel neither saves nor starts", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      fireEvent.click(getByTestId("dirty-cancel"));
+      await flush();
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("Discard re-reads the yml from disk and starts, without saving", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      mockLoad.mockImplementation(async () => {
+        mockDraftState = { ...mockDraftState, dirty: false };
+      });
+      await act(async () => {
+        fireEvent.click(getByTestId("dirty-discard"));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/sample");
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+    });
+
+    it("Save writes the draft, then starts", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      const save = mockDraftState.save;
+      mockLoad.mockImplementation(async () => {
+        mockDraftState = { ...mockDraftState, dirty: false };
+      });
+      await act(async () => {
+        fireEvent.click(getByTestId("dirty-save"));
+      });
+      await flush();
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+    });
+
+    // C-0021 verification: a failed save (invalid draft) used to fall through
+    // to the load — the draft was lost and the Run started from disk.
+    it("a failed Save keeps the dialog and the draft, and does not start", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      mockDraftState = { ...mockDraftState, save: vi.fn().mockResolvedValue(false) };
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      await act(async () => {
+        fireEvent.click(getByTestId("dirty-save"));
+      });
+      await flush();
+      expect(mockLoad).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+      expect(getByTestId("dirty-confirm").textContent).toContain("Não foi possível salvar");
+    });
+
+    it("the same holds after a finished Run", async () => {
+      const { push, getByTestId, onStartRun, onDismissRun } = renderDirtyRun("finished");
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      expect(onDismissRun).toHaveBeenCalledTimes(1);
+      expect(getByTestId("dirty-confirm")).toBeTruthy();
+      expect(mockDraftState.save).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+    });
+
+    it("a clean draft is re-read from disk before starting", async () => {
+      const { source, push } = fakeSource(null);
+      const onStartRun = vi.fn();
+      mockLoad.mockResolvedValue(undefined);
+      render(
+        <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+      );
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/sample");
+      expect(onStartRun).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("after a finished Run, a new argv returns to idle before applying", async () => {
+    const { source, push } = fakeSource(null);
+    const onDismissRun = vi.fn();
+    render(
+      <App
+        state={makeBridgeState({ runStatus: "finished" })}
+        onStartRun={vi.fn()}
+        onDismissRun={onDismissRun}
+        launchArgsSource={source}
+      />,
+    );
+    await flush();
+    await act(async () => {
+      push(launchArgs({ dir: "/proj/b" }));
+    });
+    expect(onDismissRun).toHaveBeenCalledTimes(1);
+    expect(mockLoad).toHaveBeenCalledWith("/proj/b");
+  });
+
+  it("--run ignores flags left by an earlier launch (no stale --yes)", async () => {
+    const { source, push } = fakeSource(launchArgs({ dir: "/proj/a", task: "T-001", yes: true }));
+    const onStartRun = vi.fn();
+    render(
+      <App state={makeBridgeState({ runStatus: "idle" })} onStartRun={onStartRun} launchArgsSource={source} />,
+    );
+    await flush();
+    await act(async () => {
+      push(launchArgs({ dir: "/proj/b", run: true }));
+    });
+    await flush();
+    expect(onStartRun).toHaveBeenCalledWith("/proj/b", { yes: false, taskId: "", verbose: false });
   });
 });

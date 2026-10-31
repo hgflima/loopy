@@ -10,7 +10,7 @@
  * means the live TUI and the no-TTY line fallback speak the same visual
  * vocabulary — a check that "passed" reads `✓` in both.
  */
-import { graphlib, layout as dagreLayout } from "@dagrejs/dagre";
+import dagre from "@dagrejs/dagre";
 import type { CheckState, CheckStatus, StepStatus, StoreState, TaskStatus } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -351,7 +351,7 @@ export function computeDagreLayout(
   if (nodeIds.size === 0) return { nodes: [], edges: [], width: 0, height: 0 };
 
   // Build dagre graph
-  const g = new graphlib.Graph();
+  const g = new dagre.graphlib.Graph();
   g.setGraph({
     rankdir: "LR",
     nodesep: 1,
@@ -380,7 +380,7 @@ export function computeDagreLayout(
     }
   }
 
-  dagreLayout(g, { constraints });
+  dagre.layout(g, { constraints });
 
   // Snap nodes to cell grid
   const rawNodes: { id: string; col: number; row: number; width: number }[] =

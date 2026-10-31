@@ -1,0 +1,138 @@
+Instalação do loopy {{VERSION}} — instruções para um agente de código
+======================================================================
+
+Você é um agente com acesso a um terminal nesta máquina. Sua tarefa é instalar
+o loopy {{VERSION}} (repositório https://github.com/{{REPO}}): o app de desktop
+(a GUI "Loopy") e a CLI `loopy` (pacote npm `{{NPM_PACKAGE}}`), na MESMA versão.
+
+Regras para você, agente:
+- Execute os passos em ordem. Depois de CADA passo, rode o comando de
+  verificação indicado e compare com a saída esperada. Se não bater, pare,
+  mostre a saída ao usuário e não siga adiante "no escuro".
+- Peça confirmação ao usuário antes de qualquer comando com `sudo` ou que
+  instale pacotes do sistema.
+- NUNCA desligue proteções globais do sistema operacional (por exemplo,
+  `spctl --master-disable` no macOS, ou desativar o SmartScreen/Defender no
+  Windows). O único contorno permitido é o POR APP descrito abaixo.
+- Use exatamente as URLs listadas aqui; não procure outros binários.
+- Suporte por plataforma: Linux é a plataforma testada, mas só distros
+  Debian/Ubuntu e derivadas (com `dpkg`/`apt`) são cobertas — o app de
+  Linux sai apenas como `.deb`. Em outras distros, pare e avise o usuário
+  que não há instalador pronto para elas. macOS e Windows são
+  EXPERIMENTAIS: os instaladores são gerados, mas não passam por teste
+  funcional (no Windows, iniciar um Run ainda não funciona). Avise o usuário
+  disso antes de instalar nessas plataformas.
+
+Artefatos deste release ({{VERSION}}):
+- Linux (.deb, Debian/Ubuntu): {{LINUX_DEB_NAME}}
+                               {{LINUX_DEB_URL}}
+- macOS (.dmg) [experimental]: {{MACOS_DMG_NAME}}
+                               {{MACOS_DMG_URL}}
+- Windows (NSIS) [experimental]: {{WINDOWS_SETUP_NAME}}
+                               {{WINDOWS_SETUP_URL}}
+
+
+Passo 1 — Detectar sistema operacional e arquitetura
+----------------------------------------------------
+Linux/macOS:
+    uname -s && uname -m
+  Esperado: `Linux` ou `Darwin`, seguido de `x86_64`, `amd64`, `arm64` ou
+  `aarch64`.
+Windows (PowerShell):
+    [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+  Esperado: `X64` (ou `Arm64`).
+
+Arquiteturas publicadas: Linux x86_64 (Debian/Ubuntu e derivadas), macOS
+Apple Silicon (arm64), Windows x64. Se a máquina for outra combinação, pare e
+avise o usuário que não há instalador pronto para ela.
+No Linux, confirme também que a distro usa `dpkg`/`apt`:
+    command -v dpkg && command -v apt
+  Esperado: dois caminhos (ex.: `/usr/bin/dpkg` e `/usr/bin/apt`). Se algum
+  faltar, a distro não é coberta por este release: pare e avise o usuário.
+
+
+Passo 2 — Pré-requisito: Node.js >= 22.13
+-----------------------------------------
+    node --version
+  Esperado: `v22.13.0` ou maior (ex.: `v22.13.1`, `v24.x`).
+Se o Node faltar ou for mais antigo, instale um Node >= 22.13 (pelo
+gerenciador de versões que o usuário já usa — mise, nvm, fnm, volta — ou pelo
+instalador oficial de https://nodejs.org) e rode a verificação de novo.
+Confirme também o npm:
+    npm --version
+  Esperado: um número de versão (qualquer).
+
+
+Passo 3 — Instalar o app de desktop
+-----------------------------------
+Siga SOMENTE a seção do sistema detectado no Passo 1.
+
+3.L — Linux (Debian/Ubuntu e derivadas)
+  O app de Linux é distribuído só como `.deb`; ele instala no sistema (exige
+  sudo) e já cria a entrada "Loopy" no menu de aplicativos.
+      curl -fL -o /tmp/{{LINUX_DEB_NAME}} "{{LINUX_DEB_URL}}"
+      sudo apt install -y /tmp/{{LINUX_DEB_NAME}}
+  Verificação:
+      dpkg -s loopy | grep -E '^(Status|Version):'
+      command -v loopy-menubar
+  Esperado: `Status: install ok installed`, `Version: {{VERSION}}` e o caminho
+  do executável do app (ex.: `/usr/bin/loopy-menubar`).
+
+3.M — macOS [EXPERIMENTAL]
+      curl -fL -o /tmp/{{MACOS_DMG_NAME}} "{{MACOS_DMG_URL}}"
+      hdiutil attach -nobrowse -quiet /tmp/{{MACOS_DMG_NAME}} -mountpoint /tmp/loopy-dmg
+      cp -R /tmp/loopy-dmg/Loopy.app /Applications/
+      hdiutil detach -quiet /tmp/loopy-dmg
+  O app não é assinado/notarizado, então o Gatekeeper o bloqueia. Remova a
+  quarentena SOMENTE deste app (nunca use `spctl --master-disable`):
+      xattr -dr com.apple.quarantine /Applications/Loopy.app
+  Verificação:
+      test -d /Applications/Loopy.app && echo app-ok
+      xattr -p com.apple.quarantine /Applications/Loopy.app 2>&1 || true
+  Esperado: `app-ok`, e o `xattr -p` reclamando que o atributo não existe
+  (`No such xattr: com.apple.quarantine`).
+
+3.W — Windows [EXPERIMENTAL] (PowerShell, sem admin: instala por usuário)
+      $setup = Join-Path $env:TEMP "{{WINDOWS_SETUP_NAME}}"
+      Invoke-WebRequest -Uri "{{WINDOWS_SETUP_URL}}" -OutFile $setup
+      Start-Process -FilePath $setup -ArgumentList '/S' -Wait
+  O instalador não é assinado: se o usuário o abrir pela interface, o
+  SmartScreen mostra "O Windows protegeu o computador". O contorno é POR
+  ARQUIVO: "Mais informações" → "Executar assim mesmo". Não desative o
+  SmartScreen nem o Defender.
+  Verificação:
+      Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter Loopy.exe -ErrorAction SilentlyContinue | Select-Object -First 1 FullName
+  Esperado: o caminho de um `Loopy.exe` (ex.: em `%LOCALAPPDATA%\Programs\Loopy\`
+  ou `%LOCALAPPDATA%\Loopy\`).
+
+
+Passo 4 — Instalar a CLI (mesma versão do app)
+----------------------------------------------
+    npm i -g {{NPM_PACKAGE}}@{{VERSION}}
+Verificação:
+    loopy --version
+  Esperado: exatamente `{{VERSION}}`.
+Se o comando `loopy` não for encontrado, o diretório global do npm não está no
+PATH: rode `npm prefix -g` e acrescente `<prefixo>/bin` (Linux/macOS) ou o
+próprio `<prefixo>` (Windows) ao PATH do shell do usuário; abra um novo
+terminal e verifique de novo.
+
+
+Passo 5 — Verificar a integração CLI ↔ app
+------------------------------------------
+    loopy open --help
+  Esperado: o texto de ajuda do subcomando `open` (uso `loopy open [dir]`),
+  com código de saída 0.
+Opcional (abre a janela do app, não inicia nenhum agente):
+    loopy open .
+  Esperado: a janela do Loopy abre com a pasta atual como projeto. Se der erro
+  dizendo que o app não foi encontrado, confira o Passo 3 ou defina
+  `LOOPY_APP` com o caminho do executável do app.
+
+
+Resumo final para o usuário
+---------------------------
+Ao terminar, informe: SO/arquitetura detectados, formato do app instalado e
+onde, a saída de `loopy --version` (deve ser `{{VERSION}}`) e o resultado de
+`loopy open --help`. Se a plataforma for macOS ou Windows, lembre que o
+suporte é experimental. Problemas: https://github.com/{{REPO}}/issues

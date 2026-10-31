@@ -16,6 +16,9 @@ _porquê_), aqui o foco é **como fazer**.
 | [Usar múltiplos agentes](usar-multiplos-agentes.md)                             | Migrar para o Registry `agents:` e selecionar agente, model e effort por Step — presets do Catálogo, sondagem de dialeto (`probe-agent`) e validação eager. |
 | [Ligar a telemetria e anotar vereditos](ligar-telemetria-e-anotar-vereditos.md) | Ativar o gate `metrics:`, entender o que a run grava no `.db`, e anotar veredito humano, bugs e o fechamento de uma change — lendo tudo na aba Insights.    |
 | [Recuperar uma task pausada ou escalada](recuperar-task-escalada.md)            | Investigar o worktree preservado e decidir entre retomar do checkpoint ou descartar com `--clean` — incluindo a armadilha de editar o pipeline no meio.     |
+| [Instalar a partir de um release](instalar.md)                                  | Instalar o app (`.deb`/`.dmg`/NSIS) e a CLI na mesma versão a partir do GitHub Release e abrir um projeto com `loopy open .`.                                |
+| [Rodar no Linux e no Windows](plataformas.md)                                   | Rodar o motor e a GUI fora do macOS (Linux suportado) e o mapa do que falta para o Windows.                                                                 |
+| [Trocar o repositório](trocar-repositorio.md)                                   | Mover releases e publicação npm para outro `owner/repo`: `set-repo.mjs`, Variables do Actions, Trusted Publisher e proteção da `main`.                       |
 
 ## Documentos relacionados
 

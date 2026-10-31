@@ -13,6 +13,7 @@
  */
 import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Button } from "../ui";
+import { modKeyLabel } from "../ui/platform";
 import "./specs.css";
 
 /** One attached file held in memory (pre-write). */
@@ -116,7 +117,7 @@ export function Attachable({
           📎 Anexar
         </Button>
         <span className="spec-attach__hint">
-          {hint ?? "Cole (⌘V) ou arraste imagens, logs, prints…"}
+          {hint ?? `Cole (${modKeyLabel()}V) ou arraste imagens, logs, prints…`}
         </span>
         <input
           ref={fileInput}

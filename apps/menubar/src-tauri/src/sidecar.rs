@@ -16,8 +16,8 @@ use tauri::{AppHandle, Emitter, Manager};
 /// The target triple is embedded at compile-time by `tauri_build::build()`.
 pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
     let triple = env!("TAURI_ENV_TARGET_TRIPLE");
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("Failed to resolve executable path: {e}"))?;
+    let exe =
+        std::env::current_exe().map_err(|e| format!("Failed to resolve executable path: {e}"))?;
     let dir = exe
         .parent()
         .ok_or_else(|| "Executable has no parent directory".to_string())?;
@@ -33,13 +33,8 @@ pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
     // `tauri build` bundles `externalBin: ["bin/loopy"]` it STRIPS both the
     // `bin/` prefix and the `-<triple>` suffix, placing it flat beside the main
     // executable as `Contents/MacOS/loopy`. `tauri dev` keeps the triple. Try
-    // every layout and take the first that exists.
-    let candidates = [
-        dir.join("loopy"),                       // bundled .app (Contents/MacOS/loopy)
-        dir.join(format!("loopy-{triple}")),     // dev / flat, triple kept
-        dir.join(format!("bin/loopy-{triple}")), // dev with bin/ prefix
-        dir.join("bin/loopy"),                   // flat bin/, triple stripped
-    ];
+    // every layout and take the first that exists (see sidecar_candidates).
+    let candidates = sidecar_candidates(dir, triple, std::env::consts::EXE_SUFFIX);
 
     for candidate in &candidates {
         if is_executable_file(candidate) {
@@ -59,7 +54,22 @@ pub(crate) fn resolve_sidecar_path() -> Result<PathBuf, String> {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    Err(format!("No runnable sidecar binary found. Searched:\n{searched}"))
+    Err(format!(
+        "No runnable sidecar binary found. Searched:\n{searched}"
+    ))
+}
+
+/// Every layout the sidecar may have, in lookup order, each with `exe_suffix`
+/// appended (`std::env::consts::EXE_SUFFIX`: `".exe"` on Windows, `""` elsewhere).
+///
+/// Pure (no I/O) so the Windows naming is testable on any host.
+fn sidecar_candidates(dir: &Path, triple: &str, exe_suffix: &str) -> Vec<PathBuf> {
+    vec![
+        dir.join(format!("loopy{exe_suffix}")), // bundled .app (Contents/MacOS/loopy)
+        dir.join(format!("loopy-{triple}{exe_suffix}")), // dev / flat, triple kept
+        dir.join(format!("bin/loopy-{triple}{exe_suffix}")), // dev with bin/ prefix
+        dir.join(format!("bin/loopy{exe_suffix}")), // flat bin/, triple stripped
+    ]
 }
 
 /// Whether `path` is a regular, non-empty file with an executable bit set.
@@ -224,9 +234,14 @@ impl SidecarState {
 
     /// Spawn the sidecar binary and set up stdout/stderr/exit event forwarding.
     ///
-    /// If a sidecar is already running it is killed first (one Run at a time).
+    /// One Run at a time — by **refusing**, never by killing: with a sidecar
+    /// alive this returns an error and leaves it untouched (C-0021 / B2: a
+    /// `loopy open --run` used to kill a Run still starting up). Replacing a Run
+    /// is an explicit `stop` first. The slot is held locked from the check to
+    /// the store, so two concurrent starts can't both pass.
     pub fn start(&self, app: &AppHandle, dir: &str, flags: Vec<String>) -> Result<(), String> {
-        self.stop()?;
+        let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
+        ensure_no_live_sidecar(inner.is_some())?;
 
         let mut args = vec![
             "--no-tui".to_string(),
@@ -271,10 +286,12 @@ impl SidecarState {
             .take()
             .ok_or_else(|| "Failed to capture stdin".to_string())?;
 
-        {
-            let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
-            *inner = Some(SidecarInner { stdin, pid });
-        }
+        *inner = Some(SidecarInner { stdin, pid });
+        drop(inner);
+
+        // The popover is another webview: only the main window's Root knows it
+        // launched a Run, so this tells every window it is starting (C-0021).
+        let _ = app.emit("sidecar://started", ());
 
         // stdout → sidecar://line
         let app_stdout = app.clone();
@@ -370,10 +387,25 @@ fn wait_and_emit(mut child: Child, pid: u32, app: &AppHandle) {
     // Clean up state if this PID is still the active sidecar
     if let Some(state) = app.try_state::<SidecarState>() {
         if let Ok(mut inner) = state.inner.lock() {
-            if inner.as_ref().is_some_and(|h| h.pid == pid) {
-                *inner = None;
-            }
+            release_if_current(&mut inner, pid, |h| h.pid);
         }
+    }
+}
+
+/// Refuse a start while a sidecar is alive (see [`SidecarState::start`]).
+fn ensure_no_live_sidecar(alive: bool) -> Result<(), String> {
+    if alive {
+        Err("Run em andamento: encerre-o antes de iniciar outro".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+/// Free the slot on exit — only if it still holds *this* pid, so a late exit
+/// of an old process never frees a newer Run's slot.
+fn release_if_current<T>(slot: &mut Option<T>, pid: u32, pid_of: impl Fn(&T) -> u32) {
+    if slot.as_ref().is_some_and(|h| pid_of(h) == pid) {
+        *slot = None;
     }
 }
 
@@ -384,6 +416,26 @@ fn wait_and_emit(mut child: Child, pid: u32, app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -- One Run at a time, never by killing (C-0021 / B2) -------------------
+
+    #[test]
+    fn start_is_refused_while_a_sidecar_is_alive() {
+        assert!(ensure_no_live_sidecar(false).is_ok());
+        let err = ensure_no_live_sidecar(true).unwrap_err();
+        assert!(err.contains("Run em andamento"), "{err}");
+    }
+
+    #[test]
+    fn exit_frees_the_slot_only_for_the_current_pid() {
+        let mut slot = Some(42u32);
+        release_if_current(&mut slot, 7, |p| *p);
+        assert_eq!(slot, Some(42), "a stale exit must not free a newer Run");
+        release_if_current(&mut slot, 42, |p| *p);
+        assert_eq!(slot, None);
+        // …and once freed, a new start is allowed again.
+        assert!(ensure_no_live_sidecar(slot.is_some()).is_ok());
+    }
 
     // -- LineFramer tests ---------------------------------------------------
 
@@ -458,10 +510,7 @@ mod tests {
     fn ndjson_split_across_chunks() {
         let mut f = LineFramer::new();
         assert!(f.feed(b"{\"type\":\"run").is_empty());
-        assert_eq!(
-            f.feed(b"_started\"}\n"),
-            vec!["{\"type\":\"run_started\"}"]
-        );
+        assert_eq!(f.feed(b"_started\"}\n"), vec!["{\"type\":\"run_started\"}"]);
     }
 
     // -- linearity invariant (kills the O(N²) framer cliff, T-004) -----------
@@ -605,6 +654,38 @@ mod tests {
         let result = is_executable_file(&p);
         let _ = std::fs::remove_file(&p);
         assert!(result, "mode-755 non-empty file must be accepted");
+    }
+
+    // -- sidecar_candidates tests -------------------------------------------
+
+    const TRIPLE: &str = "x86_64-pc-windows-msvc";
+
+    #[test]
+    fn candidates_without_suffix_match_unix_layouts() {
+        let dir = Path::new("/app");
+        assert_eq!(
+            sidecar_candidates(dir, TRIPLE, ""),
+            vec![
+                dir.join("loopy"),
+                dir.join(format!("loopy-{TRIPLE}")),
+                dir.join(format!("bin/loopy-{TRIPLE}")),
+                dir.join("bin/loopy"),
+            ]
+        );
+    }
+
+    #[test]
+    fn candidates_with_exe_suffix_append_it_to_every_layout() {
+        let dir = Path::new("/app");
+        assert_eq!(
+            sidecar_candidates(dir, TRIPLE, ".exe"),
+            vec![
+                dir.join("loopy.exe"),
+                dir.join(format!("loopy-{TRIPLE}.exe")),
+                dir.join(format!("bin/loopy-{TRIPLE}.exe")),
+                dir.join("bin/loopy.exe"),
+            ]
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ import {
   applyLine,
   applySidecarStderr,
   applySidecarExit,
+  startingBridgeState,
   STDERR_TAIL_CAP,
   type BridgeState,
 } from "../state/store-bridge";
@@ -77,6 +78,14 @@ describe("applySidecarStderr", () => {
 // ---------------------------------------------------------------------------
 
 describe("applySidecarExit", () => {
+  // C-0021/B2: between Iniciar and run_started the Run is "starting".
+  it("start-fail: exit while starting (before run_started) → 'start-fail'", () => {
+    const next = applySidecarExit(startingBridgeState(), 1);
+    expect(next.ui.sidecarFailure).toEqual({ type: "start-fail", exitCode: 1 });
+    // Back to the idle editor: a Run that never started is not active.
+    expect(next.ui.runStatus).toBe("idle");
+  });
+
   it("start-fail: exit before run_started → type 'start-fail'", () => {
     const s = initialBridgeState();
     const next = applySidecarExit(s, 1);

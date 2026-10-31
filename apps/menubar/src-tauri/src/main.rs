@@ -3,6 +3,7 @@
 mod changes;
 mod config;
 mod interview_process;
+mod launch_args;
 #[cfg(target_os = "macos")]
 mod panel;
 mod project_fs;
@@ -12,6 +13,7 @@ mod telemetry;
 use changes::{discard_change, read_changes};
 use config::{load_launch_config, save_launch_config};
 use interview_process::InterviewState;
+use launch_args::{parse_launch_args, LaunchArgs, LaunchQueue};
 use project_fs::{probe_agent, read_backlog, read_capabilities_cache, read_project_files, write_loopy_yml};
 use sidecar::SidecarState;
 use telemetry::{
@@ -19,10 +21,12 @@ use telemetry::{
     read_change_insights, read_change_list, read_step_insights, read_task_insights,
     telemetry_db_exists,
 };
+use std::path::Path;
+use std::sync::Mutex;
 use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -166,9 +170,22 @@ fn resize_popover(app: tauri::AppHandle, height: f64) {
     panel::resize_popover_panel(&app, height);
     #[cfg(not(target_os = "macos"))]
     if let Some(window) = app.get_webview_window("popover") {
-        use tauri_plugin_positioner::WindowExt;
         let _ = window.set_size(tauri::LogicalSize::new(320.0, height));
-        let _ = window.move_window(tauri_plugin_positioner::Position::TrayBottomLeft);
+        anchor_popover(&window, tauri_plugin_positioner::Position::TrayBottomLeft);
+    }
+}
+
+/// Move the popover with the positioner — only when the window has a monitor.
+///
+/// The positioner `unwrap()`s `current_monitor()`, and on Linux (GTK/Wayland) a
+/// window that was never shown has none: the call panics *inside a callback that
+/// cannot unwind* and aborts the whole app. `resize_popover` runs on the
+/// popover's mount, while it is still hidden, so this guard is load-bearing.
+#[cfg(not(target_os = "macos"))]
+fn anchor_popover(window: &tauri::WebviewWindow, position: tauri_plugin_positioner::Position) {
+    use tauri_plugin_positioner::WindowExt;
+    if matches!(window.current_monitor(), Ok(Some(_))) {
+        let _ = window.move_window(position);
     }
 }
 
@@ -206,6 +223,66 @@ fn log_error(source: String, message: String, stack: String, component_stack: St
 }
 
 // ---------------------------------------------------------------------------
+// Launch argv (C-0020 / E2-E3)
+// ---------------------------------------------------------------------------
+
+/// Launch requests waiting for the webview: the initial argv and every second
+/// instance's (C-0021 / M3).
+///
+/// *Pull*, not *push*: an `emit` fires before the webview has a listener (the
+/// initial argv, from `setup`) or before it registers one (a second instance
+/// during boot) and is silently lost. So every request is queued here and the
+/// webview drains it via [`drain_launch_args`]; the `launch-args-pending` event
+/// is only a nudge to drain — losing it loses nothing.
+struct LaunchArgsState(Mutex<LaunchQueue>);
+
+/// Hand every pending launch request to the webview, in arrival order, once.
+/// Empty also means "launched bare" — today's behaviour, nothing to apply.
+#[tauri::command]
+fn drain_launch_args(state: tauri::State<'_, LaunchArgsState>) -> Vec<LaunchArgs> {
+    state.0.lock().map(|mut q| q.drain()).unwrap_or_default()
+}
+
+/// Parse a launch argv into what the webview should apply. A bare launch (no
+/// dir, no flags) is `None`, as is a parse error — which is logged, never fatal
+/// (AD-5): the app still comes up, it just doesn't switch project.
+fn launch_args_to_apply(argv: &[String], cwd: &Path) -> Option<LaunchArgs> {
+    match parse_launch_args(argv, cwd) {
+        Ok(args) if args == LaunchArgs::default() => None,
+        Ok(args) => Some(args),
+        Err(e) => {
+            eprintln!("[launch-args] argv ignorado: {e}");
+            None
+        }
+    }
+}
+
+/// Second instance (E3): the plugin hands us its argv and the *caller's* cwd.
+/// The request is queued first — before anything that could fail or be
+/// deferred — then the webview is nudged to drain and the window comes up. On a
+/// parse error or a bare launch, only the focus happens.
+///
+/// The plugin calls this off the main thread; the window/panel work (AppKit's
+/// `orderOut` on macOS) is dispatched to it, as `resize_popover_panel` does
+/// (C-0021 / M4).
+fn on_second_instance(app: &tauri::AppHandle, argv: Vec<String>, cwd: String) {
+    if let Some(args) = launch_args_to_apply(&argv, Path::new(&cwd)) {
+        if let Some(state) = app.try_state::<LaunchArgsState>() {
+            if let Ok(mut q) = state.0.lock() {
+                q.push(args);
+            }
+        }
+        if let Err(e) = app.emit_to("main", "launch-args-pending", ()) {
+            eprintln!("[launch-args] falha ao avisar o webview: {e}");
+        }
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = surface_main_window(&handle);
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Quit (shares the Run-active guard with Cmd+Q — see quit_if_confirmed)
 // ---------------------------------------------------------------------------
 
@@ -222,8 +299,19 @@ fn quit_app(app: tauri::AppHandle) {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    // Initial launch argv (E2), queued for the webview to drain on mount.
+    let initial = {
+        let argv: Vec<String> = std::env::args().collect();
+        let cwd = std::env::current_dir().unwrap_or_default();
+        launch_args_to_apply(&argv, &cwd)
+    };
+    let surface_on_launch = initial.is_some();
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
+        // Single instance (E3) must be the FIRST plugin registered: a second
+        // launch exits here, forwarding its argv + cwd to the live instance.
+        .plugin(tauri_plugin_single_instance::init(on_second_instance))
         .plugin(tauri_plugin_positioner::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -240,7 +328,12 @@ fn main() {
     builder
         .manage(SidecarState::new())
         .manage(InterviewState::new())
-        .setup(|app| {
+        // Seeded with the initial argv before `setup`: a second instance can be
+        // forwarded before it runs, and must queue *after* the initial argv.
+        .manage(LaunchArgsState(Mutex::new(LaunchQueue::seeded(initial))))
+        .setup(move |app| {
+            // The initial launch argv is already queued (see `.manage` above).
+
             // Start as accessory on macOS (no Dock icon, menu bar only)
             #[cfg(target_os = "macos")]
             {
@@ -254,11 +347,32 @@ fn main() {
             // Build tray icon — the loopy loop mark as a macOS template image
             // (monochrome + transparent, so macOS auto-tints it to the menubar
             // state). `update_tray_title` still drives the live pulse text.
+            #[cfg(target_os = "macos")]
             let tray_icon = Image::from_bytes(include_bytes!("../icons/tray-template.png"))?;
-            let _tray = TrayIconBuilder::with_id("main")
+            // Elsewhere nothing tints a template image: a black mark vanishes on a
+            // dark Linux panel, so use the colored app icon instead.
+            #[cfg(not(target_os = "macos"))]
+            let tray_icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+
+            #[allow(unused_mut)]
+            let mut tray_builder = TrayIconBuilder::with_id("main")
                 .tooltip("Loopy")
                 .icon(tray_icon)
-                .icon_as_template(true)
+                .icon_as_template(true);
+
+            // Non-macOS: a native tray menu mirroring the popover's actions. On
+            // Linux it is the ONLY way in — libappindicator never delivers click
+            // events, so the left-click popover toggle below never fires there.
+            // On Windows it is the right-click menu; left click keeps the popover.
+            #[cfg(not(target_os = "macos"))]
+            {
+                tray_builder = tray_builder
+                    .menu(&build_tray_menu(app.handle())?)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| handle_tray_menu(app, event.id().as_ref()));
+            }
+
+            let _tray = tray_builder
                 .on_tray_icon_event(|tray_handle, event| {
                     // Feed every event to the positioner so it tracks the tray rect
                     tauri_plugin_positioner::on_tray_event(
@@ -320,6 +434,18 @@ fn main() {
                 });
             }
 
+            // Linux: the tray can be invisible (GNOME without the AppIndicator
+            // extension), and there is no Dock to click — start with the main
+            // window up so the app is never launched into nowhere.
+            #[cfg(target_os = "linux")]
+            surface_main_window(app.handle())?;
+
+            // Launched with a dir or flags (`loopy open`): show the window the
+            // webview will apply them to. Bare launch keeps today's tray start.
+            if surface_on_launch {
+                surface_main_window(app.handle())?;
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -362,6 +488,8 @@ fn main() {
             insights_set_change_status,
             log_error,
             quit_app,
+            // Launch argv (C-0020 / E2): the webview pulls the initial argv once.
+            drain_launch_args,
         ])
         .build(tauri::generate_context!())
         .expect("error building tauri application")
@@ -446,6 +574,43 @@ fn hide_tray_popover(app: &tauri::AppHandle) {
     }
 }
 
+/// Non-macOS tray menu: the popover's actions (Abrir/Parar · Sobre/Sair) as a
+/// native menu. Ids are routed by [`handle_tray_menu`].
+#[cfg(not(target_os = "macos"))]
+fn build_tray_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
+    MenuBuilder::new(app)
+        .item(&MenuItemBuilder::with_id("open", "Abrir").build(app)?)
+        .item(&MenuItemBuilder::with_id("stop", "Parar").build(app)?)
+        .separator()
+        .item(&MenuItemBuilder::with_id("about", "Sobre").build(app)?)
+        .item(&MenuItemBuilder::with_id("quit", "Sair").build(app)?)
+        .build()
+}
+
+/// Route a tray menu click to the same commands the popover invokes.
+#[cfg(not(target_os = "macos"))]
+fn handle_tray_menu(app: &tauri::AppHandle, id: &str) {
+    match id {
+        "open" => {
+            let _ = surface_main_window(app);
+        }
+        "stop" => {
+            let _ = app.state::<SidecarState>().stop();
+        }
+        "about" => {
+            let _ = show_about_window(app.clone());
+        }
+        "quit" => {
+            // Menu events run on the main thread; the quit guard may block on a
+            // confirmation dialog, which must not happen there.
+            let app = app.clone();
+            std::thread::spawn(move || quit_if_confirmed(&app));
+        }
+        _ => {}
+    }
+}
+
 /// Non-macOS fallback: toggle the popover as a plain window (no fullscreen
 /// overlay — that's a macOS-only concern handled by the NSPanel path).
 #[cfg(not(target_os = "macos"))]
@@ -456,9 +621,8 @@ fn toggle_popover_window(app: &tauri::AppHandle) {
     if popover.is_visible().unwrap_or(false) {
         let _ = popover.hide();
     } else {
-        use tauri_plugin_positioner::WindowExt;
-        let _ = popover.move_window(tauri_plugin_positioner::Position::TrayCenter);
         let _ = popover.show();
+        anchor_popover(&popover, tauri_plugin_positioner::Position::TrayCenter);
         let _ = popover.set_focus();
     }
 }
@@ -489,6 +653,47 @@ mod tests {
         // A Run is active → the verdict is exactly what the dialog returns.
         assert!(confirm_quit(true, || true), "confirmed quit must proceed");
         assert!(!confirm_quit(true, || false), "cancelled quit must be blocked");
+    }
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        std::iter::once("Loopy")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    // A bare launch is today's behaviour: nothing to apply, window stays hidden.
+    #[test]
+    fn launch_args_bare_launch_is_none() {
+        let cwd = std::env::temp_dir();
+        assert_eq!(launch_args_to_apply(&argv(&[]), &cwd), None);
+        assert_eq!(launch_args_to_apply(&argv(&["-psn_0_123"]), &cwd), None);
+    }
+
+    #[test]
+    fn launch_args_dir_resolves_against_given_cwd() {
+        let cwd = std::env::temp_dir().join("caller");
+        let got = launch_args_to_apply(&argv(&["proj", "--run"]), &cwd).expect("args");
+        assert_eq!(
+            got.dir,
+            Some(cwd.join("proj").to_string_lossy().into_owned())
+        );
+        assert!(got.run);
+    }
+
+    #[test]
+    fn launch_args_flags_only_is_applied() {
+        let got = launch_args_to_apply(&argv(&["--yes"]), &std::env::temp_dir()).expect("args");
+        assert!(got.yes);
+        assert_eq!(got.dir, None);
+    }
+
+    // A parse error never takes the app down: it degrades to "nothing to apply".
+    #[test]
+    fn launch_args_parse_error_is_none() {
+        let cwd = std::env::temp_dir();
+        assert_eq!(launch_args_to_apply(&argv(&["--bogus"]), &cwd), None);
+        assert_eq!(launch_args_to_apply(&argv(&["--task"]), &cwd), None);
     }
 
     // About window: closing it reverts to Accessory only when the main window is

@@ -15,6 +15,7 @@
 | 0011 | ["Telemetria em SQLite: persistência insert-only e granularidade por-Tentativa (estende a ADR-0003)"](./0011-telemetria-sqlite-insert-only-e-granularidade-por-tentativa.md) | accepted | 2026-07-15 |  |
 | 0012 | ["Autoria de Change via Entrevista delegada"](./0012-autoria-de-change-via-entrevista.md) | accepted | 2026-07-25 |  |
 | 0013 | ["Stream semântico de session/update"](./0013-stream-semantico-de-session-update.md) | accepted | 2026-07-26 |  |
+| 0014 | ["Distribuição multiplataforma e release automático"](./0014-distribuicao-e-release-automatico.md) | accepted | 2026-10-27 |  |
 
 ## Changelog
 
@@ -31,4 +32,5 @@
 - 2026-07-15 — ADR-0011 created — loopy-bot
 - 2026-07-25 — ADR-0012 created — loopy-bot
 - 2026-07-26 — ADR-0013 created — loopy-bot
+- 2026-10-27 — ADR-0014 created
 
