@@ -139,7 +139,12 @@ function App({
 
   // --- Dirty guard confirm state (T-014/R10) ------------------------------
   // `forRun`: the load precedes a `--run` — the dialog says so (C-0021 / B3).
-  const [dirtyConfirm, setDirtyConfirm] = useState<{ dir: string; forRun: boolean } | null>(null);
+  // `saveFailed`: Salvar was refused (invalid draft) — the dialog stays.
+  const [dirtyConfirm, setDirtyConfirm] = useState<{
+    dir: string;
+    forRun: boolean;
+    saveFailed?: boolean;
+  } | null>(null);
 
   // --- Launch argv (C-0020 / T-013) --------------------------------------
   // `--run` waiting for its dir's loopy.yml to load (`loaded`), then canStart.
@@ -210,7 +215,12 @@ function App({
 
   const handleDirtyConfirmSave = useCallback(async () => {
     if (!dirtyConfirm) return;
-    await configDraft.save();
+    // A refused save must not fall through to the load: the draft would be
+    // lost and a pending `--run` would start from disk (C-0021).
+    if (!(await configDraft.save())) {
+      setDirtyConfirm({ ...dirtyConfirm, saveFailed: true });
+      return;
+    }
     applyPendingDir(dirtyConfirm.dir);
   }, [dirtyConfirm, configDraft.save, applyPendingDir]);
 
@@ -647,6 +657,11 @@ function App({
               {dirtyConfirm.forRun &&
                 " Pediram para iniciar um Run: salve o rascunho ou descarte-o para rodar o arquivo em disco."}
             </p>
+            {dirtyConfirm.saveFailed && (
+              <p className="dirty-confirm__message" role="alert">
+                Não foi possível salvar: o rascunho tem erros. Corrija-os, descarte o rascunho ou cancele.
+              </p>
+            )}
             <div className="dirty-confirm__actions">
               <Button variant="primary" data-testid="dirty-save" onClick={() => void handleDirtyConfirmSave()}>
                 Salvar

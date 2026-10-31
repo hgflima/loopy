@@ -1218,6 +1218,25 @@ describe("App — launch argv (C-0020 T-013)", () => {
       expect(onStartRun).toHaveBeenCalledTimes(1);
     });
 
+    // C-0021 verification: a failed save (invalid draft) used to fall through
+    // to the load — the draft was lost and the Run started from disk.
+    it("a failed Save keeps the dialog and the draft, and does not start", async () => {
+      const { push, getByTestId, onStartRun } = renderDirtyRun();
+      mockDraftState = { ...mockDraftState, save: vi.fn().mockResolvedValue(false) };
+      await flush();
+      await act(async () => {
+        push(launchArgs({ run: true }));
+      });
+      await flush();
+      await act(async () => {
+        fireEvent.click(getByTestId("dirty-save"));
+      });
+      await flush();
+      expect(mockLoad).not.toHaveBeenCalled();
+      expect(onStartRun).not.toHaveBeenCalled();
+      expect(getByTestId("dirty-confirm").textContent).toContain("Não foi possível salvar");
+    });
+
     it("the same holds after a finished Run", async () => {
       const { push, getByTestId, onStartRun, onDismissRun } = renderDirtyRun("finished");
       await flush();

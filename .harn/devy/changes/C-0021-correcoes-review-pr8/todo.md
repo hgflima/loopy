@@ -293,7 +293,7 @@
     Size: XS
     Risk: M
 
-- [ ] T-011: Salvar com rascunho inválido no aviso não descarta o rascunho
+- [x] T-011: Salvar com rascunho inválido no aviso não descarta o rascunho
     `handleDirtyConfirmSave` ignorava o `false` do `save()` e seguia com o load (e o
     `--run`). Manter o aviso aberto, com mensagem, quando o save falha.
     Acceptance: save que falha → nada é carregado nem iniciado, o aviso continua.
