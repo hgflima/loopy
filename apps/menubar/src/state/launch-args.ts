@@ -55,13 +55,15 @@ export type LaunchAction =
   | { readonly kind: "startAfterLoad"; readonly dir: string }
   /**
    * A Run is active: it is not killed and no second Run is started. The args
-   * are held (`deferred`, with `run` dropped) until the Run ends.
+   * are held (`deferred`, with `run` dropped) until the Run ends — unless only
+   * a `--run` arrived, which leaves nothing to hold.
    */
   | {
       readonly kind: "warnRunActive";
       readonly dir: string | null;
       readonly runIgnored: boolean;
-      readonly deferred: LaunchArgs;
+      /** `null` when only a `--run` arrived: nothing is left to apply later. */
+      readonly deferred: LaunchArgs | null;
     };
 
 export interface LaunchContext {
@@ -151,7 +153,7 @@ export function planLaunchArgs(
         kind: "warnRunActive",
         dir: switching ? target : null,
         runIgnored: args.run,
-        deferred: { ...args, run: false },
+        deferred: switching || hasFlags ? { ...args, run: false } : null,
       },
     ];
   }

@@ -303,7 +303,7 @@
     Size: S
     Risk: M
 
-- [ ] T-012: Aviso e pedido adiado não vazam entre Runs
+- [x] T-012: Aviso e pedido adiado não vazam entre Runs
     O pedido adiado nunca era limpo (reaparecia num Run seguinte, com "--run
     ignorado" herdado); e um `--run` sem nada mais durante um Run guardava um pedido
     vazio ("Aplicar as flags…" sem flags). Limpar o adiado ao aplicar argv fora de Run

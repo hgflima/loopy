@@ -165,16 +165,13 @@ describe("planLaunchArgs — Run active (E3)", () => {
     });
   });
 
-  it("same project with --run warns (one Run at a time)", () => {
+  // C-0021 verification: holding an empty request made the banner offer to
+  // "apply the launch flags" when there were none.
+  it("same project with only --run warns and holds nothing", () => {
     expect(
       planLaunchArgs(args({ dir: "/proj/a", run: true }), RUNNING),
     ).toEqual([
-      {
-        kind: "warnRunActive",
-        dir: null,
-        runIgnored: true,
-        deferred: args({ dir: "/proj/a" }),
-      },
+      { kind: "warnRunActive", dir: null, runIgnored: true, deferred: null },
     ]);
   });
 

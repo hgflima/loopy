@@ -159,6 +159,8 @@ function App({
     runIgnored: boolean;
   } | null>(null);
   const [warningHidden, setWarningHidden] = useState(false);
+  // A bare `--run` during a Run: warned about, nothing held.
+  const [runIgnoredNotice, setRunIgnoredNotice] = useState(false);
 
   // Point the GUI at a dir and load its draft; a pending `--run` for that dir
   // learns the load finished.
@@ -256,6 +258,9 @@ function App({
     }
     const flags: LaunchFlags = { yes: flagYes, taskId: flagTaskId.trim(), verbose: flagVerbose };
     setPopoverOpen(false);
+    // A new Run: nothing held from the previous one carries over.
+    setDeferred(null);
+    setRunIgnoredNotice(false);
     onStartRun(dir.trim(), flags);
   }, [canStart, dir, configDraft.dirty, configDraft.save, flagYes, flagTaskId, flagVerbose, onStartRun]);
 
@@ -266,6 +271,11 @@ function App({
     (args: LaunchArgs, currentDir: string = dir) => {
       const actions = planLaunchArgs(args, { currentDir, isRunning });
       const forRun = actions.some((a) => a.kind === "startAfterLoad");
+      // Outside a Run this request supersedes anything held from the last one.
+      if (!isRunning) {
+        setDeferred(null);
+        setRunIgnoredNotice(false);
+      }
       // The idle editor (dir input, Iniciar) only exists in idle: a finished
       // Run's board would swallow the switch/start silently.
       if (actions.length > 0 && ui.runStatus === "finished") onDismissRun?.();
@@ -285,22 +295,28 @@ function App({
             // Always behind a (re)load: only `loadDir` marks it loaded.
             setPendingStart({ dir: action.dir, loaded: false });
             break;
-          case "warnRunActive":
+          case "warnRunActive": {
+            setWarningHidden(false);
+            const next = action.deferred;
+            if (!next) {
+              setRunIgnoredNotice(true);
+              break;
+            }
             setDeferred((prev) => {
               const prevDir = prev?.args.dir ?? null;
-              const nextDir = action.deferred.dir;
+              const nextDir = next.dir;
               const replaced =
                 prevDir && nextDir && normalizeDir(prevDir) !== normalizeDir(nextDir)
                   ? prevDir
                   : (prev?.replaced ?? null);
               return {
-                args: prev ? coalesceLaunchArgs(prev.args, action.deferred) : action.deferred,
+                args: prev ? coalesceLaunchArgs(prev.args, next) : next,
                 replaced,
                 runIgnored: (prev?.runIgnored ?? false) || action.runIgnored,
               };
             });
-            setWarningHidden(false);
             break;
+          }
         }
       }
     },
@@ -614,15 +630,17 @@ function App({
 
       <Banner ui={ui} />
 
-      {isRunning && deferred && !warningHidden && (
+      {isRunning && (deferred || runIgnoredNotice) && !warningHidden && (
         <section className="banner banner--blocked" role="status" data-testid="launch-warning">
           <header className="banner__headline">
             <span className="t-title">
               {deferredDir
                 ? `Um Run está em andamento — ${deferredDir} será aberto quando ele terminar.`
-                : "Um Run está em andamento — as flags de launch serão aplicadas quando ele terminar."}
-              {deferred.replaced && ` Este pedido substitui o anterior (${deferred.replaced}).`}
-              {deferred.runIgnored && " O --run foi ignorado: um Run por vez."}
+                : deferred
+                  ? "Um Run está em andamento — as flags de launch serão aplicadas quando ele terminar."
+                  : "Um Run está em andamento."}
+              {deferred?.replaced && ` Este pedido substitui o anterior (${deferred.replaced}).`}
+              {(deferred?.runIgnored || runIgnoredNotice) && " O --run foi ignorado: um Run por vez."}
             </span>
             <Button variant="ghost" data-testid="launch-warning-dismiss" onClick={() => setWarningHidden(true)}>
               OK

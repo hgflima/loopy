@@ -945,6 +945,41 @@ describe("App — launch argv (C-0020 T-013)", () => {
       expect(r.queryByTestId("launch-deferred")).toBeNull();
     });
 
+    // C-0021 verification: a bare --run held an empty request ("apply the
+    // flags" with none to apply).
+    it("a bare --run during a Run only warns; nothing is offered later", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ run: true }));
+      });
+      const warning = r.getByTestId("launch-warning").textContent ?? "";
+      expect(warning).toContain("--run");
+      expect(warning).not.toContain("flags");
+      r.finish();
+      await flush();
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+    });
+
+    // C-0021 verification: the held request was never cleared — it came back
+    // in later Runs.
+    it("a request applied after the Run drops the stale held one", async () => {
+      const r = renderRunning();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/b" }));
+      });
+      mockLoad.mockResolvedValue(undefined);
+      r.finish();
+      await flush();
+      await act(async () => {
+        r.push(launchArgs({ dir: "/proj/c" }));
+      });
+      await flush();
+      expect(mockLoad).toHaveBeenCalledWith("/proj/c");
+      expect(r.queryByTestId("launch-deferred")).toBeNull();
+    });
+
     // C-0021/M2: the second request used to replace the first silently.
     it("two requests combine; the banner says which dir was replaced", async () => {
       const r = renderRunning();
