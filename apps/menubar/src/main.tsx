@@ -296,10 +296,17 @@ function Root() {
       setState((prev) => applySidecarExit(prev, event.payload));
     });
 
+    // The popover never calls handleStartRun: it learns of a Run starting
+    // here, so its Parar works before run_started (C-0021).
+    const unStarted = IS_POPOVER
+      ? listen("sidecar://started", () => setState(startingBridgeState))
+      : null;
+
     return () => {
       unLine.then((fn) => fn());
       unStderr.then((fn) => fn());
       unExit.then((fn) => fn());
+      unStarted?.then((fn) => fn());
     };
   }, []);
 

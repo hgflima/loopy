@@ -315,7 +315,7 @@
     Size: S
     Risk: L
 
-- [ ] T-013: O popover vê o `starting`
+- [x] T-013: O popover vê o `starting`
     O popover é outro webview e nunca entrava em `starting` (o "Parar" ficava
     desabilitado durante o start). O Rust emite `sidecar://started` no spawn e o `Root`
     do popover entra em `starting`.

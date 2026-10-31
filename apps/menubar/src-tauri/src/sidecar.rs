@@ -289,6 +289,10 @@ impl SidecarState {
         *inner = Some(SidecarInner { stdin, pid });
         drop(inner);
 
+        // The popover is another webview: only the main window's Root knows it
+        // launched a Run, so this tells every window it is starting (C-0021).
+        let _ = app.emit("sidecar://started", ());
+
         // stdout → sidecar://line
         let app_stdout = app.clone();
         thread::spawn(move || {
