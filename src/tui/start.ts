@@ -114,6 +114,16 @@ export function startUi(options: StartUiOptions): Ui {
     : undefined;
 
   /** Wrap a base dispatch with a fan-out to the transport (when active). */
+  /** Releases the stdin command reader, when one was opened (C-0021). */
+  let closeApproval = (): void => {};
+  /** `stop()` may run twice (the Run's own teardown + the caller's guard). */
+  let stopped = false;
+  const once = (fn: () => void) => (): void => {
+    if (stopped) return;
+    stopped = true;
+    fn();
+  };
+
   const fanOut = (base: (event: StoreEvent) => void): ((event: StoreEvent) => void) => {
     if (!transport) return base;
     return (event) => { base(event); transport.emit(event); };
@@ -126,7 +136,7 @@ export function startUi(options: StartUiOptions): Ui {
   const pickApproval = (fallback: UiPort): UiPort => {
     if (flags.emitEvents) {
       if (flags.yes) return createAutoApproval();
-      return createStdinApproval({
+      const approval = createStdinApproval({
         emit: (ctrl) => {
           transport!.emitControl({
             control: "approval_requested",
@@ -138,6 +148,8 @@ export function startUi(options: StartUiOptions): Ui {
         },
         input: inp,
       });
+      closeApproval = () => approval.close();
+      return approval;
     }
     if (flags.yes) return createAutoApproval();
     return fallback;
@@ -156,7 +168,10 @@ export function startUi(options: StartUiOptions): Ui {
       ui: pickApproval(controller),
       tui: true,
       dispatch: fanOut((event) => store.dispatch(event)),
-      stop: () => instance.unmount(),
+      stop: once(() => {
+        closeApproval();
+        instance.unmount();
+      }),
       transport,
     };
   }
@@ -174,7 +189,7 @@ export function startUi(options: StartUiOptions): Ui {
     ui: pickApproval(createReadlineApproval({ input: options.stdin, output: options.stdout })),
     tui: false,
     dispatch: fanOut((event) => reporter.handle(event)),
-    stop: () => {},
+    stop: once(() => closeApproval()),
     transport,
   };
 }

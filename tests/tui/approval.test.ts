@@ -235,6 +235,18 @@ describe("createStdinApproval", () => {
     return { emit, input, ui, sendDecision };
   }
 
+  // C-0021 (verificação): an open readline on stdin kept the sidecar alive
+  // after run_finished — the GUI keeps stdin open, so the process never exited.
+  it("close() releases the input and fails pending approvals closed", async () => {
+    const { input, ui } = setup();
+    const pending = ui.requestApproval("Merge?");
+    expect(input.listenerCount("data")).toBeGreaterThan(0);
+    ui.close();
+    await expect(pending).resolves.toBe(false);
+    expect(input.listenerCount("data")).toBe(0);
+    ui.close(); // idempotent
+  });
+
   it("emits approval_requested and resolves when matched decision arrives", async () => {
     const { emit, ui, sendDecision } = setup();
     const decision = ui.requestApproval("Merge T-001?");

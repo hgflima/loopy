@@ -260,3 +260,68 @@
     Files: docs/adrs/0014-distribuicao-e-release-automatico.md, docs/reference/cli.md, apps/menubar/CLAUDE.md, apps/menubar/src/CLAUDE.md, apps/menubar/src-tauri/CLAUDE.md
     Size: S
     Risk: L
+
+## Fase 4 — Achados da verificação independente (2026-10-31)
+
+> A verificação completa (gate + smoke da GUI de release no Linux) achou os itens
+> abaixo. Mesmas regras do topo (TDD, `fix(...)`, sem co-author).
+
+- [x] T-009: O motor sob `--emit-events` sai depois do Run (e de falha fatal no start)
+    O `createStdinApproval` abre um `readline` sobre o stdin e nunca o fecha; a GUI
+    mantém o stdin aberto, então o sidecar não sai depois do `run_finished` nem de um
+    erro fatal no start. Antes, o `start` do Rust matava esse processo parado; com a
+    T-002 ele recusa, e a GUI não inicia outro Run sem reiniciar (e fica em
+    "Iniciando" para sempre num start que falha). Corrigir: a aprovação por stdin
+    ganha `close()` (pendentes resolvem `false`, fail-closed), o `stop()` do `startUi`
+    a fecha (idempotente), e o entrypoint libera o stdin quando `run()` termina.
+    Acceptance: `sleep 30 | loopy --no-tui --emit-events <proj>` sai sozinho depois do
+    `run_finished`; idem num start com agente que falha.
+    Verification: npx vitest run tests/tui && npm run typecheck && npm run lint && npm test
+    Deps: none
+    Files: src/tui/approval.ts, src/tui/start.ts, src/index.ts, tests/tui/approval.test.ts
+    Size: S
+    Risk: H
+
+- [ ] T-010: Fila de argv semeada antes do `Builder` (corrida do boot)
+    Com o app fechado, `loopy open B; loopy open C` (< 0,5 s) abria em B: o
+    `on_second_instance` empurrava C antes de o `setup` empurrar o argv inicial B, e o
+    último dir vencia. Parsear o argv inicial em `main()` e semear a fila no `.manage`.
+    Acceptance: a fila sempre começa pelo argv inicial; `cargo test` verde.
+    Verification: mise exec -- cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml
+    Deps: none
+    Files: apps/menubar/src-tauri/src/main.rs
+    Size: XS
+    Risk: M
+
+- [ ] T-011: Salvar com rascunho inválido no aviso não descarta o rascunho
+    `handleDirtyConfirmSave` ignorava o `false` do `save()` e seguia com o load (e o
+    `--run`). Manter o aviso aberto, com mensagem, quando o save falha.
+    Acceptance: save que falha → nada é carregado nem iniciado, o aviso continua.
+    Verification: npm test -w apps/menubar && npm run typecheck && npm run lint
+    Deps: none
+    Files: apps/menubar/src/App.tsx, apps/menubar/src/App.test.tsx
+    Size: S
+    Risk: M
+
+- [ ] T-012: Aviso e pedido adiado não vazam entre Runs
+    O pedido adiado nunca era limpo (reaparecia num Run seguinte, com "--run
+    ignorado" herdado); e um `--run` sem nada mais durante um Run guardava um pedido
+    vazio ("Aplicar as flags…" sem flags). Limpar o adiado ao aplicar argv fora de Run
+    e ao iniciar um Run; `--run` puro durante um Run só avisa, sem guardar nada.
+    Acceptance: testes de planner e App cobrindo os três casos.
+    Verification: npm test -w apps/menubar && npm run typecheck && npm run lint
+    Deps: T-011
+    Files: apps/menubar/src/state/launch-args.ts, apps/menubar/src/state/launch-args.test.ts, apps/menubar/src/App.tsx, apps/menubar/src/App.test.tsx
+    Size: S
+    Risk: L
+
+- [ ] T-013: O popover vê o `starting`
+    O popover é outro webview e nunca entrava em `starting` (o "Parar" ficava
+    desabilitado durante o start). O Rust emite `sidecar://started` no spawn e o `Root`
+    do popover entra em `starting`.
+    Acceptance: popover habilita Parar durante o start; suítes verdes.
+    Verification: npm test -w apps/menubar && mise exec -- cargo test --manifest-path apps/menubar/src-tauri/Cargo.toml
+    Deps: T-010
+    Files: apps/menubar/src-tauri/src/sidecar.rs, apps/menubar/src/main.tsx
+    Size: XS
+    Risk: L

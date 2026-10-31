@@ -119,7 +119,7 @@ import { openDb, type TelemetryDb } from "./telemetry/db";
 import { bootstrap } from "./telemetry/schema";
 import { markChangeMerged } from "./telemetry/write";
 import { mountApp } from "./tui/mount";
-import { startUi } from "./tui/start";
+import { startUi, type Ui } from "./tui/start";
 import { toStoreEvent, type StoreEvent } from "./tui/store";
 import { createEventTransport, type Phase } from "./tui/transport";
 import type {
@@ -577,6 +577,21 @@ function resolveTaskContext(
  * no loop behavior (AD-1).
  */
 async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
+  // T-008: mount Ink + emit=dispatch + sessionId→taskId + logs arquivo-only.
+  const ui = startUi({ flags: args.flags, mount: mountApp });
+  try {
+    return await runLiveWithUi(args, ui);
+  } finally {
+    // Also on a failure before the Run starts (agent spawn, capabilities): the
+    // stdin command reader must close, or the sidecar outlives its Run (C-0021).
+    ui.stop();
+  }
+}
+
+async function runLiveWithUi(
+  args: RunLiveArgs,
+  ui: Ui,
+): Promise<RunLoopResult> {
   const { config, tasks, flags, root, todoPath, knownTaskIds, io } = args;
   const backlogOptions = backlogOptionsFrom(config.inputs.backlog);
 
@@ -586,9 +601,6 @@ async function defaultRunLive(args: RunLiveArgs): Promise<RunLoopResult> {
     verbose: flags.verbose,
   });
   const fileLogger = logFactory.forTask("loopy");
-
-  // T-008: mount Ink + emit=dispatch + sessionId→taskId + logs arquivo-only.
-  const ui = startUi({ flags, mount: mountApp });
 
   // In TUI mode the Ink frame owns stdout — motor logs go file-only so they
   // don't corrupt the frame (OQ16). In fallback mode the teeLogger echoes to

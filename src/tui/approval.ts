@@ -224,8 +224,14 @@ export interface StdinApprovalOptions {
  * `emit` and resolves when the matching `approval_decision` arrives on `input`.
  * FIFO by `requestId` — mirrors the {@link ApprovalController} Ink transport.
  * Orphan or malformed decisions are silently ignored.
+ *
+ * `close()` must run when the Run ends: an open readline keeps the process
+ * alive, and the GUI never closes the sidecar's stdin — so the sidecar would
+ * outlive its Run (C-0021). Pending approvals resolve `false` (fail-closed).
  */
-export function createStdinApproval(options: StdinApprovalOptions): UiPort {
+export function createStdinApproval(
+  options: StdinApprovalOptions,
+): UiPort & { close(): void } {
   const { emit, input } = options;
   const pending = new Map<string, (approved: boolean) => void>();
   let counter = 0;
@@ -247,6 +253,11 @@ export function createStdinApproval(options: StdinApprovalOptions): UiPort {
         pending.set(requestId, resolve);
         emit({ type: "approval_requested", requestId, summary: prompt });
       });
+    },
+    close() {
+      rl.close();
+      for (const resolve of pending.values()) resolve(false);
+      pending.clear();
     },
   };
 }
