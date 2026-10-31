@@ -187,3 +187,12 @@ O review do PR #8 achou casos em que E1 e E3 não se sustentavam. As correções
   aplicado antes de decidir o dir inicial, e o dir salvo só carrega se nenhum
   pedido traz dir. O callback da segunda instância faz a parte de janela na
   main thread (`run_on_main_thread`).
+- **Verificação independente (2026-10-31).** O smoke da GUI de release achou
+  que o motor sob `--emit-events` **não saía** depois do Run: o leitor de
+  comandos do stdin seguia aberto, e o `start` antigo mascarava isso matando o
+  processo parado. Agora o `stop()` da UI fecha esse leitor (aprovações
+  pendentes viram `false`) em toda saída do Run, inclusive numa falha de start.
+  Também: o argv inicial semeia a fila antes do `setup` (ordem garantida com
+  uma segunda instância rápida), Salvar recusado no aviso não descarta o
+  rascunho, o pedido adiado não vaza entre Runs, e o popover vê o `starting`
+  (`sidecar://started`).
